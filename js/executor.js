@@ -55,7 +55,17 @@ export function createExecutor(board) {
         return board.create('line', resolveList(cmd.through).slice(0, 2), opt);
       case 'circle': {
         const c = resolve(cmd.center);
-        return board.create('circle', [c, cmd.through !== undefined ? resolve(cmd.through) : num(cmd.radius, 1)], opt);
+        // 模型有时会同时给出 through 和 radius（甚至 through==center），按优先级取：
+        // through（且不是圆心自己）> radius（有限正数）> 1
+        let second = null;
+        if (cmd.through !== undefined && cmd.through !== null && String(cmd.through) !== String(cmd.center)) {
+          try { second = resolve(cmd.through); } catch (_) { second = null; }
+        }
+        if (second === null) {
+          const r = Number(cmd.radius);
+          second = Number.isFinite(r) && r > 0 ? r : 1;
+        }
+        return board.create('circle', [c, second], opt);
       }
       case 'polygon':
         return board.create('polygon', resolveList(cmd.points), opt);

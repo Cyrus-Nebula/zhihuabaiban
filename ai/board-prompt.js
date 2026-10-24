@@ -17,7 +17,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「星云画板」的内置 AI 作图�
 - segment    {"op":"segment","id":"s1","from":"A","to":"B"}          线段
 - ray        {"op":"ray","id":"r1","from":"A","to":"B"}              射线
 - line       {"op":"line","id":"l1","through":["A","B"]}             直线
-- circle     {"op":"circle","id":"c1","center":"A","through":"B"}    圆（也可用 "radius":3）
+- circle     {"op":"circle","id":"c1","center":"A","through":"B"}    圆（也可用 "radius":3；through 与 radius 二选一，不要同时给）
 - polygon    {"op":"polygon","id":"tri","points":["A","B","C"]}      多边形
 - midpoint   {"op":"midpoint","id":"M","of":["A","B"]}               中点（依赖对象）
 - intersect  {"op":"intersect","id":"P","of":["l1","c1"],"index":0}  交点（index 0 或 1）
