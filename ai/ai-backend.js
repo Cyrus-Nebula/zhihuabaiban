@@ -6,6 +6,13 @@
  *   2. 转成 OpenAI Chat Completions 请求，调用任意"免费 LLM"（默认 GLM-4-Flash）
  *   3. 把 LLM 流式输出翻译成编辑器认识的"原始事件流"（raw SSE events）
  *
+ * 关键设计——"文本暂存 + 万能命令提取"：
+ *   部分免费模型（如 GLM-4-Flash）不触发原生函数调用，会把作图命令写成正文文本：
+ *   ```python def algeo_repl(commands=[...]) ``` 伪代码、{"commands": [...]} JSON、
+ *   甚至裸命令清单。翻译层对流式文本做暂存判定：一旦出现"命令特征"就停止把文本
+ *   显示为聊天内容，收尾时用万能提取器从中抽出命令、转成标准 function_call 事件；
+ *   提取不到命令，才把暂存的文本补发为普通聊天。
+ *
  * 环境变量：
  *   LLM_BASE_URL  默认 https://open.bigmodel.cn/api/paas/v4 （智谱，OpenAI 兼容）
  *                 备选 Gemini: https://generativelanguage.googleapis.com/v1beta/openai/
@@ -29,6 +36,116 @@ function rawEvent(runId, event, data) {
 
 function randId(prefix) {
   return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+/* ---------- REPL 命令识别 ---------- */
+// 官方 REPL 动词表（来自 dino-algeo Skill 的 repl-commands.md）
+const REPL_VERBS =
+  'list_slides|new_slide|switch_slide|dup_slide|move_slide|del_slide|snap_point|intersect|undef|rename|label|eval|def|list|clear';
+const VERB_RE = new RegExp('^(' + REPL_VERBS + ')\\b');
+
+// 文本"命令特征"——命中即暂停把文本显示为聊天内容（收尾时再判定）
+const HINT_RE = new RegExp(
+  '```' + // 代码围栏
+    '|def\\s+[A-Za-z_]' + // def algeo_repl( / def foo(
+    '|"commands"\\s*:' + // JSON 里的 commands 键
+    '|^\\s*\\[?\\s*"(?:' + REPL_VERBS + ')\\b' + // JSON 数组以命令动词开头
+    '|^\\s*(?:' + REPL_VERBS + ')\\b' + // 行首就是 REPL 动词
+    '|\\b(?:Point3D|Segment3D|Line3D|Circle3D|Polygon3D|Point|Segment|Circle|Line|Polygon|Arc|Ray|Angle|Sphere|Cube|Plane3D)\\s*\\(', // 裸构造器调用
+  'im'
+);
+
+// 提取字符串字面量（双引号或单引号）
+function quotedStrings(s) {
+  const out = [];
+  const re = /"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    out.push(
+      (m[1] !== undefined ? m[1] : m[2])
+        .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'")
+        .replace(/\\\\/g, '\\')
+    );
+  }
+  return out;
+}
+
+// 判断一个字符串是否是合法 REPL 命令（动词开头，或 def/label 赋值形式）
+function looksLikeCommand(s) {
+  const t = String(s).trim();
+  if (!t || t.length > 500) return false;
+  if (VERB_RE.test(t)) return true;
+  if (/^[A-Za-z_][A-Za-z0-9_.]*\s*:?=/.test(t)) return true; // def A := ... / label A := ...
+  return false;
+}
+
+function cleanLine(line) {
+  return line
+    .trim()
+    .replace(/\s+--.*$/, '') // 去行尾注释
+    .trim();
+}
+
+/**
+ * 万能命令提取：从模型正文里抽出 REPL 命令数组。
+ * 覆盖：任意语言围栏代码块、伪代码 def algeo_repl(commands=[...])、
+ *       裸 JSON {"commands": [...]}、裸 ["cmd", ...] 数组、整段即命令清单。
+ */
+function extractCommands(text) {
+  const cmds = [];
+  const seen = new Set();
+  const add = (c) => {
+    const t = cleanLine(c);
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      cmds.push(t);
+    }
+  };
+
+  // 1) 围栏代码块（任意语言标注，允许未闭合）
+  const fenceRe = /```[^\n]*\n?([\s\S]*?)(?:```|$)/g;
+  let m;
+  const blocks = [];
+  while ((m = fenceRe.exec(text)) !== null) blocks.push(m[1]);
+
+  for (const b of blocks) {
+    if (/algeo_repl|def\s+[A-Za-z_]\w*\s*\(|"commands"\s*:/.test(b)) {
+      // 伪代码 / JSON 块：抽出所有"像命令"的字符串
+      for (const s of quotedStrings(b)) if (looksLikeCommand(s)) add(s);
+    } else {
+      // 普通代码块：逐行当命令
+      for (const line of b.split('\n')) {
+        const t = cleanLine(line);
+        if (t && looksLikeCommand(t)) add(t);
+      }
+    }
+  }
+
+  // 2) 围栏之外的伪代码 / JSON
+  const noFence = text.replace(/```[^\n]*\n?[\s\S]*?(?:```|$)/g, '\n');
+  if (/algeo_repl|def\s+[A-Za-z_]\w*\s*\(/.test(noFence)) {
+    for (const s of quotedStrings(noFence)) if (looksLikeCommand(s)) add(s);
+  }
+  const jsonRe = /"commands"\s*:\s*\[([\s\S]*?)\]/g;
+  while ((m = jsonRe.exec(noFence)) !== null) {
+    for (const s of quotedStrings(m[1])) if (looksLikeCommand(s)) add(s);
+  }
+  const arrRe = /\[\s*["']((?:[^"'\\]|\\.)*)["'](?:\s*,\s*["']((?:[^"'\\]|\\.)*)["'])*\s*,?\s*\]/g;
+  while ((m = arrRe.exec(noFence)) !== null) {
+    for (const s of quotedStrings(m[0])) if (looksLikeCommand(s)) add(s);
+  }
+
+  // 3) 去掉围栏后，每一行都是 REPL 命令（模型直接裸写命令清单）
+  const lines = noFence
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('--') && !l.startsWith('#'));
+  if (lines.length && lines.every((l) => VERB_RE.test(l))) {
+    for (const l of lines) add(l);
+  }
+
+  return cmds;
 }
 
 /* ---------- payload -> Chat Completions messages ---------- */
@@ -98,7 +215,9 @@ function createTranslatorStream(upstreamBody, runId, respId) {
 
   // 文本消息状态
   let textStarted = false;
-  let textBuf = '';
+  let textBuf = ''; // 全部文本（用于命令提取）
+  let visibleText = ''; // 已流式显示给用户的文本
+  let holding = false; // 是否处于"命令暂存"状态
   const msgId = randId('msg');
   // 工具调用状态（按 index 聚合）
   const toolStates = new Map();
@@ -106,7 +225,7 @@ function createTranslatorStream(upstreamBody, runId, respId) {
   let usage = null;
 
   const emitTextStart = () => {
-    if (textStarted) return;
+    if (textStarted) return '';
     textStarted = true;
     return (
       rawEvent(runId, 'response.output_item.added', {
@@ -122,40 +241,43 @@ function createTranslatorStream(upstreamBody, runId, respId) {
     );
   };
 
+  const emitTextDelta = (delta) =>
+    rawEvent(runId, 'response.output_text.delta', {
+      item_id: msgId, output_index: outputIndex, content_index: 0, delta,
+    });
+
   const emitTextEnd = () => {
     if (!textStarted) return '';
     textStarted = false;
     outputIndex += 1;
     return (
       rawEvent(runId, 'response.output_text.done', {
-        item_id: msgId, output_index: outputIndex - 1, content_index: 0, text: textBuf,
+        item_id: msgId, output_index: outputIndex - 1, content_index: 0, text: visibleText,
       }) +
       rawEvent(runId, 'response.content_part.done', {
         item_id: msgId, output_index: outputIndex - 1, content_index: 0,
-        part: { type: 'output_text', text: textBuf, annotations: [] },
+        part: { type: 'output_text', text: visibleText, annotations: [] },
       }) +
       rawEvent(runId, 'response.output_item.done', {
         output_index: outputIndex - 1,
         item: {
           id: msgId, type: 'message', status: 'completed', role: 'assistant',
-          content: [{ type: 'output_text', text: textBuf, annotations: [] }],
+          content: [{ type: 'output_text', text: visibleText, annotations: [] }],
         },
       })
     );
   };
 
-  // 从文本里提取 ```repl 代码块作为兜底（模型不支持 function calling 时）
-  const emitFallbackToolCall = () => {
-    const re = /```(?:repl|algeo|geometry)?\s*\n([\s\S]*?)```/g;
-    const commands = [];
-    let m;
-    while ((m = re.exec(textBuf)) !== null) {
-      for (const line of m[1].split('\n')) {
-        const t = line.trim();
-        if (t && !t.startsWith('--')) commands.push(t);
-      }
-    }
-    if (!commands.length) return '';
+  // 把一段文本作为普通聊天消息补发（暂存后未发现命令时使用）
+  const flushHeldText = (text) => {
+    if (!text) return '';
+    visibleText += text;
+    return emitTextStart() + emitTextDelta(text) + emitTextEnd();
+  };
+
+  // 以 function_call 事件形式发出提取到的命令
+  const emitFallbackToolCall = (commands) => {
+    if (!commands || !commands.length) return '';
     const itemId = randId('fc');
     const callId = randId('call');
     const args = JSON.stringify({ commands });
@@ -205,13 +327,17 @@ function createTranslatorStream(upstreamBody, runId, respId) {
               if (!choice) continue;
               const delta = choice.delta || {};
 
-              // ---- 文本 ----
+              // ---- 文本（带命令暂存判定）----
               if (typeof delta.content === 'string' && delta.content) {
                 textBuf += delta.content;
+                if (!holding && HINT_RE.test(textBuf)) {
+                  // 从此刻起暂停显示，收尾时判定是命令还是普通文本
+                  holding = true;
+                }
+                if (holding) continue; // 暂存：不发送任何文本事件
+                visibleText += delta.content;
                 send(emitTextStart());
-                send(rawEvent(runId, 'response.output_text.delta', {
-                  item_id: msgId, output_index: outputIndex, content_index: 0, delta: delta.content,
-                }));
+                send(emitTextDelta(delta.content));
               }
 
               // ---- 工具调用 ----
@@ -250,6 +376,8 @@ function createTranslatorStream(upstreamBody, runId, respId) {
 
         // ---- 收尾 ----
         send(emitTextEnd());
+
+        // 原生工具调用收尾
         let hadTool = false;
         for (const st of toolStates.values()) {
           if (st.outputIndex < 0) continue;
@@ -263,7 +391,17 @@ function createTranslatorStream(upstreamBody, runId, respId) {
             item: { id: st.itemId, type: 'function_call', status: 'completed', name: st.name || TOOL_NAME, call_id: st.callId, arguments: args },
           }));
         }
-        if (!hadTool) send(emitFallbackToolCall());
+
+        // 没有原生工具调用：从正文里万能提取命令（伪代码/JSON/裸命令兜底）
+        if (!hadTool) {
+          const cmds = extractCommands(textBuf);
+          if (cmds.length) {
+            send(emitFallbackToolCall(cmds));
+          } else if (holding) {
+            // 暂存了但没提取到命令：把暂存文本补发为普通聊天
+            send(flushHeldText(textBuf.slice(visibleText.length)));
+          }
+        }
 
         send(rawEvent(runId, 'response.completed', {
           response: {
