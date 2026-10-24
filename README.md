@@ -18,6 +18,7 @@
 ├── index.html / js/landing.js / js/workbench.js / js/store.js   首页（hero/AI快建/模板）+ 工作台
 ├── js/templates.js                  内置模板与案例（6 个，命令协议）
 ├── board.html / js/board.js / js/executor.js    路线B：自建画板页 + 命令执行器
+├── js/tools.js                      路线B：多步作图工具引擎（吸附/交点就近/取消清理）
 ├── editor.html / js/editor.js                   路线A：SDK 编辑器页
 ├── vendor/jsxgraphcore.js / jsxgraph.css        JSXGraph 引擎（本地化）
 ├── ai/
@@ -94,11 +95,27 @@ AI 输出 `{"message": "...", "commands": [...]}`，前端 `js/executor.js` 逐�
 | `midpoint` / `intersect` / `glider` | 中点/交点/动点（依赖对象） |
 | `perpendicular` / `parallel` | 垂线/平行线 |
 | `function` `{expr,from,to}` | 函数曲线（`x^2`、`sin(x)`） |
-| `text` / `angle` / `label` / `style` | 文本/角/标签/样式 |
+| `text` `{id,x,y,text}` | 自由文本 |
+| `text` `{id,x,y,bind:{kind,of}}` | 动态测量文本（kind: distance 两点距离 / length 线段长 / radius 圆半径 / angle 角度），拖拽实时刷新 |
+| `angle` / `label` / `style` | 角/标签/样式 |
 
 协议全量定义在 `ai/board-prompt.js`（提示词）和 `js/executor.js`（执行器），**两边同步改**。
 
 文件保存格式：`{name, commands[], moves[]}`——commands 是作图命令（重放即还原），moves 记录自由点拖拽后的坐标。
+
+## 画板交互（路线B，对标大角几何的原生手感）
+
+**14 种工具**：选择 / 点 / 线段 / 直线 / 射线 / 圆 / 多边形 / 中点 / 交点 / 垂线 / 平行线 / 角 / 文本 / 删除。
+
+- **自动吸附**：画线段/圆/中点时，点已有对象上的点会复用该点（而不是新建）；
+- **交点就近**：交点工具自动选取离点击位置近的那个交点；
+- **选中高亮**：选择工具点对象即橙色高亮，提示栏显示类型；
+- **级联删除**：删除对象时，依赖它的对象一起删除（如删点会删掉以它为端点的线段）；
+- **右键菜单**：右键对象 → 重命名 / 颜色 / 线宽 / 虚线点线 / 显隐 / 测量 / 删除；
+- **对象面板**：AI 面板切到「对象」tab → 列表（眼睛显隐、删除）、属性编辑（颜色/线宽/线型/改名）；
+- **动态测量**：右键或对象面板「测量」→ 长度/半径/角度/两点距离，文本随拖拽实时刷新。
+
+**快捷键**：`Ctrl+Z` 撤销 / `Ctrl+Y`（或 `Ctrl+Shift+Z`）重做 / `Ctrl+S` 保存 / `Delete` 删除选中 / `Esc` 取消当前作图 / `Enter` 结束多边形。AI 作图整批算一步撤销，逐条执行、肉眼可见过程。
 
 ## 多设备适配
 

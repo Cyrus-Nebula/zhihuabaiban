@@ -22,17 +22,29 @@
 
   <div class="toolbar" id="toolbar">
     <span class="toolbar-label">工具</span>
-    <button class="tool active" data-tool="select" type="button" title="选择/拖拽">选择</button>
+    <button class="tool active" data-tool="select" type="button" title="选择/拖拽对象">选择</button>
     <button class="tool" data-tool="point" type="button" title="点击画板添加点">点</button>
     <button class="tool" data-tool="segment" type="button" title="点击两点画线段">线段</button>
     <button class="tool" data-tool="line" type="button" title="点击两点画直线">直线</button>
+    <button class="tool" data-tool="ray" type="button" title="先点起点，再点经过的点">射线</button>
     <button class="tool" data-tool="circle" type="button" title="先点圆心，再点圆上一点">圆</button>
-    <button class="tool" data-tool="polygon" type="button" title="依次点击顶点，按回车或点“完成”结束">多边形</button>
-    <button id="btn-poly-done" class="tool hidden" type="button">完成多边形</button>
+    <button class="tool" data-tool="polygon" type="button" title="依次点击顶点，回车结束">多边形</button>
+    <button class="tool" data-tool="midpoint" type="button" title="点击两个点取中点">中点</button>
+    <button class="tool" data-tool="intersect" type="button" title="点击两条线/圆取交点">交点</button>
+    <button class="tool" data-tool="perpendicular" type="button" title="先点一条线，再点线外一点">垂线</button>
+    <button class="tool" data-tool="parallel" type="button" title="先点一条线，再点线外一点">平行线</button>
+    <button class="tool" data-tool="angle" type="button" title="依次点起点、顶点、终点">角</button>
+    <button class="tool" data-tool="text" type="button" title="点击画板放置文本">文本</button>
+    <button class="tool" data-tool="delete" type="button" title="点击对象删除（级联删除依赖对象）">删除</button>
+    <span class="toolbar-sep"></span>
+    <button id="btn-undo" class="tool" type="button" title="撤销 (Ctrl+Z)" disabled>撤销</button>
+    <button id="btn-redo" class="tool" type="button" title="重做 (Ctrl+Y)" disabled>重做</button>
+    <button id="btn-poly-done" class="tool hidden" type="button" title="结束多边形绘制">完成多边形</button>
     <span class="toolbar-sep"></span>
     <span class="toolbar-label">函数</span>
     <input id="fn-input" type="text" placeholder="如 x^2 或 sin(x)" />
     <button id="btn-fn-add" class="btn small" type="button">添加曲线</button>
+    <span id="tool-hint" class="tool-hint"></span>
   </div>
 
   <main class="board-main">
@@ -40,33 +52,74 @@
     <aside class="ai-panel" id="aiPanel">
       <div class="ai-head">
         <span class="ai-title">AI 作图助手</span>
+        <div class="ai-tabs">
+          <button class="ai-tab active" type="button" data-view="chat">对话</button>
+          <button class="ai-tab" type="button" data-view="objects">对象<span id="obj-count" class="obj-count">0</span></button>
+        </div>
         <select id="ai-model" class="ai-model" title="选择免费模型（智谱普惠免费档）"></select>
         <button id="ai-close" class="ai-close" type="button" title="收起面板" aria-label="收起面板">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
       </div>
-      <div id="ai-log" class="ai-log"></div>
-      <div id="ai-img-preview" class="ai-img-preview hidden">
-        <img id="ai-img-thumb" alt="待复原的图片" />
-        <span id="ai-img-name" class="ai-img-name"></span>
-        <button id="ai-img-clear" class="btn small ghost" type="button" title="移除图片">✕</button>
+
+      <div id="view-chat" class="ai-view">
+        <div id="ai-log" class="ai-log"></div>
+        <div id="ai-img-preview" class="ai-img-preview hidden">
+          <img id="ai-img-thumb" alt="待复原的图片" />
+          <span id="ai-img-name" class="ai-img-name"></span>
+          <button id="ai-img-clear" class="btn small ghost" type="button" title="移除图片">✕</button>
+        </div>
+        <div class="ai-input-row">
+          <textarea id="ai-input" rows="2" placeholder="用自然语言描述要画的内容，如：画一个等腰直角三角形，标注三个顶点"></textarea>
+          <div class="ai-btns">
+            <button id="ai-img-btn" class="btn small ghost hidden" type="button" title="上传图片，让视觉模型按图复原">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m5 17 4.5-4.5 3 3L16 12l3 3" /></svg>图片
+            </button>
+            <button id="ai-send" class="btn" type="button">生成</button>
+          </div>
+        </div>
+        <input id="ai-img-input" type="file" accept="image/*" hidden />
+        <div class="ai-tip">提示：AI 可读取当前画板元素，支持“把这个三角形改成等边的”这类修改。切换到「GLM-4.6V-Flash（视觉）」模型后可上传图片，按图复原几何图形。</div>
       </div>
-      <div class="ai-input-row">
-        <textarea id="ai-input" rows="2" placeholder="用自然语言描述要画的内容，如：画一个等腰直角三角形，标注三个顶点"></textarea>
-        <div class="ai-btns">
-          <button id="ai-img-btn" class="btn small ghost hidden" type="button" title="上传图片，让视觉模型按图复原">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m5 17 4.5-4.5 3 3L16 12l3 3" /></svg>图片
-          </button>
-          <button id="ai-send" class="btn" type="button">生成</button>
+
+      <div id="view-objects" class="ai-view hidden">
+        <div class="obj-toolbar">
+          <span class="obj-hint">右键对象或点击行可选中；支持显隐/改名/测量/删除</span>
+          <button id="obj-refresh" class="btn small ghost" type="button">刷新</button>
+        </div>
+        <div id="obj-list" class="obj-list"></div>
+        <div id="obj-props" class="obj-props hidden">
+          <div class="obj-props-title">选中：<b id="obj-props-name"></b></div>
+          <div class="obj-props-row">
+            <span class="obj-props-label">颜色</span>
+            <div id="obj-colors" class="obj-colors"></div>
+          </div>
+          <div class="obj-props-row">
+            <span class="obj-props-label">线宽</span>
+            <div id="obj-widths" class="obj-seg"></div>
+          </div>
+          <div class="obj-props-row">
+            <span class="obj-props-label">线型</span>
+            <div id="obj-dashes" class="obj-seg"></div>
+          </div>
+          <div class="obj-props-row">
+            <span class="obj-props-label">名称</span>
+            <input id="obj-rename" type="text" maxlength="20" placeholder="输入新名称" />
+            <button id="obj-rename-ok" class="btn small" type="button">改名</button>
+          </div>
+          <div class="obj-props-row obj-props-actions">
+            <button id="obj-toggle" class="btn small ghost" type="button">隐藏</button>
+            <button id="obj-measure" class="btn small ghost" type="button">测量</button>
+            <button id="obj-delete" class="btn small danger" type="button">删除</button>
+          </div>
         </div>
       </div>
-      <input id="ai-img-input" type="file" accept="image/*" hidden />
-      <div class="ai-tip">提示：AI 可读取当前画板元素，支持“把这个三角形改成等边的”这类修改。切换到「GLM-4.6V-Flash（视觉）」模型后可上传图片，按图复原几何图形。</div>
     </aside>
   </main>
 
   <div id="toast" class="toast hidden"></div>
   <button id="ai-fab" type="button">AI 作图</button>
+  <div id="ctx-menu" class="ctx-menu hidden"></div>
 
   <script src="vendor/jsxgraphcore.js"></script>
   <script src="js/config.js"></script>

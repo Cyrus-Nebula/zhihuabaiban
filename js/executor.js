@@ -19,12 +19,42 @@
  *   parallel  {id,of,through}                  平行线
  *   function  {id,expr,from,to}                函数曲线（JSXGraph语法，如 "x^2"）
  *   text      {id,x,y,text}                    自由文本
+ *   text      {id,x,y,bind:{kind,of}}          动态测量文本（kind: distance/length/radius/angle）
  *   angle     {id,points:[A,B,C]}              角（B为顶点）
  *   label     {target,text}                    设置/修改标签
  *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?}  样式
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#1565C0', strokeColor: '#1565C0', face: 'o', withLabel: true };
+
+/** 动态测量文本：返回 JXG 文本内容函数（每次画板更新时调用，拖拽实时刷新） */
+function bindText(bind, registry) {
+  const get = (id) => registry.get(id);
+  const gone = () => '—'; // 绑定对象已不存在
+  const f2 = (v) => (Number.isFinite(v) ? Number(v).toFixed(2) : '?');
+  if (bind.kind === 'distance') {
+    const a = get(bind.of && bind.of[0]);
+    const b = get(bind.of && bind.of[1]);
+    if (!a || !b) return gone;
+    return () => '距离 = ' + f2(Math.hypot(b.X() - a.X(), b.Y() - a.Y()));
+  }
+  if (bind.kind === 'length') {
+    const el = get(bind.of);
+    if (!el) return gone;
+    return () => '长度 = ' + f2(typeof el.L === 'function' ? el.L() : NaN);
+  }
+  if (bind.kind === 'radius') {
+    const el = get(bind.of);
+    if (!el) return gone;
+    return () => '半径 = ' + f2(typeof el.Radius === 'function' ? el.Radius() : NaN);
+  }
+  if (bind.kind === 'angle') {
+    const el = get(bind.of);
+    if (!el) return gone;
+    return () => '角度 = ' + (typeof el.Value === 'function' ? (el.Value() * 180 / Math.PI).toFixed(1) : '?') + '°';
+  }
+  return gone;
+}
 
 export function createExecutor(board) {
   const registry = new Map();    // id -> JXG 元素
@@ -80,8 +110,17 @@ export function createExecutor(board) {
         return board.create('glider', [num(cmd.x, 0), num(cmd.y, 0), resolve(cmd.on)], opt);
       case 'function':
         return board.create('functiongraph', [String(cmd.expr || ''), num(cmd.from, -10), num(cmd.to, 10)], { ...opt, strokeColor: '#C62828', strokeWidth: 2 });
-      case 'text':
-        return board.create('text', [num(cmd.x, 0), num(cmd.y, 0), String(cmd.text == null ? '' : cmd.text)], opt);
+      case 'text': {
+        // bind：动态测量文本（内容为函数，拖拽时实时刷新）
+        //   {kind:'distance', of:[A,B]} 两点距离
+        //   {kind:'length',   of:线段id} 线段长度
+        //   {kind:'radius',   of:圆id}   圆半径
+        //   {kind:'angle',    of:角id}   角度（度）
+        const content = cmd.bind ? bindText(cmd.bind, registry) : String(cmd.text == null ? '' : cmd.text);
+        // display:'internal' 用 SVG <text> 渲染；默认的 'html' 是覆盖整个画板的 DIV，
+        // 会让 getAllObjectsUnderMouse 在任何位置都命中文本，破坏点选/删除
+        return board.create('text', [num(cmd.x, 0), num(cmd.y, 0), content], { ...opt, display: 'internal' });
+      }
       case 'angle':
         return board.create('angle', resolveList(cmd.points), opt);
       case 'perpendicular':
@@ -91,7 +130,9 @@ export function createExecutor(board) {
       case 'label': {
         const el = resolve(cmd.target);
         const t = String(cmd.text == null ? '' : cmd.text);
-        if (typeof el.setText === 'function') el.setText(t);
+        if (el.elType === 'text') { if (typeof el.setText === 'function') el.setText(t); }
+        else if (el.label && typeof el.label.setText === 'function') el.label.setText(t);
+        else if (typeof el.setText === 'function') el.setText(t);
         else if (typeof el.setLabel === 'function') el.setLabel(t);
         return null;
       }
@@ -102,7 +143,7 @@ export function createExecutor(board) {
         if (cmd.strokeWidth != null) a.strokeWidth = num(cmd.strokeWidth, 2);
         if (cmd.dash != null) a.dash = num(cmd.dash, 0);
         if (cmd.fill) { a.fillColor = cmd.color || '#90CAF9'; a.fillOpacity = 0.25; }
-        if (cmd.hidden) a.visible = false;
+        if (cmd.hidden != null) a.visible = !cmd.hidden;
         el.setAttribute(a);
         return null;
       }
@@ -117,6 +158,16 @@ export function createExecutor(board) {
     }
     registry.clear();
     plainPoints.clear();
+  }
+
+  /** 从画板和注册表移除单个元素（删除工具/取消未完成作图用） */
+  function remove(id) {
+    const el = registry.get(id);
+    if (!el) return false;
+    try { board.removeObject(el); } catch (_) { /* 忽略 */ }
+    registry.delete(id);
+    plainPoints.delete(id);
+    return true;
   }
 
   /** 执行命令数组，返回每条命令的执行结果（成功/失败+原因） */
@@ -173,5 +224,5 @@ export function createExecutor(board) {
     }
   }
 
-  return { execute, describe, moves, applyMoves, clearAll, registry, has: (id) => registry.has(id) };
+  return { execute, describe, moves, applyMoves, clearAll, remove, registry, has: (id) => registry.has(id) };
 }
