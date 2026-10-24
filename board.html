@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>画板 · 自用几何画板</title>
+  <link rel="stylesheet" href="vendor/jsxgraph.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="board-page">
+  <header class="topbar">
+    <a class="btn ghost" href="index.html">← 返回工作台</a>
+    <input id="doc-name" class="doc-name" type="text" value="未命名画板" maxlength="50" />
+    <span id="save-status" class="save-status">就绪</span>
+    <span class="flex-spacer"></span>
+    <button id="btn-save" class="btn" type="button">保存</button>
+    <button id="btn-export-png" class="btn" type="button">导出 PNG</button>
+    <button id="btn-export-json" class="btn" type="button">导出 JSON</button>
+    <button id="btn-import" class="btn" type="button">导入</button>
+    <input id="file-import" type="file" accept=".json,application/json" hidden />
+  </header>
+
+  <div class="toolbar" id="toolbar">
+    <span class="toolbar-label">工具</span>
+    <button class="tool active" data-tool="select" type="button" title="选择/拖拽">选择</button>
+    <button class="tool" data-tool="point" type="button" title="点击画板添加点">点</button>
+    <button class="tool" data-tool="segment" type="button" title="点击两点画线段">线段</button>
+    <button class="tool" data-tool="line" type="button" title="点击两点画直线">直线</button>
+    <button class="tool" data-tool="circle" type="button" title="先点圆心，再点圆上一点">圆</button>
+    <button class="tool" data-tool="polygon" type="button" title="依次点击顶点，按回车或点“完成”结束">多边形</button>
+    <button id="btn-poly-done" class="tool hidden" type="button">完成多边形</button>
+    <span class="toolbar-sep"></span>
+    <span class="toolbar-label">函数</span>
+    <input id="fn-input" type="text" placeholder="如 x^2 或 sin(x)" />
+    <button id="btn-fn-add" class="btn small" type="button">添加曲线</button>
+  </div>
+
+  <main class="board-main">
+    <div id="box" class="board-box"></div>
+    <aside class="ai-panel">
+      <div class="ai-head">AI 作图助手</div>
+      <div id="ai-log" class="ai-log"></div>
+      <div class="ai-input-row">
+        <textarea id="ai-input" rows="2" placeholder="用自然语言描述要画的内容，如：画一个等腰直角三角形，标注三个顶点"></textarea>
+        <button id="ai-send" class="btn" type="button">生成</button>
+      </div>
+      <div class="ai-tip">提示：AI 可读取当前画板元素，支持“把这个三角形改成等边的”这类修改。</div>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="vendor/jsxgraphcore.js"></script>
+  <script type="module" src="js/board.js"></script>
+</body>
+</html>

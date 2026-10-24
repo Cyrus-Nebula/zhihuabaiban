@@ -15,10 +15,14 @@
  *    详见 README「AI 免费配置」。不需要大角几何的 API Key，不产生任何费用。
  */
 window.DAJIAO_CONFIG = {
-  // ↓↓↓ 改成你的 appId ↓↓↓
+  // appId：仅路线A的SDK编辑器（3D）需要；路线B自建画板不用它
   appId: 'ZYGKAQXC',
 
-  // 免费 AI 后端地址（二选一，见 README）
+  // 路线A（SDK 编辑器）AI 后端地址（二选一，见 README）
   aiEndpoint: '/api/ai/run',
   // aiEndpoint: 'http://localhost:8787/api/ai/run', // 本地自用模式
+
+  // 路线B（自建画板）AI 后端地址
+  boardAiEndpoint: '/api/ai/board',
+  // boardAiEndpoint: 'http://localhost:8787/api/ai/board', // 本地自用模式
 };

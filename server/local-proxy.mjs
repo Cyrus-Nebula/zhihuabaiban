@@ -19,6 +19,7 @@
  */
 import http from 'node:http';
 import { handleAiRun } from '../ai/ai-backend.js';
+import { handleBoardAi } from '../ai/board-backend.js';
 
 const PORT = Number(process.env.PORT || 8787);
 
@@ -33,6 +34,12 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+// 路由表：/api/ai/run = 路线A（SDK编辑器，SSE流）；/api/ai/board = 路线B（自建画板，JSON）
+const ROUTES = {
+  '/api/ai/run': handleAiRun,
+  '/api/ai/board': handleBoardAi,
+};
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
@@ -42,9 +49,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (url.pathname !== '/api/ai/run' || req.method !== 'POST') {
+  const handler = ROUTES[url.pathname];
+  if (!handler || req.method !== 'POST') {
     res.writeHead(404, { 'Content-Type': 'application/json', ...CORS });
-    res.end(JSON.stringify({ error: 'not found, use POST /api/ai/run' }));
+    res.end(JSON.stringify({ error: 'not found, use POST /api/ai/run 或 /api/ai/board' }));
     return;
   }
 
@@ -57,7 +65,7 @@ const server = http.createServer(async (req, res) => {
       headers: { 'Content-Type': 'application/json' },
       body: Buffer.concat(chunks),
     });
-    const response = await handleAiRun(request, process.env);
+    const response = await handler(request, process.env);
     res.writeHead(response.status, {
       'Content-Type': response.headers.get('Content-Type') || 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -81,5 +89,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`[local-proxy] 免费 AI 代理已启动: http://localhost:${PORT}`);
-  console.log(`[local-proxy] 前端 aiEndpoint 指向: http://localhost:${PORT}/api/ai/run`);
+  console.log(`[local-proxy] 路线A(SDK编辑器): POST /api/ai/run`);
+  console.log(`[local-proxy] 路线B(自建画板):  POST /api/ai/board`);
 });

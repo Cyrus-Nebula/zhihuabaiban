@@ -2,11 +2,17 @@
 (function () {
   const CFG = window.DAJIAO_CONFIG || {};
 
+  // 打开地址：3D 走 SDK 编辑器（路线A），其余走自建画板（路线B）
+  function openUrl(f) {
+    const page = f.mode === '3d' ? 'editor.html' : 'board.html';
+    return page + '?id=' + encodeURIComponent(f.id);
+  }
+
   // ---------- 配置状态 ----------
   function refreshConfigBadge() {
     const ok = CFG.appId && CFG.appId !== 'YOUR_APP_ID';
     const badge = document.getElementById('configBadge');
-    badge.textContent = ok ? 'appId 已配置' : 'appId 未配置';
+    badge.textContent = ok ? 'appId 已配置（3D 可用）' : 'appId 未配置（3D 不可用）';
     badge.className = 'badge ' + (ok ? 'badge-ok' : 'badge-warn');
     document.getElementById('configWarn').hidden = !!ok;
   }
@@ -53,7 +59,7 @@
       btnOpen.className = 'btn btn-primary btn-sm';
       btnOpen.textContent = '打开';
       btnOpen.addEventListener('click', () => {
-        location.href = 'editor.html?id=' + encodeURIComponent(f.id);
+        location.href = openUrl(f);
       });
 
       const btnExport = document.createElement('button');
@@ -100,11 +106,11 @@
   // ---------- 新建 / 导入 ----------
   document.getElementById('btnNew2d').addEventListener('click', () => {
     const f = Store.create('平面画板 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }), '2d');
-    location.href = 'editor.html?id=' + encodeURIComponent(f.id);
+    location.href = openUrl(f);
   });
   document.getElementById('btnNew3d').addEventListener('click', () => {
     const f = Store.create('立体画板 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }), '3d');
-    location.href = 'editor.html?id=' + encodeURIComponent(f.id);
+    location.href = openUrl(f);
   });
 
   const fileInput = document.getElementById('fileInput');

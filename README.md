@@ -1,99 +1,103 @@
-# 自用几何画板 · 免费 AI 版
+# 自用几何画板（双路线）
 
-功能对标 [dajiaoai.com](https://dajiaoai.com)（大角几何）的**自用、全免费**复刻：
-平面/立体几何画板、**免费 LLM 驱动的 AI 对话作图**、文件管理、导入导出。
+自用的在线几何画板，**全免费**。内置两条路线：
 
-- 画板引擎：大角几何开放平台 iframe 嵌入（[algeo-sdk](https://github.com/dajiaoai/algeo-sdk)，Apache-2.0），**不花钱**
-- AI：**自己接免费 LLM**（默认智谱 GLM-4-Flash，可换 Gemini），**不花钱**
-- 托管：Cloudflare Pages 免费档（无限带宽 + Pages Functions 每天 10 万次请求），**不花钱**
-- 文件：浏览器 localStorage + .json 导入导出，**不花钱**
+| | 路线B · 自建画板（默认） | 路线A · SDK 编辑器 |
+|---|---|---|
+| 入口 | `board.html`（平面画板） | `editor.html`（立体/3D 画板） |
+| 画板引擎 | **JSXGraph**（LGPL 开源，`vendor/` 本地加载，不依赖外网） | 大角几何开放 SDK（iframe 嵌入） |
+| 依赖 | 无（不需要 appId、不需要对方服务器） | 需要 appId + 域名白名单 |
+| AI | 免费 LLM（默认智谱 GLM-4-Flash） | 免费 LLM（同一套 Key） |
+| 费用 | **托管免费 + LLM 免费额度** | 基础功能免费，对方平台高级能力计费 |
 
-> 全程不需要大角几何的 API Key，不产生任何费用。AI 事件流经自建翻译层转换为编辑器原生协议，官方 AI 面板 UI 原样保留。
+> 工作台里「新建平面画板」走路线B，「新建立体画板」走路线A。两条线的 AI 用的是同一个免费 LLM Key，分别存在两个端点（`/api/ai/board` 和 `/api/ai/run`）。
 
-## 文件清单（全部 12 个，都有用）
+## 文件结构
 
 ```
-├── index.html            工作台：画板文件列表、新建 2D/3D、导入导出
-├── editor.html           编辑器页：挂载画板 + 状态栏
-├── css/style.css         样式
-├── js/
-│   ├── config.js         ★唯一要改的文件：appId、AI 后端地址
-│   ├── store.js          画板文件存 localStorage
-│   ├── workbench.js      工作台逻辑
-│   └── editor.js         编辑器逻辑（嵌入画板 + AI 转发）
+├── index.html / js/workbench.js / js/store.js   工作台（文件管理，localStorage）
+├── board.html / js/board.js / js/executor.js    路线B：自建画板页 + 命令执行器
+├── editor.html / js/editor.js                   路线A：SDK 编辑器页
+├── vendor/jsxgraphcore.js / jsxgraph.css        JSXGraph 引擎（本地化）
 ├── ai/
-│   ├── system-prompt.js  AI 系统提示词 + algeo_repl 工具定义
-│   └── ai-backend.js     免费 LLM 翻译层（AI 心脏）
-├── functions/api/ai/run.js   线上 AI 入口（Cloudflare Pages Function）
-├── server/local-proxy.mjs    本地 AI 入口（Node 18+ 零依赖）
-└── README.md            本文件
+│   ├── board-prompt.js   路线B的 AI 系统提示词（命令协议）
+│   ├── board-backend.js  路线B的 AI 后端核心（LLM→JSON 命令）
+│   ├── system-prompt.js  路线A的 AI 系统提示词
+│   └── ai-backend.js     路线A的 AI 后端核心（LLM→SSE 翻译层）
+├── functions/api/ai/board.js   线上：路线B AI 入口（Cloudflare Pages Function）
+├── functions/api/ai/run.js     线上：路线A AI 入口
+├── server/local-proxy.mjs      本地：两个入口的零依赖 Node 代理
+├── js/config.js                ★ 唯一可能要改的文件
+└── css/style.css
 ```
 
 ## 快速开始（本地，5 分钟）
 
+**1. 拿一个免费 LLM Key**（智谱，GLM-4-Flash 免费）
+
+打开 [bigmodel.cn](https://bigmodel.cn) 注册 → 控制台 → 「API 密钥」→ 新建，复制那串 `xxx.xxx`。Key 通用所有模型，模型在请求里指定，我们默认就用免费的 `glm-4-flash`。
+
+**2. 起静态服务 + AI 代理**（两个终端）
+
 ```bash
-# 1. appId：编辑 js/config.js，把 YOUR_APP_ID 换成控制台创建应用后的 appId
-#    （https://open.dajiaoai.com/console/dashboard；本地测试把 localhost 加白名单）
+# 终端1：静态页
+python3 -m http.server 8000
 
-# 2. 免费 LLM Key：智谱开放平台（bigmodel.cn）注册即可免费使用 GLM-4-Flash
-#    或 Google AI Studio 的 Gemini 免费档
-
-# 3. 起服务（两个终端）
-LLM_API_KEY=你的key node server/local-proxy.mjs   # 终端 A：AI 代理 :8787
-python3 -m http.server 8000                        # 终端 B：静态页 :8000
-
-# 4. js/config.js 里把 aiEndpoint 注释切换为：
-#    aiEndpoint: 'http://localhost:8787/api/ai/run'
-
-# 5. 打开 http://localhost:8000，新建画板，在 AI 面板输入：
-#    "画一个等腰直角三角形，标注三个顶点"
+# 终端2：AI 代理（零依赖）
+LLM_API_KEY=你的key node server/local-proxy.mjs
 ```
 
-## 部署到 Cloudflare Pages（免费、免备案、可公网访问）
+**3. 打开 http://localhost:8000** → 新建平面画板 → 右侧 AI 面板输入「画一个等腰直角三角形，标注三个顶点」。
 
-1. Cloudflare Dashboard → Workers & Pages → Create → Pages → **Upload assets**，把本目录（或 dajiao-clone.zip）整个拖进去（`functions/` 会自动识别为 Pages Functions）
-2. 得到免费域名 `https://<项目名>.pages.dev`
-3. Settings → Environment variables 添加：
-   - `LLM_API_KEY`（必填，免费 LLM 的 Key）
-   - `LLM_BASE_URL`（可选，默认 `https://open.bigmodel.cn/api/paas/v4`）
-   - `LLM_MODEL`（可选，默认 `glm-4-flash`）
-4. 保存后 Redeploy；控制台白名单添加 `https://<项目名>.pages.dev`
-5. `js/config.js` 保持默认 `aiEndpoint: '/api/ai/run'` 不用动
+> 本地模式下要把 `js/config.js` 里 `boardAiEndpoint` 的注释行切过去（指向 `http://localhost:8787/api/ai/board`）。
 
-## 免费 LLM 选哪个
+## 部署（Cloudflare Pages，免费）
 
-| 提供商 | 免费额度 | 配置 |
-|---|---|---|
-| **智谱 GLM-4-Flash（默认）** | 免费 | `LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4`，`LLM_MODEL=glm-4-flash`，Key 在 bigmodel.cn 注册 |
-| **Google Gemini** | 免费档 | `LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/`，`LLM_MODEL=gemini-2.5-flash`，Key 在 aistudio.google.com |
-| 任意 OpenAI 兼容服务 | 看各家 | DeepSeek / 通义千问 / Kimi / 302.ai 等，填对应 baseUrl + model |
+仓库连着 GitHub，推代码即自动部署：
 
-模型不支持 function calling 也没关系：后端会自动把 ```repl 代码块里的命令提取成工具调用（兜底路径）。
+1. 代码 push 到 GitHub（Cloudflare Pages 项目已连接该仓库）
+2. Pages 项目 → **设置 → 变量和密钥** → 添加：
 
-## AI 是怎么工作的
+   | 变量 | 值 | 必填 |
+   |---|---|---|
+   | `LLM_API_KEY` | 智谱 Key | ✓ |
+   | `LLM_MODEL` | `glm-4-flash` | 否（有默认值） |
+   | `LLM_BASE_URL` | `https://open.bigmodel.cn/api/paas/v4` | 否 |
 
-```
-编辑器 AI 面板 ──aiRequest(payload)──> 我们的后端(Pages Function / 本地代理)
-   │                                      │ 1. 取出对话历史
-   │                                      │ 2. 拼上系统提示词
-   │                                      │ 3. 调用免费 LLM(带 algeo_repl 工具)
-   │                                      │ 4. 流式输出翻译成"原始事件"
-   └──<── SSE: {type:"raw",event:"response.output_text.delta",...}
-       editor.ai.consumeStream() 解析渲染；function_call 事件即执行作图
-```
+3. 保存后 **重试部署**（环境变量不会自动应用到旧部署）
+4. `js/config.js` 保持默认（`boardAiEndpoint: '/api/ai/board'` 同域）
 
-翻译层输出已用大角几何官方协议包的 zod schema 逐事件校验通过（事件序列：run.created → response.created → output_item.added → content_part.added → output_text.delta → … → function_call_arguments.done → response.completed）。
+3D 画板额外需要：`js/config.js` 填 appId + 大角控制台加域名白名单。
+
+## 路线B 的 AI 命令协议
+
+AI 输出 `{"message": "...", "commands": [...]}`，前端 `js/executor.js` 逐条翻译成 JSXGraph 调用：
+
+| 命令 | 说明 |
+|---|---|
+| `clear` | 清空画板 |
+| `point` `{id,x,y,fixed?}` | 点（默认可拖拽） |
+| `segment` `{id,from,to}` / `ray` / `line {through:[A,B]}` | 线段/射线/直线 |
+| `circle` `{center,through｜radius}` | 圆 |
+| `polygon` `{points:[A,B,C]}` | 多边形 |
+| `midpoint` / `intersect` / `glider` | 中点/交点/动点（依赖对象） |
+| `perpendicular` / `parallel` | 垂线/平行线 |
+| `function` `{expr,from,to}` | 函数曲线（`x^2`、`sin(x)`） |
+| `text` / `angle` / `label` / `style` | 文本/角/标签/样式 |
+
+协议全量定义在 `ai/board-prompt.js`（提示词）和 `js/executor.js`（执行器），**两边同步改**。
+
+文件保存格式：`{name, commands[], moves[]}`——commands 是作图命令（重放即还原），moves 记录自由点拖拽后的坐标。
 
 ## 常见问题
 
-**AI 面板报错/没反应？** 本地模式确认代理在跑、`aiEndpoint` 指向 8787、`LLM_API_KEY` 已设置；线上模式确认 Pages 环境变量已配并 Redeploy。错误信息会直接显示在 AI 面板里。
+- **AI 面板报错「LLM_API_KEY 未配置」**：环境变量没配或没重试部署。
+- **AI 回复了但不作图**：看浏览器 Console；模型偶尔输出非 JSON，后端已做万能提取（围栏/裸JSON），极端情况会返回解析失败提示，重试一次即可。
+- **想换模型**：环境变量加 `LLM_MODEL=glm-4.7-flash`（200K 上下文，免费）或接 Gemini（改 `LLM_BASE_URL` 为 `https://generativelanguage.googleapis.com/v1beta/openai/`，`LLM_MODEL=gemini-2.5-flash`）。
+- **3D 画板打不开**：appId 未配或域名没加白名单（3D 是路线A，需要对方平台）。
+- **换浏览器/清缓存文件会丢**：文件只在 localStorage，重要画板及时「导出 JSON」。
 
-**画板白屏？** ① appId 填了没；② 域名加白名单了没（本地 `localhost`，线上 `https://xxx.pages.dev`）；③ 网络能访问 dajiaoai.com。
+## 开源致谢
 
-**AI 画的图不满意？** 直接说人话继续改，如"把三角形填充浅蓝色""加一条高 AD""新建一个画板画圆"。多轮对话里 AI 能看到你之前的修改（工具执行结果会随下次请求回传）。
-
-**文件会丢吗？** 存浏览器 localStorage，换浏览器/清缓存会丢，重要画板及时导出 .json。
-
-## 合规提示
-
-个人学习自用：功能仿写不侵权；请勿照搬大角几何的界面设计、图标与商标上线运营。algeo-sdk 为 Apache-2.0，按其许可证要求保留声明即可。系统提示词改编自官方公开开源的 Skill（dino-algeo），版权归原作者。
+- [JSXGraph](https://jsxgraph.org)（LGPL）——路线B 画板引擎
+- 大角几何开放 SDK（Apache-2.0）——路线A 画板引擎

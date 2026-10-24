@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>几何画板</title>
+  <title>我的画板 · 自用几何画板</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -11,22 +11,21 @@
     <div class="brand">
       <span class="brand-logo">◺</span>
       <span class="brand-name">自用几何画板</span>
-      <span class="brand-sub">基于大角几何开放 SDK · 数据只存在本机</span>
+      <span class="brand-sub">自建画板引擎（JSXGraph）· 平面几何 / 3D 走大角 SDK · 数据只存本机</span>
     </div>
     <div id="configBadge" class="badge badge-warn">appId 未配置</div>
   </header>
 
   <main class="container">
     <div id="configWarn" class="banner banner-warn" hidden>
-      <strong>还没有配置 appId，画板无法加载。</strong>
-      请打开 <code>js/config.js</code>，把 <code>appId</code> 换成你在
-      <a href="https://open.dajiaoai.com/console/dashboard" target="_blank" rel="noopener">大角几何开放平台控制台</a>
-      创建应用后获得的 ID；本地测试请把 <code>localhost</code> 加进控制台白名单。
+      <strong>appId 未配置——仅影响「新建立体画板」(3D)。</strong>
+      平面画板（自建引擎 + AI）不需要 appId，可直接使用。如需 3D，请打开
+      <code>js/config.js</code> 填入 appId（<a href="https://open.dajiaoai.com/console/dashboard" target="_blank" rel="noopener">大角几何开放平台控制台</a>创建应用获取）。
     </div>
 
     <section class="actions">
-      <button class="btn btn-primary" id="btnNew2d">＋ 新建平面画板</button>
-      <button class="btn btn-primary" id="btnNew3d">＋ 新建立体画板</button>
+      <button class="btn btn-primary" id="btnNew2d">＋ 新建平面画板（自建引擎+AI）</button>
+      <button class="btn btn-primary" id="btnNew3d">＋ 新建立体画板（SDK）</button>
       <button class="btn btn-ghost" id="btnImport">导入 .json 工程</button>
       <input type="file" id="fileInput" accept=".json,application/json" hidden />
     </section>
@@ -40,8 +39,7 @@
     </section>
 
     <footer class="footer">
-      <p>画板引擎由 <a href="https://dajiaoai.com" target="_blank" rel="noopener">大角几何</a> 提供（iframe 嵌入，Apache-2.0 SDK）；
-         AI 对话经本地代理转发，API Key 不经过本页面。文件全部保存在浏览器 localStorage，换浏览器/清缓存会丢失，重要画板请及时导出 .json。</p>
+      <p>平面画板使用开源的 <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a> 引擎（LGPL，本地加载），AI 作图经本地/Pages 代理调用免费 LLM（默认智谱 GLM-4-Flash），API Key 不经过本页面；立体画板由 <a href="https://dajiaoai.com" target="_blank" rel="noopener">大角几何</a> SDK 提供（iframe 嵌入，需要 appId）。文件全部保存在浏览器 localStorage，换浏览器/清缓存会丢失，重要画板请及时导出 .json。</p>
     </footer>
   </main>
 
