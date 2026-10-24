@@ -19,6 +19,21 @@ const errorMask = $('errorMask');
 const saveStatus = $('saveStatus');
 const aiStatus = $('aiStatus');
 
+// ---------- 模型选择（白名单来自 js/models.js，持久化 localStorage）----------
+const MODELS = Array.isArray(window.DAJIAO_MODELS) ? window.DAJIAO_MODELS : [];
+const modelSel = $('aiModel');
+MODELS.forEach((m) => {
+  const opt = document.createElement('option');
+  opt.value = m.id;
+  opt.textContent = m.name;
+  modelSel.appendChild(opt);
+});
+const savedModel = localStorage.getItem('dajiao-editor-model');
+if (savedModel && MODELS.some((m) => m.id === savedModel)) modelSel.value = savedModel;
+modelSel.addEventListener('change', () => {
+  localStorage.setItem('dajiao-editor-model', modelSel.value);
+});
+
 function setSaveStatus(text, cls) {
   saveStatus.innerHTML = `<span class="dot ${cls || ''}"></span> ${text}`;
 }
@@ -101,7 +116,7 @@ async function boot() {
   });
 
   // ---------- AI 对话：转发到我们自己的免费 AI 后端 ----------
-  // 后端用免费 LLM（默认 GLM-4-Flash）驱动画板，LLM Key 只在服务端，
+  // 后端用免费 LLM（默认 GLM-4.7-Flash，顶栏可切换）驱动画板，LLM Key 只在服务端，
   // 返回的 SSE 流已被翻译成编辑器认识的标准事件，直接交给 SDK 渲染。
   editor.on('aiRequest', async ({ payload, signal }) => {
     aiStatus.hidden = false;
@@ -110,7 +125,7 @@ async function boot() {
       const res = await fetch(CFG.aiEndpoint || '/api/ai/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, model: modelSel.value }),
         signal,
       });
       if (!res.ok || !res.body) {

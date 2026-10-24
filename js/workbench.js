@@ -7,14 +7,13 @@
     const page = f.mode === '3d' ? 'editor.html' : 'board.html';
     return page + '?id=' + encodeURIComponent(f.id);
   }
+  window.openBoardUrl = openUrl; // 供 landing.js 复用
 
-  // ---------- 配置状态 ----------
-  function refreshConfigBadge() {
+  // ---------- 配置状态（appId 只影响 3D） ----------
+  function refreshConfigWarn() {
     const ok = CFG.appId && CFG.appId !== 'YOUR_APP_ID';
-    const badge = document.getElementById('configBadge');
-    badge.textContent = ok ? 'appId 已配置（3D 可用）' : 'appId 未配置（3D 不可用）';
-    badge.className = 'badge ' + (ok ? 'badge-ok' : 'badge-warn');
-    document.getElementById('configWarn').hidden = !!ok;
+    const warn = document.getElementById('configWarn');
+    if (warn) warn.hidden = !!ok;
   }
 
   // ---------- 文件列表渲染 ----------
@@ -128,6 +127,6 @@
     }
   });
 
-  refreshConfigBadge();
+  refreshConfigWarn();
   render();
 })();

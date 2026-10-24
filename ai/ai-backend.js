@@ -17,13 +17,16 @@
  *   LLM_BASE_URL  默认 https://open.bigmodel.cn/api/paas/v4 （智谱，OpenAI 兼容）
  *                 备选 Gemini: https://generativelanguage.googleapis.com/v1beta/openai/
  *   LLM_API_KEY   你的 LLM API Key（只放在服务端，不要进前端）
- *   LLM_MODEL     默认 glm-4-flash （免费）；Gemini 用 gemini-2.5-flash
+ *   LLM_MODEL     默认 glm-4.7-flash （免费）；Gemini 用 gemini-2.5-flash
+ *
+ * 前端可在 payload 里带 model 覆盖（白名单见 ai/models.js）：
+ *   editor 顶栏下拉框选择，非法值回退环境变量/默认模型。
  */
 
 import { SYSTEM_PROMPT, TOOLS, TOOL_NAME } from './system-prompt.js';
+import { DEFAULT_MODEL, resolveModel, supportsVision } from './models.js';
 
 const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
-const DEFAULT_MODEL = 'glm-4-flash';
 
 /* ---------- SSE 帧 ---------- */
 function sseFrame(obj) {
@@ -149,8 +152,15 @@ function extractCommands(text) {
 }
 
 /* ---------- payload -> Chat Completions messages ---------- */
-function toChatMessages(payload) {
+function toChatMessages(payload, vision) {
   const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
+  if (vision) {
+    // 视觉模型：补充图片输入规则（仅在选用视觉模型时附加，对文本模型无影响）
+    messages[0].content +=
+      '\n\n# 图片输入\n如果用户消息里包含图片，请仔细观察图中的几何图形，用 REPL 命令按原样复原：先识别元素类型与相互关系，再调用 ' +
+      TOOL_NAME +
+      ' 工具输出命令；坐标取近似值即可。';
+  }
   if (payload && typeof payload.instructions === 'string' && payload.instructions.trim()) {
     // 编辑器自带的指令（若有）附在系统提示词后面，不覆盖我们的作图规则
     messages.push({ role: 'system', content: payload.instructions });
@@ -191,12 +201,23 @@ function toChatMessages(payload) {
     }
     if (item.type === 'reasoning' || item.type === 'image_generation_call') continue;
 
-    // 普通消息（role/content）；content 可能是数组（多模态），取文本部分
+    // 普通消息（role/content）；content 可能是数组（多模态）
     const role = item.role;
     if (role !== 'user' && role !== 'assistant' && role !== 'system') continue;
     flushPending();
     let content = item.content;
     if (Array.isArray(content)) {
+      // 视觉模型：保留 text/image_url 两类 parts 原样透传（OpenAI 多模态格式）
+      if (vision && content.some((p) => p && typeof p === 'object' && (p.type === 'image_url' || p.type === 'input_image'))) {
+        const parts = content
+          .filter((p) => p && typeof p === 'object' && (p.type === 'text' || p.type === 'image_url' || p.type === 'input_image'))
+          .map((p) => (p.type === 'input_image' ? { type: 'image_url', image_url: { url: p.image_url || p.url || '' } } : p))
+          .filter((p) => p.type !== 'image_url' || p.image_url.url);
+        if (parts.length) {
+          messages.push({ role, content: parts });
+          continue;
+        }
+      }
       content = content
         .map((part) => (part && typeof part === 'object' ? part.text || '' : String(part ?? '')))
         .filter(Boolean)
@@ -427,7 +448,6 @@ export async function handleAiRun(request, env) {
   const cfg = {
     baseUrl: (env.LLM_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, ''),
     apiKey: env.LLM_API_KEY || '',
-    model: env.LLM_MODEL || DEFAULT_MODEL,
   };
 
   let payload;
@@ -447,6 +467,9 @@ export async function handleAiRun(request, env) {
   const runId = randId('run');
   const respId = randId('resp');
 
+  // 模型优先级：前端下拉框（白名单校验）> 环境变量 LLM_MODEL > 内置默认
+  const model = resolveModel(payload.model) || env.LLM_MODEL || DEFAULT_MODEL;
+
   let upstream;
   try {
     upstream = await fetch(cfg.baseUrl + '/chat/completions', {
@@ -456,8 +479,8 @@ export async function handleAiRun(request, env) {
         Authorization: 'Bearer ' + cfg.apiKey,
       },
       body: JSON.stringify({
-        model: cfg.model,
-        messages: toChatMessages(payload),
+        model,
+        messages: toChatMessages(payload, supportsVision(model)),
         tools: TOOLS,
         tool_choice: 'auto',
         stream: true,

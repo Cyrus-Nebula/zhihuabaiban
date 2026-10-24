@@ -6,11 +6,15 @@
  * 可选：LLM_BASE_URL / LLM_MODEL / PORT（默认 8787）
  *
  * 免费 LLM 示例：
- *   智谱 GLM-4-Flash（默认，免费）:
+ *   智谱 GLM-4.7-Flash（默认，免费，200K 上下文）:
  *     LLM_API_KEY=xxx node server/local-proxy.mjs
  *   Google Gemini（免费档）:
  *     LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/ \
  *     LLM_MODEL=gemini-2.5-flash LLM_API_KEY=xxx node server/local-proxy.mjs
+ *
+ * 前端（画板页/编辑器顶栏）还能在请求里带 model 覆盖（白名单见 ai/models.js），
+ * 可选 glm-4.7-flash / glm-4.6v-flash（视觉）/ glm-4-flash-250414 / glm-4-flash，
+ * 全部智谱普惠免费档，一个 Key 通用。
  *
  * 静态页另起一个端口：
  *   python3 -m http.server 8000

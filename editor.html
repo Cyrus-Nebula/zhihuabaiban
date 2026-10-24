@@ -11,6 +11,7 @@
     <div class="editor-topbar">
       <button class="back" id="btnBack">← 返回</button>
       <input id="docName" title="画板名称" />
+      <select id="aiModel" class="ai-model-top" title="选择免费模型（智谱普惠免费档）"></select>
       <div class="editor-status">
         <span id="saveStatus"><span class="dot"></span> 就绪</span>
         <span id="aiStatus" hidden><span class="dot busy"></span> AI 生成中…</span>
@@ -33,6 +34,7 @@
 
   <script src="js/config.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/models.js"></script>
   <script type="module" src="js/editor.js"></script>
 </body>
 </html>

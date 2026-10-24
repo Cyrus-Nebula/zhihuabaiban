@@ -7,8 +7,8 @@
  *  - 保存：{name, commands, moves} 存 localStorage；打开时重放命令 + 覆盖坐标
  *  - 导出：PNG（SVG 序列化）/ JSON
  *
- * 注意：config.js / store.js 是经典脚本（挂全局），本模块直接用全局绑定，
- * 不做 import；executor.js 是 ES module，正常 import。
+ * 注意：config.js / store.js / models.js 是经典脚本（挂全局），本模块直接用
+ * 全局绑定，不做 import；executor.js 是 ES module，正常 import。
  */
 
 import { createExecutor } from './executor.js';
@@ -45,7 +45,7 @@ let doc = { name: '未命名画板', commands: [], moves: [] };
 if (!fileId) {
   const f = Store.create(doc.name, '2d');
   fileId = f.id;
-  history.replaceState(null, '', 'board.html?id=' + fileId);
+  window.history.replaceState(null, '', 'board.html?id=' + fileId);
 } else {
   const f = Store.get(fileId);
   if (!f) {
@@ -254,7 +254,64 @@ $('file-import').addEventListener('change', (e) => {
 });
 
 /* ---------- AI 面板 ---------- */
-const history = [];
+// 注意：别叫 history——会遮蔽全局 window.history（TDZ 会让上面的 replaceState 崩溃）
+const chatHistory = [];
+
+/* ---- 模型选择（白名单来自 js/models.js，持久化 localStorage）---- */
+const MODELS = Array.isArray(window.DAJIAO_MODELS) ? window.DAJIAO_MODELS : [];
+const modelSel = $('ai-model');
+MODELS.forEach((m) => {
+  const opt = document.createElement('option');
+  opt.value = m.id;
+  opt.textContent = m.name;
+  modelSel.appendChild(opt);
+});
+const savedModel = localStorage.getItem('dajiao-board-model');
+if (savedModel && MODELS.some((m) => m.id === savedModel)) modelSel.value = savedModel;
+modelSel.addEventListener('change', () => {
+  localStorage.setItem('dajiao-board-model', modelSel.value);
+  updateImgBtn();
+});
+
+function isVisionModel() {
+  const m = MODELS.find((x) => x.id === modelSel.value);
+  return !!(m && m.vision);
+}
+
+/* ---- 图片上传（仅视觉模型显示按钮）---- */
+let pendingImage = null; // {dataUrl, name}
+const MAX_IMG_BYTES = 5 * 1024 * 1024;
+
+function updateImgBtn() {
+  $('ai-img-btn').classList.toggle('hidden', !isVisionModel());
+  if (!isVisionModel()) clearImage();
+}
+function clearImage() {
+  pendingImage = null;
+  $('ai-img-preview').classList.add('hidden');
+  $('ai-img-thumb').removeAttribute('src');
+  $('ai-img-name').textContent = '';
+}
+$('ai-img-btn').addEventListener('click', () => $('ai-img-input').click());
+$('ai-img-clear').addEventListener('click', clearImage);
+$('ai-img-input').addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { toast('请选择图片文件'); return; }
+  if (file.size > MAX_IMG_BYTES) { toast('图片不能超过 5MB'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    pendingImage = { dataUrl: String(reader.result), name: file.name };
+    $('ai-img-thumb').src = pendingImage.dataUrl;
+    $('ai-img-name').textContent = pendingImage.name;
+    $('ai-img-preview').classList.remove('hidden');
+  };
+  reader.onerror = () => toast('图片读取失败');
+  reader.readAsDataURL(file);
+});
+updateImgBtn();
+
 function appendLog(role, text) {
   const div = document.createElement('div');
   div.className = 'ai-msg ' + role;
@@ -265,17 +322,27 @@ function appendLog(role, text) {
 
 async function aiSend() {
   const text = aiInput.value.trim();
-  if (!text) return;
-  appendLog('user', text);
-  history.push({ role: 'user', content: text });
+  if (!text && !pendingImage) return;
+  const shown = (pendingImage ? '［图片］' : '') + (text || '请按这张图片复原几何图形');
+  appendLog('user', shown);
+  chatHistory.push({ role: 'user', content: shown });
   aiInput.value = '';
+  const image = pendingImage ? pendingImage.dataUrl : undefined;
+  const model = modelSel.value;
+  clearImage();
   $('ai-send').disabled = true;
   $('ai-send').textContent = '生成中…';
   try {
     const res = await fetch(CFG.boardAiEndpoint || '/api/ai/board', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, context: executor.describe(), history: history.slice(-10) }),
+      body: JSON.stringify({
+        message: text || '请按这张图片复原几何图形',
+        model,
+        image,
+        context: executor.describe(),
+        history: chatHistory.slice(-10),
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.ok === false) throw new Error(data.error || 'HTTP ' + res.status);
@@ -288,7 +355,7 @@ async function aiSend() {
     }
     if (data.message) {
       appendLog('ai', data.message);
-      history.push({ role: 'assistant', content: data.message });
+      chatHistory.push({ role: 'assistant', content: data.message });
     }
   } catch (e) {
     appendLog('ai', '⚠️ ' + e.message);
@@ -301,6 +368,13 @@ $('ai-send').addEventListener('click', aiSend);
 aiInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend(); }
 });
+
+/* ---- 移动端 AI 抽屉（FAB 唤出 / 关闭钮收起）---- */
+$('ai-fab').addEventListener('click', () => {
+  $('aiPanel').classList.add('open');
+  aiInput.focus();
+});
+$('ai-close').addEventListener('click', () => $('aiPanel').classList.remove('open'));
 
 /* ---------- Toast ---------- */
 let toastTimer = null;
