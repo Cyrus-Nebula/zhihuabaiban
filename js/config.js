@@ -16,7 +16,7 @@
  */
 window.DAJIAO_CONFIG = {
   // ↓↓↓ 改成你的 appId ↓↓↓
-  appId: 'YOUR_APP_ID',
+  appId: 'ZYGKAQXC',
 
   // 免费 AI 后端地址（二选一，见 README）
   aiEndpoint: '/api/ai/run',
