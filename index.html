@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>我的画板 · 自用几何画板</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-logo">◺</span>
+      <span class="brand-name">自用几何画板</span>
+      <span class="brand-sub">基于大角几何开放 SDK · 数据只存在本机</span>
+    </div>
+    <div id="configBadge" class="badge badge-warn">appId 未配置</div>
+  </header>
+
+  <main class="container">
+    <div id="configWarn" class="banner banner-warn" hidden>
+      <strong>还没有配置 appId，画板无法加载。</strong>
+      请打开 <code>js/config.js</code>，把 <code>appId</code> 换成你在
+      <a href="https://open.dajiaoai.com/console/dashboard" target="_blank" rel="noopener">大角几何开放平台控制台</a>
+      创建应用后获得的 ID；本地测试请把 <code>localhost</code> 加进控制台白名单。
+    </div>
+
+    <section class="actions">
+      <button class="btn btn-primary" id="btnNew2d">＋ 新建平面画板</button>
+      <button class="btn btn-primary" id="btnNew3d">＋ 新建立体画板</button>
+      <button class="btn btn-ghost" id="btnImport">导入 .json 工程</button>
+      <input type="file" id="fileInput" accept=".json,application/json" hidden />
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">我的画板 <span class="muted" id="fileCount"></span></h2>
+      <div id="fileList" class="file-list"></div>
+      <div id="emptyState" class="empty" hidden>
+        还没有画板。点击上方「新建平面画板」开始，或导入已有的 .json 工程文件。
+      </div>
+    </section>
+
+    <footer class="footer">
+      <p>画板引擎由 <a href="https://dajiaoai.com" target="_blank" rel="noopener">大角几何</a> 提供（iframe 嵌入，Apache-2.0 SDK）；
+         AI 对话经本地代理转发，API Key 不经过本页面。文件全部保存在浏览器 localStorage，换浏览器/清缓存会丢失，重要画板请及时导出 .json。</p>
+    </footer>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/workbench.js"></script>
+</body>
+</html>

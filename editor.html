@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>画板编辑器</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="editor-layout">
+    <div class="editor-topbar">
+      <button class="back" id="btnBack">← 返回</button>
+      <input id="docName" title="画板名称" />
+      <div class="editor-status">
+        <span id="saveStatus"><span class="dot"></span> 就绪</span>
+        <span id="aiStatus" hidden><span class="dot busy"></span> AI 生成中…</span>
+      </div>
+    </div>
+    <div id="editorHost">
+      <div class="loading-mask" id="loadingMask">
+        <div class="spinner"></div>
+        <div>正在加载画板引擎…</div>
+      </div>
+      <div class="error-mask" id="errorMask">
+        <h3>画板加载失败</h3>
+        <p id="errorText"></p>
+        <p>常见原因：① <code>js/config.js</code> 里 appId 未配置或填错；
+           ② 当前域名没有加进控制台白名单（本地测试需加 <code>localhost</code>）；
+           ③ 网络无法访问 dajiaoai.com。</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/store.js"></script>
+  <script type="module" src="js/editor.js"></script>
+</body>
+</html>
