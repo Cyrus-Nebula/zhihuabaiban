@@ -122,8 +122,10 @@
       heroStatus.className = 'hero-ai-status';
       heroStatus.textContent = data.message || 'AI 没有生成作图命令，换个更具体的描述试试（如：画一个半径为 3 的圆）。';
     } catch (e) {
+      // 后端已返回面向用户的完整句式时直接展示，看不懂的原始错误才加前缀
+      const msg = (e && e.message) || '网络异常，请检查网络后重试';
       heroStatus.className = 'hero-ai-status error';
-      heroStatus.textContent = '生成失败：' + e.message;
+      heroStatus.textContent = /失败|重试|稍后|请|异常/.test(msg) ? msg : '生成失败：' + msg;
     } finally {
       heroSend.disabled = false;
       heroSend.textContent = '生成画板';
