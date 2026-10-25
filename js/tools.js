@@ -48,6 +48,47 @@ export function createTools(ctx) {
   let created = [];   // 本次作图新建的点 id（取消时清理）
   let lastClick = [0, 0];
 
+  /* ---------- 多边形绘制预览（对标大角几何：折线预览 + 到鼠标的虚线） ---------- */
+  const PREVIEW_STYLE = { strokeColor: '#F59E0B', strokeWidth: 1.5, dash: 2, withLabel: false, highlight: false, name: '__preview__' };
+  let previewChain = null; // 已选顶点折线
+  let previewSeg = null;   // 最后顶点 -> 鼠标
+  let previewRaf = 0;
+  let previewPos = [0, 0];
+
+  function clearPreview() {
+    if (previewChain) { try { board.removeObject(previewChain); } catch (_) { /* 忽略 */ } previewChain = null; }
+    if (previewSeg) { try { board.removeObject(previewSeg); } catch (_) { /* 忽略 */ } previewSeg = null; }
+  }
+  /** 屏幕坐标 -> 用户坐标（不依赖 JXG 事件封装，原生 mousemove 也能用） */
+  function usrFromClient(cx, cy) {
+    const o = board.origin.scrCoords;
+    const r = board.renderer.svgRoot.getBoundingClientRect();
+    return [Math.round(((cx - r.left - o[1]) / board.unitX) * 1000) / 1000,
+            Math.round(((o[2] - (cy - r.top)) / board.unitY) * 1000) / 1000];
+  }
+  function updatePreview() {
+    clearPreview();
+    if (current !== 'polygon' || !pending.length) return;
+    const els = pending.map((p) => executor.registry.get(p.id)).filter(Boolean);
+    if (els.length >= 2) {
+      try { previewChain = board.create('polygonalchain', els, { ...PREVIEW_STYLE }); } catch (_) { previewChain = null; }
+    }
+    if (els.length) {
+      try { previewSeg = board.create('segment', [els[els.length - 1], previewPos], { ...PREVIEW_STYLE }); } catch (_) { previewSeg = null; }
+    }
+  }
+  // 注意：必须绑在 board 容器而不是 svgRoot——JXGraph 的 html 覆盖层会挡住真实
+  // mousemove，事件 bubble 不经过 svg；JXGraph 自己也正是把事件监听挂在容器上的
+  function onSvgMove(evt) {
+    if (current !== 'polygon' || !pending.length) { if (previewChain || previewSeg) clearPreview(); return; }
+    previewPos = usrFromClient(evt.clientX, evt.clientY);
+    if (previewRaf) return;
+    previewRaf = requestAnimationFrame(() => { previewRaf = 0; updatePreview(); });
+  }
+  const boardBox = board.containerObj || document.getElementById('box');
+  boardBox.addEventListener('mousemove', onSvgMove);
+  boardBox.addEventListener('mouseleave', () => { if (previewChain || previewSeg) clearPreview(); });
+
   /* ---------- 拾取 ---------- */
   function underMouse(evt) {
     try { return board.getAllObjectsUnderMouse(evt) || []; } catch (_) { return []; }
@@ -128,6 +169,8 @@ export function createTools(ctx) {
       id = createPoint(x, y);
       if (!id) return true;
     }
+    // 多边形：点击已选顶点 = 闭合图形（对标大角几何的交互）
+    if (def.open && pending.length >= 3 && pending.some((p) => p.id === id)) { finish(); return true; }
     pending.push({ kind: 'point', id, x, y });
     afterStep(def);
     return true;
@@ -135,7 +178,7 @@ export function createTools(ctx) {
 
   function afterStep(def) {
     if (def.open) {
-      if (pending.length >= 3) progress(`多边形：已选 ${pending.length} 个顶点，回车或点“完成多边形”结束`);
+      if (pending.length >= 3) progress(`多边形：已选 ${pending.length} 个顶点——点击起点闭合，或按回车/点“完成多边形”`);
       else progress(`多边形：继续点击顶点（${pending.length}/至少3个）`);
       return;
     }
@@ -152,6 +195,7 @@ export function createTools(ctx) {
   }
 
   function finish() {
+    clearPreview();
     const def = TOOLS[current];
     const ids = pending.map((p) => p.id);
     let cmd = null;
@@ -197,6 +241,7 @@ export function createTools(ctx) {
 
   /* ---------- 取消 / 结束多边形 ---------- */
   function cancelPending(silent) {
+    clearPreview();
     if (created.length) {
       for (const cid of created) executor.remove(cid);
       ctx.removeCmds(created);
@@ -273,5 +318,6 @@ export function createTools(ctx) {
     pick: pickObject,
     pickPoint,
     askInput,
+    clearPreview,
   };
 }
