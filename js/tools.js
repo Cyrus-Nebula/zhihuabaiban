@@ -154,18 +154,17 @@ export function createTools(ctx) {
   function finish() {
     const def = TOOLS[current];
     const ids = pending.map((p) => p.id);
-    const id = nextId(PREFIX[current] || 'o');
     let cmd = null;
     switch (current) {
-      case 'segment': cmd = { op: 'segment', id, from: ids[0], to: ids[1] }; break;
-      case 'line': cmd = { op: 'line', id, through: [ids[0], ids[1]] }; break;
-      case 'ray': cmd = { op: 'ray', id, from: ids[0], to: ids[1] }; break;
-      case 'circle': cmd = { op: 'circle', id, center: ids[0], through: ids[1] }; break;
-      case 'polygon': cmd = { op: 'polygon', id, points: ids }; break;
-      case 'midpoint': cmd = { op: 'midpoint', id, of: [ids[0], ids[1]] }; break;
-      case 'perpendicular': cmd = { op: 'perpendicular', id, of: ids[0], through: ids[1] }; break;
-      case 'parallel': cmd = { op: 'parallel', id, of: ids[0], through: ids[1] }; break;
-      case 'angle': cmd = { op: 'angle', id, points: [ids[0], ids[1], ids[2]] }; break;
+      case 'segment': cmd = { op: 'segment', from: ids[0], to: ids[1] }; break;
+      case 'line': cmd = { op: 'line', through: [ids[0], ids[1]] }; break;
+      case 'ray': cmd = { op: 'ray', from: ids[0], to: ids[1] }; break;
+      case 'circle': cmd = { op: 'circle', center: ids[0], through: ids[1] }; break;
+      case 'polygon': cmd = { op: 'polygon', points: ids }; break;
+      case 'midpoint': cmd = { op: 'midpoint', of: [ids[0], ids[1]] }; break;
+      case 'perpendicular': cmd = { op: 'perpendicular', of: ids[0], through: ids[1] }; break;
+      case 'parallel': cmd = { op: 'parallel', of: ids[0], through: ids[1] }; break;
+      case 'angle': cmd = { op: 'angle', points: [ids[0], ids[1], ids[2]] }; break;
       case 'intersect': {
         // 两个候选交点都试算，保留离点击位置近的那个
         let index = 0;
@@ -183,14 +182,15 @@ export function createTools(ctx) {
           }
           arr.forEach((p) => { try { board.removeObject(p); } catch (_) { /* 忽略 */ } });
         } catch (_) { /* 交不存在等情况交给 execute 报错 */ }
-        cmd = { op: 'intersect', id, of: [ids[0], ids[1]], index };
+        cmd = { op: 'intersect', of: [ids[0], ids[1]], index };
         break;
       }
       default: break;
     }
     pending = [];
     created = [];
-    if (cmd) runCommands(cmd);
+    // 点/单步工具没有对象命令，不分配 id（避免编号跳号）
+    if (cmd) { cmd.id = nextId(PREFIX[current] || 'o'); runCommands(cmd); }
     ctx.endAction();
     setTool('select');
   }
