@@ -55,6 +55,7 @@
         <div class="ai-tabs">
           <button class="ai-tab active" type="button" data-view="chat">对话</button>
           <button class="ai-tab" type="button" data-view="objects">对象<span id="obj-count" class="obj-count">0</span></button>
+          <button class="ai-tab" type="button" data-view="record">记录<span id="rec-count" class="obj-count">0</span></button>
         </div>
         <select id="ai-model" class="ai-model" title="选择免费模型（智谱普惠免费档）"></select>
         <button id="ai-close" class="ai-close" type="button" title="收起面板" aria-label="收起面板">
@@ -90,6 +91,7 @@
         <div id="obj-list" class="obj-list"></div>
         <div id="obj-props" class="obj-props hidden">
           <div class="obj-props-title">选中：<b id="obj-props-name"></b></div>
+          <div class="obj-props-row"><span class="obj-props-label">构造</span><span id="obj-props-cmd" class="obj-props-cmd"></span></div>
           <div class="obj-props-row">
             <span class="obj-props-label">颜色</span>
             <div id="obj-colors" class="obj-colors"></div>
@@ -113,6 +115,25 @@
             <button id="obj-delete" class="btn small danger" type="button">删除</button>
           </div>
         </div>
+      </div>
+
+      <div id="view-record" class="ai-view hidden">
+        <div class="rec-toolbar">
+          <button id="rec-enter" class="btn small" type="button" title="进入回放模式，逐步重演作图过程">进入回放</button>
+          <button id="rec-play" class="btn small" type="button" title="播放 / 暂停（空格）">▶ 播放</button>
+          <button id="rec-prev" class="btn small ghost" type="button" title="上一步（←）">◀</button>
+          <button id="rec-next" class="btn small ghost" type="button" title="下一步（→）">▶</button>
+          <button id="rec-stop" class="btn small ghost" type="button" title="退出回放，恢复完整图形（Esc）">■ 退出</button>
+          <select id="rec-speed" class="rec-speed" title="播放速度">
+            <option value="900">0.5×</option>
+            <option value="450" selected>1×</option>
+            <option value="220">2×</option>
+            <option value="110">4×</option>
+          </select>
+          <span class="rec-step" id="rec-step">0 / 0</span>
+        </div>
+        <div class="rec-hint">作图过程记录：每一步对应一条构造命令。点「进入回放」开始逐步重演；点击任一步骤可跳转，退出后恢复完整图形。</div>
+        <div id="rec-list" class="rec-list"></div>
       </div>
     </aside>
   </main>

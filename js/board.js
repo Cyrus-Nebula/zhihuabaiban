@@ -101,21 +101,25 @@ function restore(s) {
   scheduleSave();
 }
 function undo() {
+  if (blockIfReplaying()) return;
   if (!undoStack.length) { toast('没有可撤销的操作'); return; }
   redoStack.push(snap());
   restore(undoStack.pop());
   clearSelection();
   updateUndoButtons();
   refreshObjects();
+  refreshRecord();
   toast('已撤销');
 }
 function redo() {
+  if (blockIfReplaying()) return;
   if (!redoStack.length) { toast('没有可重做的操作'); return; }
   undoStack.push(snap());
   restore(redoStack.pop());
   clearSelection();
   updateUndoButtons();
   refreshObjects();
+  refreshRecord();
   toast('已重做');
 }
 function updateUndoButtons() {
@@ -125,6 +129,7 @@ function updateUndoButtons() {
 
 /** 执行命令（单个或数组），成功的写回文档；返回执行结果 */
 function runCommands(cmds) {
+  if (blockIfReplaying()) return []; // 回放中禁止任何写操作（样式/改名/测量等都走这里）
   const list = Array.isArray(cmds) ? cmds : [cmds];
   const r = executor.execute(list);
   list.forEach((cmd, i) => {
@@ -136,11 +141,13 @@ function runCommands(cmds) {
   if (bad.length) toast('命令执行失败：' + bad.map((b) => b.error).join('；'));
   scheduleSave();
   refreshObjects();
+  refreshRecord();
   return r;
 }
 
 /** 删除对象 + 级联删除依赖它的对象 */
 function deleteObject(id) {
+  if (blockIfReplaying()) return 0;
   if (!executor.registry.has(id)) { toast('对象不存在'); return 0; }
   pushUndo();
   const doomed = new Set([id]);
@@ -167,6 +174,7 @@ function deleteObject(id) {
   for (const did of doomed) executor.remove(did);
   scheduleSave();
   refreshObjects();
+  refreshRecord();
   const extra = doomed.size - 1;
   toast(extra > 0 ? `已删除 ${id} 及依赖它的 ${extra} 个对象` : '已删除 ' + id);
   return doomed.size;
@@ -255,7 +263,9 @@ function switchView(name) {
   tabBtns.forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   $('view-chat').classList.toggle('hidden', name !== 'chat');
   $('view-objects').classList.toggle('hidden', name !== 'objects');
+  $('view-record').classList.toggle('hidden', name !== 'record');
   if (name === 'objects') refreshObjects();
+  if (name === 'record') refreshRecord();
 }
 tabBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.currentTarget.blur(); switchView(b.dataset.view); }));
 $('obj-refresh').addEventListener('click', () => refreshObjects());
@@ -307,6 +317,8 @@ function refreshProps() {
   const el = executor.registry.get(id);
   props.classList.remove('hidden');
   $('obj-props-name').textContent = `${id}（${TYPE_NAME[el.elType] || el.elType}）`;
+  // 构造信息：该对象由哪条命令产生（与记录页共用 describeCmd）
+  $('obj-props-cmd').textContent = describeCmd(findCmd(id));
   // 颜色
   const colors = $('obj-colors');
   colors.innerHTML = '';
@@ -473,6 +485,208 @@ $('obj-delete').addEventListener('click', () => {
   clearSelection();
 });
 
+/* ---------- 作图记录 / 回放（Construction Protocol，对标 GeoGebra/大角几何） ---------- *
+ * 把 doc.commands 变成可读的步骤列表；进入回放后逐步重演作图过程：
+ *   - 上一步/下一步/点击任一步骤跳转/自动播放（可调速度）
+ *   - 回放中禁止编辑（撤销/删除/AI/保存等），退出（Esc 或■退出）后恢复完整图形
+ *   - 对象面板「构造」行显示每个对象是由哪条命令造出来的
+ */
+function fmtNum(v) { const n = Number(v); return Number.isFinite(n) ? Math.round(n * 100) / 100 : '?'; }
+function fmtPt(v) { return Array.isArray(v) ? `(${fmtNum(v[0])}, ${fmtNum(v[1])})` : '?'; }
+function fmtList(v) { return Array.isArray(v) ? v.join('、') : (v == null ? '?' : String(v)); }
+
+/** 单条命令的中文步骤描述（记录列表 + 对象构造信息共用） */
+function describeCmd(cmd) {
+  if (!cmd) return '（无构造记录）';
+  switch (cmd.op) {
+    case 'clear': return '清空画板';
+    case 'point': return `绘制点 ${cmd.id} ${fmtPt([cmd.x, cmd.y])}${cmd.fixed ? '（固定）' : ''}`;
+    case 'segment': return `连接线段 ${cmd.id}：${fmtList(cmd.from)} — ${fmtList(cmd.to)}`;
+    case 'ray': return `绘制射线 ${cmd.id}：${fmtList(cmd.from)} 经过 ${fmtList(cmd.to)}`;
+    case 'line': return `绘制直线 ${cmd.id}：经过 ${fmtList(cmd.through)}`;
+    case 'circle':
+      return (cmd.through != null && String(cmd.through) !== String(cmd.center))
+        ? `绘制圆 ${cmd.id}：圆心 ${cmd.center}，经过 ${cmd.through}`
+        : `绘制圆 ${cmd.id}：圆心 ${cmd.center}，半径 ${fmtNum(cmd.radius)}`;
+    case 'polygon': return `绘制多边形 ${cmd.id}：顶点 ${fmtList(cmd.points)}`;
+    case 'midpoint': return `取中点 ${cmd.id}：${fmtList(cmd.of)} 的中点`;
+    case 'intersect': return `取交点 ${cmd.id}：${fmtList(cmd.of)}`;
+    case 'glider': return `创建动点 ${cmd.id}：在 ${cmd.on} 上 ${fmtPt([cmd.x, cmd.y])}`;
+    case 'perpendicular': return `作垂线 ${cmd.id}：过 ${fmtList(cmd.through)} 垂直于 ${fmtList(cmd.of)}`;
+    case 'parallel': return `作平行线 ${cmd.id}：过 ${fmtList(cmd.through)} 平行于 ${fmtList(cmd.of)}`;
+    case 'function': return `绘制函数曲线 ${cmd.id}：y = ${cmd.expr}`;
+    case 'text':
+      if (cmd.bind) {
+        const kind = { distance: '两点距离', length: '长度', radius: '半径', angle: '角度' }[cmd.bind.kind] || cmd.bind.kind;
+        return `插入测量文本 ${cmd.id}（${kind}）`;
+      }
+      return `插入文本 ${cmd.id}：「${cmd.text == null ? '' : cmd.text}」`;
+    case 'angle': return `作角 ${cmd.id}：${fmtList(cmd.points)}`;
+    case 'label': return `修改标签：${cmd.target} →「${cmd.text == null ? '' : cmd.text}」`;
+    case 'style': {
+      const parts = [];
+      if (cmd.color) parts.push('颜色 ' + cmd.color);
+      if (cmd.strokeWidth != null) parts.push('线宽 ' + cmd.strokeWidth);
+      if (cmd.dash != null) parts.push(cmd.dash ? '虚线' : '实线');
+      if (cmd.fill) parts.push('填充');
+      if (cmd.hidden != null) parts.push(cmd.hidden ? '隐藏' : '显示');
+      return `设置样式：${cmd.target}${parts.length ? '（' + parts.join('，') + '）' : ''}`;
+    }
+    default: return `${cmd.op} ${cmd.id || cmd.target || ''}`;
+  }
+}
+
+/* ---- 回放状态机 ---- */
+let stepMode = false;       // 是否处于回放模式
+let stepIdx = 0;            // 已回放的步数（0..stepCommands.length）
+let stepCommands = [];      // 进入回放时的命令快照
+let fullSnapshot = '';      // 进入回放前的完整快照（commands + moves），退出时恢复
+let playTimer = null;       // 自动播放定时器
+
+/** 回放中禁止一切编辑操作（避免破坏重演、避免保存半成品） */
+function blockIfReplaying() {
+  if (stepMode) { toast('回放中，请先退出记录模式（Esc 或点「退出」）'); return true; }
+  return false;
+}
+
+function enterStep() {
+  if (stepMode) return;
+  if (!doc.commands.length) { toast('还没有作图记录，先画点什么吧'); return; }
+  fullSnapshot = snap();
+  stepCommands = doc.commands.slice();
+  stepIdx = 0;
+  executor.clearAll();
+  doc.commands = [];
+  stepMode = true;
+  tools.setTool('select');
+  clearSelection();
+  switchView('record');
+  applyStepUi();
+  renderRecord();
+  refreshObjects();
+  toast(`已进入回放：共 ${stepCommands.length} 步，←/→ 单步，空格播放`);
+}
+
+/** 跳转到第 n 步（清空后重演前 n 条命令） */
+function jumpTo(n) {
+  if (!stepMode) return;
+  const target = Math.max(0, Math.min(stepCommands.length, n));
+  executor.clearAll();
+  doc.commands = [];
+  const r = executor.execute(stepCommands.slice(0, target));
+  doc.commands = stepCommands.slice(0, target).filter((c, i) => r[i] && r[i].ok);
+  const data = JSON.parse(fullSnapshot);
+  executor.applyMoves(Array.isArray(data.m) ? data.m : []); // 保留拖拽后的最终坐标
+  stepIdx = target;
+  applyStepUi();
+  refreshObjects();
+  renderRecord();
+}
+function stepNext() {
+  if (!stepMode) { enterStep(); if (!stepMode) return; }
+  if (stepIdx >= stepCommands.length) { toast('已经是最后一步'); return; }
+  jumpTo(stepIdx + 1);
+}
+function stepPrev() {
+  if (!stepMode) { enterStep(); if (!stepMode) return; }
+  if (stepIdx <= 0) { toast('已经是第一步'); return; }
+  jumpTo(stepIdx - 1);
+}
+
+function playPause() {
+  clearInterval(playTimer);
+  playTimer = null;
+  $('rec-play').innerHTML = '▶ 播放';
+}
+function playToggle() {
+  if (!stepMode) { enterStep(); if (!stepMode) return; }
+  if (playTimer) { playPause(); return; }
+  if (stepIdx >= stepCommands.length) jumpTo(0); // 播完再播 = 从头开始
+  const gap = Number($('rec-speed').value) || 450;
+  playTimer = setInterval(() => {
+    if (stepIdx >= stepCommands.length) { playPause(); return; }
+    jumpTo(stepIdx + 1);
+  }, gap);
+  $('rec-play').innerHTML = '⏸ 暂停';
+}
+
+function exitStep() {
+  playPause();
+  if (!stepMode) return;
+  stepMode = false;
+  restore(fullSnapshot); // 恢复完整图形（commands + moves）并保存
+  clearSelection();
+  updateUndoButtons();
+  refreshObjects();
+  renderRecord();
+  applyStepUi();
+  toast('已退出回放，图形已恢复');
+}
+
+/** 回放相关 UI 状态（按钮禁用、步骤计数、提示条） */
+function applyStepUi() {
+  $('btn-undo').disabled = stepMode || !undoStack.length;
+  $('btn-redo').disabled = stepMode || !redoStack.length;
+  $('rec-enter').disabled = stepMode;
+  $('rec-prev').disabled = !stepMode || stepIdx <= 0;
+  $('rec-next').disabled = !stepMode || stepIdx >= stepCommands.length;
+  $('rec-stop').disabled = !stepMode;
+  $('rec-step').textContent = stepMode ? `${stepIdx} / ${stepCommands.length}` : '0 / 0';
+  if (stepMode) {
+    toolHint.textContent = `回放中：第 ${stepIdx} / ${stepCommands.length} 步 · ←/→ 单步 · 空格播放 · Esc 退出`;
+  } else {
+    showSelection();
+  }
+}
+
+/** 重建步骤列表（面板不可见时跳过；非回放状态也展示全部步骤，点击行自动进入回放并跳转） */
+function renderRecord() {
+  const list = $('rec-list');
+  if ($('view-record').classList.contains('hidden')) return;
+  const cmds = stepMode ? stepCommands : doc.commands;
+  // 回放中：高亮“最后执行的那一步”；非回放：全部已执行，高亮最后一步
+  const cur = stepMode ? stepIdx - 1 : cmds.length - 1;
+  list.innerHTML = '';
+  if (!cmds.length) {
+    list.innerHTML = '<div class="rec-empty">还没有作图记录，先用左侧工具或 AI 作图吧</div>';
+    return;
+  }
+  let activeRow = null;
+  cmds.forEach((cmd, i) => {
+    const row = document.createElement('div');
+    row.className = 'rec-row ' + (i === cur ? 'active' : 'done');
+    row.title = '点击从这一步开始回放';
+    const no = document.createElement('span');
+    no.className = 'rec-no';
+    no.textContent = String(i + 1);
+    const desc = document.createElement('span');
+    desc.className = 'rec-desc';
+    desc.textContent = describeCmd(cmd);
+    row.append(no, desc);
+    row.addEventListener('click', () => {
+      playPause();
+      if (!stepMode) enterStep();
+      jumpTo(i + 1);
+    });
+    list.appendChild(row);
+    if (i === cur) activeRow = row;
+  });
+  if (activeRow && activeRow.scrollIntoView) activeRow.scrollIntoView({ block: 'nearest' });
+}
+
+/** 文档变更后刷新记录（面板不可见时只更新徽标计数） */
+function refreshRecord() {
+  $('rec-count').textContent = String(doc.commands.length);
+  if (!stepMode) renderRecord();
+}
+
+$('rec-play').addEventListener('click', (ev) => { ev.currentTarget.blur(); playToggle(); });
+$('rec-enter').addEventListener('click', (ev) => { ev.currentTarget.blur(); enterStep(); });
+$('rec-prev').addEventListener('click', (ev) => { ev.currentTarget.blur(); playPause(); stepPrev(); });
+$('rec-next').addEventListener('click', (ev) => { ev.currentTarget.blur(); playPause(); stepNext(); });
+$('rec-stop').addEventListener('click', (ev) => { ev.currentTarget.blur(); exitStep(); });
+$('rec-speed').addEventListener('change', () => { if (playTimer) { playPause(); playToggle(); } });
+
 /* ---------- id 分配 / 坐标换算 ---------- */
 let idSeq = 1;
 function nextId(prefix) {
@@ -520,8 +734,10 @@ $('btn-poly-done').addEventListener('click', (ev) => { ev.currentTarget.blur(); 
 $('btn-undo').addEventListener('click', (ev) => { ev.currentTarget.blur(); undo(); });
 $('btn-redo').addEventListener('click', (ev) => { ev.currentTarget.blur(); redo(); });
 applyToolUi('select', tools.TOOLS.select); // 初始提示
+applyStepUi(); // 回放相关按钮初始状态（此时 tools 已就绪）
 
 board.on('down', (evt) => {
+  if (stepMode) { toast('回放中，按 Esc 退出后可继续作图'); return; }
   if (tools.current() === 'select') {
     // 精确点优先选点，其次选顶层对象；不拦截事件，保留原生拖拽/平移
     const id = tools.pickPoint(evt) || tools.pick(evt, false);
@@ -544,6 +760,14 @@ window.addEventListener('keydown', (e) => {
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = String(e.key || '').toLowerCase();
+  // 回放模式：方向键单步、空格播放/暂停、Esc 退出（屏蔽其他快捷键）
+  if (stepMode) {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); playPause(); stepPrev(); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); playPause(); stepNext(); }
+    else if (e.key === ' ') { e.preventDefault(); playToggle(); }
+    else if (e.key === 'Escape') { e.preventDefault(); exitStep(); }
+    return;
+  }
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (mod && k === 'y') { e.preventDefault(); redo(); }
   else if (mod && k === 's') { e.preventDefault(); saveNow(); toast('已保存'); }
@@ -564,6 +788,7 @@ function normalizeExpr(raw) {
   return s;
 }
 $('btn-fn-add').addEventListener('click', () => {
+  if (blockIfReplaying()) return;
   const expr = normalizeExpr($('fn-input').value);
   if (!expr) { toast('先输入函数表达式'); return; }
   pushUndo();
@@ -578,6 +803,7 @@ function scheduleSave() {
   saveTimer = setTimeout(saveNow, 800);
 }
 function saveNow() {
+  if (stepMode) return; // 回放中 doc.commands 是临时的半成品，禁止保存
   doc.moves = executor.moves();
   Store.saveContent(fileId, { name: nameInput.value.trim() || '未命名画板', commands: doc.commands, moves: doc.moves });
   setSaveStatus('已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
@@ -602,6 +828,7 @@ $('btn-export-json').addEventListener('click', () => {
 });
 
 $('btn-export-png').addEventListener('click', () => {
+  if (blockIfReplaying()) return;
   try {
     const svg = board.renderer.svgRoot;
     const rect = svg.getBoundingClientRect();
@@ -642,6 +869,7 @@ $('file-import').addEventListener('change', (e) => {
   const reader = new FileReader();
   reader.onload = () => {
     try {
+      if (blockIfReplaying()) return;
       const data = JSON.parse(String(reader.result));
       const commands = Array.isArray(data) ? data : data.commands;
       if (!Array.isArray(commands)) throw new Error('文件里没有 commands 数组');
@@ -660,6 +888,7 @@ $('file-import').addEventListener('change', (e) => {
       updateUndoButtons();
       saveNow();
       refreshObjects();
+      refreshRecord();
       toast(bad.length ? `导入完成，${bad.length} 条命令执行失败` : '导入成功');
     } catch (err) {
       toast('导入失败：' + err.message);
@@ -739,6 +968,7 @@ function appendLog(role, text) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function aiSend() {
+  if (blockIfReplaying()) return;
   const text = aiInput.value.trim();
   if (!text && !pendingImage) return;
   const shown = (pendingImage ? '［图片］' : '') + (text || '请按这张图片复原几何图形');
@@ -827,6 +1057,7 @@ if (doc.commands.length) {
 }
 updateUndoButtons();
 refreshObjects();
+refreshRecord();
 
 /* ---------- 调试/测试钩子（控制台与自动化测试用） ---------- */
 window.__dajiao = { board, executor, tools, getDoc: () => doc };
