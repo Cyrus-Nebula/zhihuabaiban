@@ -72,11 +72,23 @@ export function createExecutor(board) {
   const resolveList = (arr) => (Array.isArray(arr) ? arr.map(resolve) : []);
   const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
 
+  // 给元素设置标签文本（point 行内 label 与 label op 共用）
+  function applyLabel(el, text) {
+    if (!el || text == null || text === '') return;
+    try {
+      if (el.label && typeof el.label.setText === 'function') el.label.setText(String(text));
+      else if (typeof el.setLabelText === 'function') el.setLabelText(String(text));
+    } catch (_) { /* 个别元素类型没有标签，忽略 */ }
+  }
+
   function build(cmd) {
     const opt = { name: cmd.id || '' };
     switch (cmd.op) {
-      case 'point':
-        return board.create('point', [num(cmd.x, 0), num(cmd.y, 0)], { ...POINT_STYLE, ...opt, fixed: !!cmd.fixed });
+      case 'point': {
+        const pt = board.create('point', [num(cmd.x, 0), num(cmd.y, 0)], { ...POINT_STYLE, ...opt, fixed: !!cmd.fixed });
+        applyLabel(pt, cmd.label); // 模型有时把 label 直接放在点上，与独立 label op 等价
+        return pt;
+      }
       case 'segment':
         return board.create('segment', [resolve(cmd.from), resolve(cmd.to)], opt);
       case 'ray': // JSXGraph 无独立 ray，用 line 单向延伸实现
@@ -121,8 +133,12 @@ export function createExecutor(board) {
         // 会让 getAllObjectsUnderMouse 在任何位置都命中文本，破坏点选/删除
         return board.create('text', [num(cmd.x, 0), num(cmd.y, 0), content], { ...opt, display: 'internal' });
       }
-      case 'angle':
-        return board.create('angle', resolveList(cmd.points), opt);
+      case 'angle': {
+        const ang = board.create('angle', resolveList(cmd.points), opt);
+        // JXGraph 默认把元素名当角标签（如 "ang1"），清掉只留弧线/直角标记
+        if (ang.label && typeof ang.label.setText === 'function') ang.label.setText('');
+        return ang;
+      }
       case 'perpendicular':
         return board.create('perpendicular', [resolve(cmd.of), resolve(cmd.through)], opt);
       case 'parallel':

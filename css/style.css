@@ -384,7 +384,9 @@ code {
 
 .board-main { flex: 1; display: flex; min-height: 0; }
 .board-box { flex: 1; min-width: 0; background: #fff; }
-.board-box > div { width: 100%; height: 100%; }
+/* 注意：不能把 JXGraph 的 html 文本层（.JXGtext 点标签 / .JXGinfobox 坐标提示）撑成 100%——
+   JXGraph 1.14 用 inset + clip-path 定位标签，强制全尺寸会让所有点标签不可见 */
+.board-box > div:not(.JXGtext):not(.JXGinfobox) { width: 100%; height: 100%; }
 
 /* AI 面板 */
 .hidden { display: none !important; }

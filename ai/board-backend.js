@@ -303,6 +303,11 @@ export async function handleBoardAi(request, env) {
 
   const raw = await upstream.text().catch(() => '');
   if (!upstream.ok) {
+    // 429 是免费档的常见限流（并发 1），给用户可操作的提示而不是原始 JSON
+    if (upstream.status === 429) {
+      console.error('LLM 429 限流：', raw.slice(0, 200));
+      return json({ ok: false, error: 'AI 当前访问量过大（免费档限流），请稍等十几秒重试，或在面板上方切换其他模型' }, 200);
+    }
     return json({ ok: false, error: `LLM ${upstream.status}: ${raw.slice(0, 300)}` }, 200);
   }
 
