@@ -35,10 +35,17 @@
   const heroInput = $('heroAiInput');
   const heroSend = $('heroAiSend');
   const heroStatus = $('heroAiStatus');
+  let pendingImage = null; // {dataUrl, name} 待发送的题目图片
+
+  // 发送键禁用态：文字与图片都为空时置灰（与大角几何一致）
+  function updateSendState() {
+    heroSend.disabled = !(heroInput.value.trim() || pendingImage);
+  }
+  heroInput.addEventListener('input', updateSendState);
+  updateSendState();
 
   /* ---------- 题目图片上传（看图作图） ---------- */
   const MAX_IMG_BYTES = 5 * 1024 * 1024;
-  let pendingImage = null; // {dataUrl, name}
   const imgBtn = $('heroAiImgBtn');
   const imgInput = $('heroAiImgInput');
   const imgPreview = $('heroAiImgPreview');
@@ -50,6 +57,7 @@
     imgPreview.classList.add('hidden');
     imgThumb.removeAttribute('src');
     imgName.textContent = '';
+    updateSendState();
   }
   imgBtn.addEventListener('click', () => imgInput.click());
   $('heroAiImgClear').addEventListener('click', clearImage);
@@ -65,6 +73,7 @@
       imgThumb.src = pendingImage.dataUrl;
       imgName.textContent = pendingImage.name + '（AI 将看图作图）';
       imgPreview.classList.remove('hidden');
+      updateSendState();
       // 只有视觉模型能看懂图片：当前模型不支持时自动切换
       const cur = modelSel.value;
       if (!MODELS.some((m) => m.id === cur && m.vision)) {
@@ -94,7 +103,6 @@
     const image = pendingImage ? pendingImage.dataUrl : undefined;
     if (!message && !image) { toast('先描述一下要画的图形，或上传一张题目图片'); heroInput.focus(); return; }
     heroSend.disabled = true;
-    heroSend.textContent = '生成中…';
     heroStatus.hidden = false;
     heroStatus.textContent = image && !message ? 'AI 正在看题并作图…' : 'AI 正在思考并作图…';
     heroStatus.className = 'hero-ai-status pending';
@@ -128,13 +136,64 @@
       heroStatus.textContent = /失败|重试|稍后|请|异常/.test(msg) ? msg : '生成失败：' + msg;
     } finally {
       heroSend.disabled = false;
-      heroSend.textContent = '生成画板';
+      updateSendState();
       clearImage();
     }
   }
   heroSend.addEventListener('click', heroAiGenerate);
   heroInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); heroAiGenerate(); }
+  });
+
+  /* ---------- 导航：移动端汉堡菜单 + 滚动高亮 ---------- */
+  const navToggle = $('navToggle');
+  const siteLinks = $('siteLinks');
+  navToggle.addEventListener('click', () => {
+    const open = siteLinks.classList.toggle('open');
+    navToggle.setAttribute('aria-expanded', String(open));
+    navToggle.setAttribute('aria-label', open ? '关闭菜单' : '打开菜单');
+  });
+  // 点击链接或空白处后收起
+  siteLinks.addEventListener('click', (e) => {
+    if (e.target.closest('a')) siteLinks.classList.remove('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.site-nav')) siteLinks.classList.remove('open');
+  });
+
+  const linkMap = [
+    ['#quickstart', '快速入门'],
+    ['#templates', '资源库'],
+    ['#files', '我的画板'],
+    ['#about', '关于'],
+  ];
+  const spy = () => {
+    let current = '';
+    for (const [hash] of linkMap) {
+      const el = document.querySelector(hash);
+      if (el && el.getBoundingClientRect().top <= 120) current = hash;
+    }
+    siteLinks.querySelectorAll('a').forEach((a) => {
+      a.classList.toggle('active', a.getAttribute('href') === current);
+    });
+  };
+  window.addEventListener('scroll', spy, { passive: true });
+  spy();
+
+  /* ---------- 快速入门面板：收起/展开 ---------- */
+  const qsClose = $('qsClose');
+  const qsSteps = $('qsSteps');
+  qsClose.addEventListener('click', () => {
+    const hidden = qsSteps.hidden;
+    qsSteps.hidden = !hidden;
+    qsClose.textContent = hidden ? '×' : '+';
+    qsClose.setAttribute('aria-expanded', String(hidden));
+    qsClose.setAttribute('aria-label', hidden ? '收起快速入门' : '展开快速入门');
+  });
+
+  /* ---------- 浮动帮助按钮 ---------- */
+  $('fabHelp').addEventListener('click', () => {
+    document.querySelector('#about').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
   /* ---------- 模板与案例 ---------- */

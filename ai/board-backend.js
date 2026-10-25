@@ -270,11 +270,11 @@ export async function handleBoardAi(request, env) {
       : userText,
   });
 
-  // 智谱支持 response_format json_object，能显著提升 JSON 合规率；
-  // 个别模型/代理不支持时返回 400，自动去掉该参数重试一次
+  // 智谱文本模型支持 response_format json_object，能显著提升 JSON 合规率；
+  // 视觉模型（GLM-4V 系）不支持该参数，不发；个别模型/代理仍报 400 时自动去掉重试一次
   const buildBody = (withJsonFormat) => {
     const b = { model: cfg.model, messages, temperature: 0.2, stream: false };
-    if (withJsonFormat && /bigmodel\.cn/i.test(cfg.baseUrl)) {
+    if (withJsonFormat && !supportsVision(cfg.model) && /bigmodel\.cn/i.test(cfg.baseUrl)) {
       b.response_format = { type: 'json_object' };
     }
     return b;
