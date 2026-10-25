@@ -44,6 +44,84 @@ const board = JXG.JSXGraph.initBoard('box', {
 
 const executor = createExecutor(board);
 
+/* ---------- 画板设置（坐标轴/网格/背景/吸附，对标大角几何） ---------- */
+const SETTINGS_KEY = 'dajiao-board-settings';
+const boardSettings = Object.assign(
+  { axis: true, grid: true, bg: 'white', snap: false },
+  (() => { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch (_) { return {}; } })()
+);
+
+function settingsChrome() {
+  return {
+    axes: board.objectsList.filter((o) => o.elType === 'axis'),
+    grids: board.objectsList.filter((o) => o.elType === 'grid'),
+  };
+}
+function applyAxisGrid() {
+  const { axes, grids } = settingsChrome();
+  for (const a of axes) { try { a.setAttribute({ visible: boardSettings.axis }); } catch (_) { /* 忽略 */ } }
+  for (const g of grids) { try { g.setAttribute({ visible: boardSettings.grid }); } catch (_) { /* 忽略 */ } }
+  board.update();
+}
+function applyBg() {
+  const box = $('box');
+  const svg = box.querySelector('svg');
+  box.style.background = boardSettings.bg === 'dark' ? '#0f172a' : boardSettings.bg === 'beige' ? '#FAF5EC' : '';
+  // 深色背景：SVG 整体反色，网格/坐标/刻度数字/图形一并变亮，几何关系不受影响
+  if (svg) svg.style.filter = boardSettings.bg === 'dark' ? 'invert(1) hue-rotate(180deg)' : '';
+}
+function applySnap() {
+  // 影响之后新建的点（画板级选项），已有点不受影响
+  board.options.point.snapToGrid = boardSettings.snap;
+  board.options.point.snapSizeX = 0.5;
+  board.options.point.snapSizeY = 0.5;
+}
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(boardSettings)); } catch (_) { /* 忽略 */ }
+}
+function applySettings() { applyAxisGrid(); applyBg(); applySnap(); }
+applySettings(); // 初始化即应用（此时轴/网格元素已随 initBoard 建好）
+
+/* ---------- 设置弹层 ---------- */
+const setPop = $('settings-pop');
+const setAxis = $('set-axis');
+const setGrid = $('set-grid');
+const setSnap = $('set-snap');
+const setBgBox = $('set-bg');
+
+function syncSettingsUi() {
+  setAxis.checked = boardSettings.axis;
+  setGrid.checked = boardSettings.grid;
+  setSnap.checked = boardSettings.snap;
+  setBgBox.querySelectorAll('.bg-swatch').forEach((b) => {
+    b.classList.toggle('active', b.dataset.bg === boardSettings.bg);
+  });
+}
+function toggleSettingsPop(force) {
+  const show = typeof force === 'boolean' ? force : setPop.classList.contains('hidden');
+  if (show) { syncSettingsUi(); setPop.classList.remove('hidden'); }
+  else setPop.classList.add('hidden');
+}
+$('btn-settings').addEventListener('click', (e) => { e.stopPropagation(); toggleSettingsPop(); });
+document.addEventListener('click', (e) => {
+  if (!setPop.classList.contains('hidden') && !setPop.contains(e.target) && e.target.id !== 'btn-settings') {
+    toggleSettingsPop(false);
+  }
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleSettingsPop(false); });
+
+setAxis.addEventListener('change', () => { boardSettings.axis = setAxis.checked; saveSettings(); applyAxisGrid(); });
+setGrid.addEventListener('change', () => { boardSettings.grid = setGrid.checked; saveSettings(); applyAxisGrid(); });
+setSnap.addEventListener('change', () => { boardSettings.snap = setSnap.checked; saveSettings(); applySnap(); });
+setBgBox.querySelectorAll('.bg-swatch').forEach((b) => {
+  b.addEventListener('click', () => {
+    boardSettings.bg = b.dataset.bg;
+    saveSettings();
+    syncSettingsUi();
+    applyBg();
+  });
+});
+
 /* ---------- 文档状态 ---------- */
 const urlParams = new URLSearchParams(location.search);
 let fileId = urlParams.get('id');

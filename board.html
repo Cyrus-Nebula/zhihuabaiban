@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>画板 · 自用几何画板</title>
+  <title>画板 · 智绘几何</title>
   <link rel="stylesheet" href="vendor/jsxgraph.css" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -13,6 +13,33 @@
     <input id="doc-name" class="doc-name" type="text" value="未命名画板" maxlength="50" />
     <span id="save-status" class="save-status">就绪</span>
     <span class="flex-spacer"></span>
+    <div class="settings-wrap">
+      <button id="btn-settings" class="btn" type="button" title="画板设置">⚙ 设置</button>
+      <div id="settings-pop" class="settings-pop hidden" role="dialog" aria-label="画板设置">
+        <div class="settings-title">画板设置</div>
+        <label class="settings-row" for="set-axis">
+          <span>坐标轴</span>
+          <input type="checkbox" id="set-axis" class="switch" />
+        </label>
+        <label class="settings-row" for="set-grid">
+          <span>网格</span>
+          <input type="checkbox" id="set-grid" class="switch" />
+        </label>
+        <div class="settings-row">
+          <span>背景</span>
+          <div class="seg-bg" id="set-bg">
+            <button type="button" data-bg="white" class="bg-swatch bg-white" title="白色"></button>
+            <button type="button" data-bg="beige" class="bg-swatch bg-beige" title="米色（护眼）"></button>
+            <button type="button" data-bg="dark" class="bg-swatch bg-dark" title="深色"></button>
+          </div>
+        </div>
+        <label class="settings-row" for="set-snap">
+          <span>吸附到网格<em class="settings-sub">新画的点按 0.5 格对齐</em></span>
+          <input type="checkbox" id="set-snap" class="switch" />
+        </label>
+        <div class="settings-note">设置自动保存在本机浏览器</div>
+      </div>
+    </div>
     <button id="btn-save" class="btn" type="button">保存</button>
     <button id="btn-export-png" class="btn" type="button">导出 PNG</button>
     <button id="btn-export-json" class="btn" type="button">导出 JSON</button>
