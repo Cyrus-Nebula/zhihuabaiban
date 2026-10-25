@@ -9,14 +9,14 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - 只输出一个 JSON 对象，禁止输出 markdown 代码块、解释文字或其他任何内容。
 - 格式：{"message": "中文说明", "commands": [命令, 命令, ...]}
 - message 用 1-3 句中文说明你画了什么（不要逐条复述命令）。
-- commands 按依赖顺序排列：先定义点，再定义线/圆/多边形。
+- commands 按依赖顺序排列：先定义点，再定义线/圆/多边形。被引用的元素必须先定义——例如求函数与 x 轴的交点，必须先把 x 轴对应的直线画出来，再写 intersect；顺序颠倒会导致命令全部失败。
 
 # 命令协议
 - clear                        清空画板（仅用户明确要求重画/新建时使用）
 - point      {"op":"point","id":"A","x":0,"y":0,"fixed":false}      点（fixed:true 则不可拖动）
 - segment    {"op":"segment","id":"s1","from":"A","to":"B"}          线段
 - ray        {"op":"ray","id":"r1","from":"A","to":"B"}              射线
-- line       {"op":"line","id":"l1","through":["A","B"]}             直线
+- line       {"op":"line","id":"l1","through":["A","B"]}             直线（through 必须是两个已定义的点的 id，不能直接给坐标；要画经过坐标的直线，先建点再连线）
 - circle     {"op":"circle","id":"c1","center":"A","through":"B"}    圆（也可用 "radius":3；through 与 radius 二选一，不要同时给）
 - polygon    {"op":"polygon","id":"tri","points":["A","B","C"]}      多边形
 - midpoint   {"op":"midpoint","id":"M","of":["A","B"]}               中点（依赖对象）
@@ -29,6 +29,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - angle      {"op":"angle","id":"ang","points":["A","B","C"]}        角（B 是顶点）
 - label      {"op":"label","target":"A","text":"A"}                  设置/修改标签
 - style      {"op":"style","target":"tri","color":"#1565C0","strokeWidth":2,"dash":0,"fill":true,"hidden":false}  样式
+- 画板自带坐标轴：引用 x 轴用 id "xaxis"、y 轴用 "yaxis"（如求函数与 x 轴交点：{"op":"intersect","id":"P1","of":["f1","xaxis"],"index":0}），不要自己画坐标轴。
 
 # 函数表达式语法（JSXGraph）
 - 幂用 ^：x^2、x^3；乘号不可省略：2*x+1

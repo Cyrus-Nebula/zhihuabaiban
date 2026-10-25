@@ -63,6 +63,9 @@ export function createExecutor(board) {
   function resolve(ref) {
     if (typeof ref === 'number') return ref;
     if (typeof ref === 'string') {
+      // 画板自带坐标轴的伪 id：AI 求函数与轴的交点时直接引用，无需自己画轴
+      if (ref === 'xaxis' && board.defaultAxes && board.defaultAxes.x) return board.defaultAxes.x;
+      if (ref === 'yaxis' && board.defaultAxes && board.defaultAxes.y) return board.defaultAxes.y;
       const el = registry.get(ref);
       if (!el) throw new Error(`引用了不存在的元素「${ref}」`);
       return el;
@@ -93,8 +96,14 @@ export function createExecutor(board) {
         return board.create('segment', [resolve(cmd.from), resolve(cmd.to)], opt);
       case 'ray': // JSXGraph 无独立 ray，用 line 单向延伸实现
         return board.create('line', [resolve(cmd.from), resolve(cmd.to)], { ...opt, straightFirst: false, straightLast: true });
-      case 'line':
-        return board.create('line', resolveList(cmd.through).slice(0, 2), opt);
+      case 'line': {
+        // 宽容两种写法：through 给两个点的 id（标准），或直接给 4 个坐标 (x1,y1,x2,y2)
+        const th = cmd.through;
+        if (Array.isArray(th) && th.length >= 4 && th.slice(0, 4).every((v) => Number.isFinite(Number(v)))) {
+          return board.create('line', [[Number(th[0]), Number(th[1])], [Number(th[2]), Number(th[3])]], opt);
+        }
+        return board.create('line', resolveList(th).slice(0, 2), opt);
+      }
       case 'circle': {
         const c = resolve(cmd.center);
         // 模型有时会同时给出 through 和 radius（甚至 through==center），按优先级取：
