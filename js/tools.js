@@ -35,6 +35,7 @@ export function createTools(ctx) {
     parallel:      { label: '平行线', hint: '先点一条线，再点线外一点作平行线', steps: ['object', 'point'] },
     angle:         { label: '角',     hint: '依次点击：起点、顶点、终点', steps: ['point', 'point', 'point'] },
     text:          { label: '文本',   hint: '点击画板放置文本', steps: ['newpoint'] },
+    slider:        { label: '滑动条', hint: '点击画板放置滑动条：可调范围的数值参数控件', steps: ['newpoint'] },
     delete:        { label: '删除',   hint: '点击对象删除（依赖它的对象会一起删除）', steps: ['object'] },
   };
 
@@ -158,6 +159,18 @@ export function createTools(ctx) {
     if (current === 'text') {
       askText(x, y, (v) => {
         if (v) runCommands([{ op: 'text', id: nextId('t'), x, y, text: v }]);
+        ctx.endAction();
+        setTool('select');
+      });
+      return true;
+    }
+
+    if (current === 'slider') {
+      askSlider(x, y, (p) => {
+        if (p) {
+          runCommands([{ op: 'slider', id: nextId('slider'), x1: x, y1: y, x2: x + 6, y2: y,
+            min: p.min, max: p.max, step: p.step, value: p.start }]);
+        }
         ctx.endAction();
         setTool('select');
       });
@@ -305,6 +318,25 @@ export function createTools(ctx) {
 
   function askText(x, y, done) {
     askInput(x, y, { placeholder: '输入文本，回车确认' }, done);
+  }
+
+  /** 滑动条参数输入：一行写「最小值 最大值 步长」，如 "0 10 0.5"（步长省略=连续） */
+  function askSlider(x, y, done) {
+    askInput(x, y, {
+      placeholder: '最小值 最大值 步长，如：0 10 0.5', value: '0 10 0.5',
+      maxLength: 40, okLabel: '确定',
+    }, (raw) => {
+      if (!raw) { done(null); return; }
+      const parts = raw.split(/[\s,，]+/).map(Number).filter((n) => Number.isFinite(n));
+      let min = Number.isFinite(parts[0]) ? parts[0] : 0;
+      let max = Number.isFinite(parts[1]) ? parts[1] : min + 10;
+      let step = Number.isFinite(parts[2]) && parts[2] > 0 ? parts[2] : -1;
+      if (max < min) [min, max] = [max, min];
+      if (step > 0 && step > max - min) step = -1; // 步长比整个量程还大，退化成连续
+      // 起点：0 在范围内就从 0 开始，否则从最小值开始
+      const start = (min <= 0 && 0 <= max) ? 0 : min;
+      done({ min, max, step, start });
+    });
   }
 
   return {

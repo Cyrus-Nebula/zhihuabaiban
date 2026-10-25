@@ -152,14 +152,26 @@ nameInput.value = doc.name;
 // 引用字段表：删除某对象时，这些字段引用它的对象也要级联删除
 const REF_FIELDS = {
   segment: ['from', 'to'], ray: ['from', 'to'], line: ['through'],
-  circle: ['center', 'through'], polygon: ['points'], midpoint: ['of'],
+  circle: ['center', 'through', 'radius'], polygon: ['points'], midpoint: ['of'],
   intersect: ['of'], glider: ['on'], perpendicular: ['of', 'through'],
   parallel: ['of', 'through'], angle: ['points'],
+  // 点坐标可以是滑动条 id（动态联动），删滑动条时要连带删掉依赖它的点
+  point: ['x', 'y'],
 };
 
 const undoStack = [];
 const redoStack = [];
 const UNDO_LIMIT = 200;
+
+/** 表达式里是否把某个 id 当作标识符整词引用（避免 'a' 命中 'tan' 这类子串误判） */
+function exprMentions(expr, idSet) {
+  if (typeof expr !== 'string' || !expr) return false;
+  for (const id of idSet) {
+    const esc = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp('(^|[^A-Za-z0-9_])' + esc + '([^A-Za-z0-9_]|$)').test(expr)) return true;
+  }
+  return false;
+}
 
 function snap() { return JSON.stringify({ c: doc.commands, m: executor.moves() }); }
 function pushUndo() {
@@ -235,13 +247,19 @@ function deleteObject(id) {
     changed = false;
     for (const c of doc.commands) {
       if (!c.id || doomed.has(c.id)) continue;
+      let hit = false;
       const fields = REF_FIELDS[c.op];
-      if (!fields) continue;
-      for (const f of fields) {
-        const v = c[f];
-        const refs = Array.isArray(v) ? v : [v];
-        if (refs.some((r) => (r != null && doomed.has(String(r))))) { doomed.add(c.id); changed = true; break; }
+      if (fields) {
+        for (const f of fields) {
+          const v = c[f];
+          const refs = Array.isArray(v) ? v : [v];
+          if (refs.some((r) => (r != null && doomed.has(String(r))))) { hit = true; break; }
+        }
       }
+      // 函数曲线的表达式里按名字引用了滑动条（如 expr:"a*x^2"），删掉滑动条会让它
+      // 求值失败、整个画板更新报错，所以连曲线一起删（按标识符整词匹配，避免 'a' 命中 'tan'）
+      if (!hit && c.op === 'function' && exprMentions(c.expr, doomed)) hit = true;
+      if (hit) { doomed.add(c.id); changed = true; }
     }
   }
   // label/style 命令没有 id，按 target 清理
@@ -266,8 +284,8 @@ function deleteObject(id) {
  */
 const SEL_COLOR = '#F97316';
 const SEL_RING_R = 5; // 圆环半径（屏幕像素）
-const POINT_LIKE = new Set(['point', 'glider', 'midpoint', 'intersection']);
-const TYPE_NAME = { point: '点', segment: '线段', line: '直线', ray: '射线', circle: '圆', polygon: '多边形', glider: '动点', text: '文本', functiongraph: '曲线', curve: '曲线', angle: '角', midpoint: '中点', intersect: '交点', perpendicular: '垂线', parallel: '平行线' };
+const POINT_LIKE = new Set(['point', 'glider', 'midpoint', 'intersection', 'slider']);
+const TYPE_NAME = { point: '点', segment: '线段', line: '直线', ray: '射线', circle: '圆', polygon: '多边形', glider: '动点', text: '文本', functiongraph: '曲线', curve: '曲线', angle: '角', midpoint: '中点', intersect: '交点', perpendicular: '垂线', parallel: '平行线', slider: '滑动条' };
 let selectedId = null;
 let selRing = null;
 let selOrigColor = null;
@@ -488,6 +506,7 @@ function measureLabelFor(el) {
   if (t === 'segment') return '测量长度';
   if (t === 'circle') return '测量半径';
   if (t === 'angle') return '测量角度';
+  if (t === 'slider') return '显示参数值';
   if (t === 'point') return '测量距离（点两个点）';
   return null;
 }
@@ -510,6 +529,9 @@ function measureObject(id) {
   } else if (t === 'angle') {
     const [x, y] = objAnchor(id);
     cmd = { op: 'text', id: nextId('t'), x, y, bind: { kind: 'angle', of: id } };
+  } else if (t === 'slider') {
+    const [x, y] = objAnchor(id);
+    cmd = { op: 'text', id: nextId('t'), x: x + 3.2, y: y + 0.9, bind: { kind: 'value', of: id, prefix: id + ' = ' } };
   } else {
     toast('该对象暂不支持测量');
     return;
@@ -606,7 +628,9 @@ $('obj-delete').addEventListener('click', () => {
  *   - 对象面板「构造」行显示每个对象是由哪条命令造出来的
  */
 function fmtNum(v) { const n = Number(v); return Number.isFinite(n) ? Math.round(n * 100) / 100 : '?'; }
-function fmtPt(v) { return Array.isArray(v) ? `(${fmtNum(v[0])}, ${fmtNum(v[1])})` : '?'; }
+/** 坐标值：数字正常显示，引用（滑动条 id）直接显示 id，避免看到一堆问号 */
+function fmtVal(v) { const n = Number(v); return Number.isFinite(n) ? String(Math.round(n * 100) / 100) : (v == null ? '?' : String(v)); }
+function fmtPt(v) { return Array.isArray(v) ? `(${fmtVal(v[0])}, ${fmtVal(v[1])})` : '?'; }
 function fmtList(v) { return Array.isArray(v) ? v.join('、') : (v == null ? '?' : String(v)); }
 
 /** 单条命令的中文步骤描述（记录列表 + 对象构造信息共用） */
@@ -628,10 +652,12 @@ function describeCmd(cmd) {
     case 'glider': return `创建动点 ${cmd.id}：在 ${cmd.on} 上 ${fmtPt([cmd.x, cmd.y])}`;
     case 'perpendicular': return `作垂线 ${cmd.id}：过 ${fmtList(cmd.through)} 垂直于 ${fmtList(cmd.of)}`;
     case 'parallel': return `作平行线 ${cmd.id}：过 ${fmtList(cmd.through)} 平行于 ${fmtList(cmd.of)}`;
+    case 'slider':
+      return `添加滑动条 ${cmd.id}：${fmtNum(cmd.min)} ~ ${fmtNum(cmd.max)}${Number(cmd.step) > 0 ? `，步长 ${fmtNum(cmd.step)}` : '，连续'}，当前 ${fmtVal(cmd.value != null ? cmd.value : cmd.start)}`;
     case 'function': return `绘制函数曲线 ${cmd.id}：y = ${cmd.expr}`;
     case 'text':
       if (cmd.bind) {
-        const kind = { distance: '两点距离', length: '长度', radius: '半径', angle: '角度' }[cmd.bind.kind] || cmd.bind.kind;
+        const kind = { distance: '两点距离', length: '长度', radius: '半径', angle: '角度', value: '参数值' }[cmd.bind.kind] || cmd.bind.kind;
         return `插入测量文本 ${cmd.id}（${kind}）`;
       }
       return `插入文本 ${cmd.id}：「${cmd.text == null ? '' : cmd.text}」`;
@@ -804,8 +830,17 @@ $('rec-speed').addEventListener('change', () => { if (playTimer) { playPause(); 
 /* ---------- id 分配 / 坐标换算 ---------- */
 let idSeq = 1;
 function nextId(prefix) {
+  // 滑动条优先用单个小写字母（a/b/c…）——函数表达式里是直接按名字引用它的
+  if (prefix === 'slider') return nextSliderId();
   let id;
   do { id = prefix + idSeq++; } while (executor.has(id) || doc.commands.some((c) => c.id === id));
+  return id;
+}
+function nextSliderId() {
+  const taken = (id) => executor.has(id) || doc.commands.some((c) => c.id === id);
+  for (const L of 'abcdefghijklmnopqrstuvwxyz') if (!taken(L)) return L;
+  let i = 1, id;
+  do { id = 'sl' + i++; } while (taken(id));
   return id;
 }
 function usrCoords(evt) {
