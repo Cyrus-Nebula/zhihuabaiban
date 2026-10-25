@@ -10,7 +10,7 @@ window.DAJIAO_TEMPLATES = [
     id: 'tpl-gougu',
     title: '勾股定理可视化',
     category: '课堂演示',
-    author: '星云画板',
+    author: '智绘几何',
     desc: '3-4-5 直角三角形的三边上作正方形，面积关系一目了然',
     thumb:
       '<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">' +
@@ -50,7 +50,7 @@ window.DAJIAO_TEMPLATES = [
     id: 'tpl-yuanzhou',
     title: '圆周角定理',
     category: '动态演示',
-    author: '星云画板',
+    author: '智绘几何',
     desc: '同弧上的圆周角与圆心角，拖动 A/B/C 观察两角关系',
     thumb:
       '<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">' +
@@ -118,7 +118,7 @@ window.DAJIAO_TEMPLATES = [
     id: 'tpl-parabola',
     title: '二次函数与参数 a',
     category: '课堂演示',
-    author: '星云画板',
+    author: '智绘几何',
     desc: '同屏对比 y=x²、y=0.5x²、y=2x²，理解 a 对开口的影响',
     thumb:
       '<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">' +
@@ -145,7 +145,7 @@ window.DAJIAO_TEMPLATES = [
     id: 'tpl-linear',
     title: '一次函数与 k、b',
     category: '课堂演示',
-    author: '星云画板',
+    author: '智绘几何',
     desc: '五条直线同屏对比，看清 k 控制倾斜、b 控制截距',
     thumb:
       '<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">' +
@@ -177,7 +177,7 @@ window.DAJIAO_TEMPLATES = [
     id: 'tpl-midline',
     title: '三角形中位线',
     category: '几何变换',
-    author: '星云画板',
+    author: '智绘几何',
     desc: '拖动顶点，中位线始终平行且等于第三边的一半',
     thumb:
       '<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">' +

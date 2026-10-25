@@ -92,6 +92,7 @@ function pushUndo() {
 }
 function restore(s) {
   const data = JSON.parse(s);
+  tools.clearPreview(); // 防止多边形预览元素在撤销/回放后残留
   executor.clearAll();
   const cmds = Array.isArray(data.c) ? data.c : [];
   const r = executor.execute(cmds);
@@ -180,25 +181,59 @@ function deleteObject(id) {
   return doomed.size;
 }
 
-/* ---------- 选中高亮 ---------- */
-const SEL_STYLE = { highlightStrokeColor: '#F57C00', highlightStrokeWidth: 3, highlightFillColor: '#F57C00', highlightSize: 4.5 };
+/* ---------- 选中高亮（自绘方案） ----------
+ * JSXGraph 1.14 的 highlight() 实测颜色设置完全无效（stroke 恒为原色），
+ * 故改为：点类 → 绑定的空心圆环（屏幕像素固定、自动跟随、点删除时自动消失）；
+ * 线/面类 → 直接把 strokeColor 改为选中色（polygon 连 borders 一起改，恢复时同理）。
+ */
+const SEL_COLOR = '#F97316';
+const SEL_RING_R = 5; // 圆环半径（屏幕像素）
+const POINT_LIKE = new Set(['point', 'glider', 'midpoint', 'intersection']);
 const TYPE_NAME = { point: '点', segment: '线段', line: '直线', ray: '射线', circle: '圆', polygon: '多边形', glider: '动点', text: '文本', functiongraph: '曲线', curve: '曲线', angle: '角', midpoint: '中点', intersect: '交点', perpendicular: '垂线', parallel: '平行线' };
 let selectedId = null;
-
+let selRing = null;
+let selOrigColor = null;
+/** 需要一起改色的子结构：polygon 的边框、角的弧 */
+function strokeParts(el) {
+  if (!el) return [];
+  const parts = [el];
+  if (el.elType === 'polygon' && Array.isArray(el.borders) && el.borders.length) parts.push(...el.borders);
+  if (el.elType === 'angle' && el.arc) parts.push(el.arc);
+  return parts;
+}
 function selectObject(id) {
   clearSelection();
   const el = executor.registry.get(id);
   if (!el) return;
   selectedId = id;
-  try { el.setAttribute(SEL_STYLE); el.highlight(); } catch (_) { /* 忽略 */ }
+  try {
+    if (POINT_LIKE.has(el.elType)) {
+      selRing = board.create('circle', [el, () => SEL_RING_R / board.unitX], {
+        strokeColor: SEL_COLOR, strokeWidth: 1.5, fillColor: 'none',
+        withLabel: false, highlight: false, layer: 11, name: '__selring__',
+      });
+    } else {
+      selOrigColor = elColor(el);
+      for (const part of strokeParts(el)) {
+        try { part.setAttribute({ strokeColor: SEL_COLOR, highlightStrokeColor: SEL_COLOR }); } catch (_) { /* 忽略 */ }
+      }
+    }
+  } catch (_) { /* 忽略 */ }
   showSelection();
   refreshObjects();
 }
 function clearSelection() {
+  if (selRing) { try { board.removeObject(selRing); } catch (_) { /* 忽略 */ } selRing = null; }
   if (selectedId) {
     const el = executor.registry.get(selectedId);
-    if (el) { try { el.noHighlight(); } catch (_) { /* 忽略 */ } }
+    // 仅当当前仍是选中色才恢复，避免覆盖用户中途改的色
+    if (el && !POINT_LIKE.has(el.elType) && elColor(el) === SEL_COLOR && selOrigColor) {
+      for (const part of strokeParts(el)) {
+        try { part.setAttribute({ strokeColor: selOrigColor, highlightStrokeColor: selOrigColor }); } catch (_) { /* 忽略 */ }
+      }
+    }
   }
+  selOrigColor = null;
   selectedId = null;
   showSelection();
   refreshObjects();
@@ -322,7 +357,8 @@ function refreshProps() {
   // 颜色
   const colors = $('obj-colors');
   colors.innerHTML = '';
-  const curColor = elColor(el);
+  // 选中时线状对象的颜色被临时改为选中色，色板激活态应显示原色
+  const curColor = (selOrigColor && !POINT_LIKE.has(el.elType)) ? selOrigColor : elColor(el);
   for (const c of OBJ_COLORS) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'obj-color' + (c === curColor ? ' active' : '');
@@ -776,7 +812,7 @@ window.addEventListener('keydown', (e) => {
   }
   else if (e.key === 'Escape') { closeCtxMenu(); tools.cancel(); clearSelection(); }
   else if (e.key === 'Enter') {
-    if (tools.current() === 'polygon' && tools.getPending().length >= 3) tools.finishPolygon();
+    if (tools.current() === 'polygon' && tools.getPending().length > 0) tools.finishPolygon();
   }
 });
 
@@ -1060,4 +1096,4 @@ refreshObjects();
 refreshRecord();
 
 /* ---------- 调试/测试钩子（控制台与自动化测试用） ---------- */
-window.__dajiao = { board, executor, tools, getDoc: () => doc };
+window.__dajiao = { board, executor, tools, getDoc: () => doc, restore, selectObject, clearSelection, deleteObject, refreshObjects };

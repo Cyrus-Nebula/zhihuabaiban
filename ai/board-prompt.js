@@ -3,7 +3,7 @@
  * 与 js/executor.js 的命令协议一一对应，改协议时两边同步改。
  */
 
-export const BOARD_SYSTEM_PROMPT = `你是「星云画板」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
+export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
 
 # 输出格式（硬性要求）
 - 只输出一个 JSON 对象，禁止输出 markdown 代码块、解释文字或其他任何内容。

@@ -3,15 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>星云画板 · 让数学可视化变得简单</title>
+  <title>智绘几何 · 让数学可视化变得简单</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body class="landing">
   <!-- 顶部导航 -->
   <header class="site-nav">
     <a class="site-brand" href="index.html">
-      <span class="site-logo">◺</span>
-      <span class="site-name">星云画板</span>
+      <svg class="site-logo" viewBox="0 0 32 32" aria-hidden="true">
+        <defs>
+          <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#0E9F9F" />
+            <stop offset="1" stop-color="#34C759" />
+          </linearGradient>
+        </defs>
+        <rect x="1" y="1" width="30" height="30" rx="9" fill="url(#brandGrad)" />
+        <path d="M9.5 22.5 16 9.5l6.5 13" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="16" cy="17.2" r="2.2" fill="#fff" />
+      </svg>
+      <span class="site-name">智绘几何</span>
     </a>
     <nav class="site-links">
       <a href="#quickstart">快速入门</a>
@@ -30,7 +40,7 @@
       <span class="deco deco-square"></span>
       <span class="deco deco-dot"></span>
     </div>
-    <h1 class="hero-title">星云画板</h1>
+    <h1 class="hero-title">智绘几何</h1>
     <p class="hero-sub">强大而直观的几何图形创建和编辑工具，让数学可视化变得简单</p>
 
     <div class="hero-ai">
@@ -56,7 +66,7 @@
       </button>
       <button class="hero-action" id="btnImport" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h3.6l2 2H18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" /></svg>
-        <span class="hero-action-text"><strong>打开文件</strong><em>导入 .json 工程</em></span>
+        <span class="hero-action-text"><strong>打开文件</strong></span>
       </button>
       <input type="file" id="fileInput" accept=".json,application/json" hidden />
     </div>
@@ -91,11 +101,9 @@
   <!-- 我的画板 -->
   <section class="section" id="files">
     <h2 class="section-title">我的画板 <span class="muted" id="fileCount"></span></h2>
-    <div class="panel">
-      <div id="fileList" class="file-list"></div>
-      <div id="emptyState" class="empty" hidden>
-        还没有画板。用上方 AI 输入框描述一个图形，或从「模板与案例」里挑一个开始。
-      </div>
+    <div id="fileList" class="file-grid"></div>
+    <div id="emptyState" class="empty" hidden>
+      还没有画板。用上方 AI 输入框描述一个图形，或从「模板与案例」里挑一个开始。
     </div>
   </section>
 
@@ -103,14 +111,13 @@
   <section class="section" id="about">
     <h2 class="section-title">关于</h2>
     <div class="about-card">
-      <p>星云画板是一个自用的在线动态几何画板，<strong>全免费</strong>：平面画板由开源引擎 <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a> 驱动（本地加载，不依赖外网）；AI 作图经免费 LLM（智谱 GLM 普惠免费档）驱动，Key 只放在服务端；立体画板由 <a href="https://dajiaoai.com" target="_blank" rel="noopener">大角几何</a> 开放 SDK 提供。</p>
+      <p>智绘几何是一个自用的在线动态几何画板，<strong>全免费</strong>：平面画板由开源引擎 <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a> 驱动（本地加载，不依赖外网）；AI 作图经免费 LLM（智谱 GLM 普惠免费档）驱动，Key 只放在服务端；立体画板由 <a href="https://dajiaoai.com" target="_blank" rel="noopener">大角几何</a> 开放 SDK 提供。</p>
       <p>所有文件仅保存在你自己的浏览器 localStorage 中，不上传任何服务器；换浏览器或清理缓存会丢失，重要画板请及时「导出 JSON」。</p>
     </div>
   </section>
 
   <footer class="site-footer">
     <p>平面画板 · <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a>（LGPL）｜AI · 智谱 GLM 免费模型｜立体画板 · 大角几何 SDK（Apache-2.0）</p>
-    <p>星云画板 · 自用作品 · 数据只存本机</p>
   </footer>
 
   <div id="toast" class="toast hidden"></div>
