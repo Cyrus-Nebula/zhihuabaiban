@@ -7,7 +7,7 @@
  *          Ctrl+Z/Y 撤销重做、Ctrl+S 保存、Esc 取消、回车结束多边形
  *  - AI 面板：自然语言 -> ai/board-backend.js 生成命令 -> executor 逐条执行（带动画）
  *  - 保存：{name, commands, moves} 存 localStorage；打开时重放命令 + 覆盖坐标
- *  - 导出：PNG（SVG 序列化）/ JSON
+ *  - 导出：PNG（SVG 序列化）/ 离线 HTML（单文件自包含，双击即开）/ JSON
  *
  * 注意：config.js / store.js / models.js 是经典脚本（挂全局），本模块直接用
  * 全局绑定，不做 import；executor.js / tools.js 是 ES module，正常 import。
@@ -152,14 +152,26 @@ nameInput.value = doc.name;
 // 引用字段表：删除某对象时，这些字段引用它的对象也要级联删除
 const REF_FIELDS = {
   segment: ['from', 'to'], ray: ['from', 'to'], line: ['through'],
-  circle: ['center', 'through'], polygon: ['points'], midpoint: ['of'],
+  circle: ['center', 'through', 'radius'], polygon: ['points'], midpoint: ['of'],
   intersect: ['of'], glider: ['on'], perpendicular: ['of', 'through'],
   parallel: ['of', 'through'], angle: ['points'],
+  // 点坐标可以是滑动条 id（动态联动），删滑动条时要连带删掉依赖它的点
+  point: ['x', 'y'],
 };
 
 const undoStack = [];
 const redoStack = [];
 const UNDO_LIMIT = 200;
+
+/** 表达式里是否把某个 id 当作标识符整词引用（避免 'a' 命中 'tan' 这类子串误判） */
+function exprMentions(expr, idSet) {
+  if (typeof expr !== 'string' || !expr) return false;
+  for (const id of idSet) {
+    const esc = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp('(^|[^A-Za-z0-9_])' + esc + '([^A-Za-z0-9_]|$)').test(expr)) return true;
+  }
+  return false;
+}
 
 function snap() { return JSON.stringify({ c: doc.commands, m: executor.moves() }); }
 function pushUndo() {
@@ -235,13 +247,19 @@ function deleteObject(id) {
     changed = false;
     for (const c of doc.commands) {
       if (!c.id || doomed.has(c.id)) continue;
+      let hit = false;
       const fields = REF_FIELDS[c.op];
-      if (!fields) continue;
-      for (const f of fields) {
-        const v = c[f];
-        const refs = Array.isArray(v) ? v : [v];
-        if (refs.some((r) => (r != null && doomed.has(String(r))))) { doomed.add(c.id); changed = true; break; }
+      if (fields) {
+        for (const f of fields) {
+          const v = c[f];
+          const refs = Array.isArray(v) ? v : [v];
+          if (refs.some((r) => (r != null && doomed.has(String(r))))) { hit = true; break; }
+        }
       }
+      // 函数曲线的表达式里按名字引用了滑动条（如 expr:"a*x^2"），删掉滑动条会让它
+      // 求值失败、整个画板更新报错，所以连曲线一起删（按标识符整词匹配，避免 'a' 命中 'tan'）
+      if (!hit && c.op === 'function' && exprMentions(c.expr, doomed)) hit = true;
+      if (hit) { doomed.add(c.id); changed = true; }
     }
   }
   // label/style 命令没有 id，按 target 清理
@@ -266,8 +284,8 @@ function deleteObject(id) {
  */
 const SEL_COLOR = '#F97316';
 const SEL_RING_R = 5; // 圆环半径（屏幕像素）
-const POINT_LIKE = new Set(['point', 'glider', 'midpoint', 'intersection']);
-const TYPE_NAME = { point: '点', segment: '线段', line: '直线', ray: '射线', circle: '圆', polygon: '多边形', glider: '动点', text: '文本', functiongraph: '曲线', curve: '曲线', angle: '角', midpoint: '中点', intersect: '交点', perpendicular: '垂线', parallel: '平行线' };
+const POINT_LIKE = new Set(['point', 'glider', 'midpoint', 'intersection', 'slider']);
+const TYPE_NAME = { point: '点', segment: '线段', line: '直线', ray: '射线', circle: '圆', polygon: '多边形', glider: '动点', text: '文本', functiongraph: '曲线', curve: '曲线', angle: '角', midpoint: '中点', intersect: '交点', perpendicular: '垂线', parallel: '平行线', slider: '滑动条' };
 let selectedId = null;
 let selRing = null;
 let selOrigColor = null;
@@ -488,6 +506,7 @@ function measureLabelFor(el) {
   if (t === 'segment') return '测量长度';
   if (t === 'circle') return '测量半径';
   if (t === 'angle') return '测量角度';
+  if (t === 'slider') return '显示参数值';
   if (t === 'point') return '测量距离（点两个点）';
   return null;
 }
@@ -510,6 +529,9 @@ function measureObject(id) {
   } else if (t === 'angle') {
     const [x, y] = objAnchor(id);
     cmd = { op: 'text', id: nextId('t'), x, y, bind: { kind: 'angle', of: id } };
+  } else if (t === 'slider') {
+    const [x, y] = objAnchor(id);
+    cmd = { op: 'text', id: nextId('t'), x: x + 3.2, y: y + 0.9, bind: { kind: 'value', of: id, prefix: id + ' = ' } };
   } else {
     toast('该对象暂不支持测量');
     return;
@@ -606,7 +628,9 @@ $('obj-delete').addEventListener('click', () => {
  *   - 对象面板「构造」行显示每个对象是由哪条命令造出来的
  */
 function fmtNum(v) { const n = Number(v); return Number.isFinite(n) ? Math.round(n * 100) / 100 : '?'; }
-function fmtPt(v) { return Array.isArray(v) ? `(${fmtNum(v[0])}, ${fmtNum(v[1])})` : '?'; }
+/** 坐标值：数字正常显示，引用（滑动条 id）直接显示 id，避免看到一堆问号 */
+function fmtVal(v) { const n = Number(v); return Number.isFinite(n) ? String(Math.round(n * 100) / 100) : (v == null ? '?' : String(v)); }
+function fmtPt(v) { return Array.isArray(v) ? `(${fmtVal(v[0])}, ${fmtVal(v[1])})` : '?'; }
 function fmtList(v) { return Array.isArray(v) ? v.join('、') : (v == null ? '?' : String(v)); }
 
 /** 单条命令的中文步骤描述（记录列表 + 对象构造信息共用） */
@@ -628,10 +652,12 @@ function describeCmd(cmd) {
     case 'glider': return `创建动点 ${cmd.id}：在 ${cmd.on} 上 ${fmtPt([cmd.x, cmd.y])}`;
     case 'perpendicular': return `作垂线 ${cmd.id}：过 ${fmtList(cmd.through)} 垂直于 ${fmtList(cmd.of)}`;
     case 'parallel': return `作平行线 ${cmd.id}：过 ${fmtList(cmd.through)} 平行于 ${fmtList(cmd.of)}`;
+    case 'slider':
+      return `添加滑动条 ${cmd.id}：${fmtNum(cmd.min)} ~ ${fmtNum(cmd.max)}${Number(cmd.step) > 0 ? `，步长 ${fmtNum(cmd.step)}` : '，连续'}，当前 ${fmtVal(cmd.value != null ? cmd.value : cmd.start)}`;
     case 'function': return `绘制函数曲线 ${cmd.id}：y = ${cmd.expr}`;
     case 'text':
       if (cmd.bind) {
-        const kind = { distance: '两点距离', length: '长度', radius: '半径', angle: '角度' }[cmd.bind.kind] || cmd.bind.kind;
+        const kind = { distance: '两点距离', length: '长度', radius: '半径', angle: '角度', value: '参数值' }[cmd.bind.kind] || cmd.bind.kind;
         return `插入测量文本 ${cmd.id}（${kind}）`;
       }
       return `插入文本 ${cmd.id}：「${cmd.text == null ? '' : cmd.text}」`;
@@ -804,8 +830,17 @@ $('rec-speed').addEventListener('change', () => { if (playTimer) { playPause(); 
 /* ---------- id 分配 / 坐标换算 ---------- */
 let idSeq = 1;
 function nextId(prefix) {
+  // 滑动条优先用单个小写字母（a/b/c…）——函数表达式里是直接按名字引用它的
+  if (prefix === 'slider') return nextSliderId();
   let id;
   do { id = prefix + idSeq++; } while (executor.has(id) || doc.commands.some((c) => c.id === id));
+  return id;
+}
+function nextSliderId() {
+  const taken = (id) => executor.has(id) || doc.commands.some((c) => c.id === id);
+  for (const L of 'abcdefghijklmnopqrstuvwxyz') if (!taken(L)) return L;
+  let i = 1, id;
+  do { id = 'sl' + i++; } while (taken(id));
   return id;
 }
 function usrCoords(evt) {
@@ -975,6 +1010,97 @@ $('btn-export-png').addEventListener('click', () => {
     toast('PNG 导出失败：' + e.message);
   }
 });
+
+/* ---------- 导出：离线 HTML（单文件，双击即开） ----------
+ * 把画板引擎（vendor/jsxgraphcore.js + jsxgraph.css）、命令执行器
+ * （js/executor.js，内联时去掉 export 关键字，仍是同一份源码）和当前画板的
+ * commands/moves/设置打成一个自包含 HTML：
+ *   - 不联网、不依赖服务器、不需要账号，浏览器直接打开即可看到可拖拽的图形
+ *   - 适合课件分发、存档、内网/离线环境使用
+ * 导出的页面暴露 window.__offlineBoard = {board, executor, data}，便于调试。
+ */
+const escHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/** 内联进 <script> 前转义 "</script"，避免源码/数据里的字符串提前闭合脚本标签 */
+const safeScript = (s) => String(s).replace(/<\/script/gi, '<\\/script');
+
+$('btn-export-html').addEventListener('click', () => exportOfflineHtml());
+
+async function exportOfflineHtml() {
+  if (blockIfReplaying()) return;
+  saveNow();
+  const name = nameInput.value.trim() || '画板';
+  let jxg = '', jxgCss = '', execSrc = '';
+  try {
+    const [a, b, c] = await Promise.all([
+      fetch('vendor/jsxgraphcore.js'),
+      fetch('vendor/jsxgraph.css'),
+      fetch('js/executor.js'),
+    ]);
+    if (!a.ok) throw new Error('读取 JSXGraph 引擎失败（HTTP ' + a.status + '）');
+    if (!b.ok) throw new Error('读取 JSXGraph 样式失败（HTTP ' + b.status + '）');
+    if (!c.ok) throw new Error('读取命令执行器失败（HTTP ' + c.status + '）');
+    [jxg, jxgCss, execSrc] = await Promise.all([a.text(), b.text(), c.text()]);
+  } catch (e) {
+    toast('导出失败：' + e.message);
+    return;
+  }
+  // executor 是 ES module；内联进经典 <script> 时去掉 export 关键字即可（函数体不动）
+  const execInline = execSrc.replace(/(^|\n)\s*export\s+(function\s+createExecutor)/, '$1$2');
+  if (!/function createExecutor/.test(execInline)) {
+    toast('导出失败：执行器源码格式异常');
+    return;
+  }
+  // 画板数据：命令 + 拖拽后的坐标/滑动条值 + 当时的画板设置（轴/网格/背景）
+  const payload = JSON.stringify({ name, settings: boardSettings, commands: doc.commands, moves: doc.moves });
+  const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${escHtml(name)} · 智绘几何</title>
+<style>
+${safeScript(jxgCss)}
+  body { margin: 0; font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f1f5f9; color: #0f172a; }
+  .off-hdr { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 14px 20px; }
+  .off-hdr b { font-size: 18px; }
+  .off-tag { font-size: 12px; color: #64748b; }
+  .off-tag a { color: #01b88b; text-decoration: none; }
+  #box { width: min(96vw, 1080px); height: min(74vh, 700px); margin: 4px auto 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15, 23, 42, .08); }
+</style>
+<script>${safeScript(jxg)}</script>
+</head>
+<body>
+  <div class="off-hdr"><b>${escHtml(name)}</b><span class="off-tag">智绘几何 · 离线单文件（无需联网/账号，图形可直接拖拽） · <a href="https://github.com/Cyrus-Nebula/zhihuabaiban">开源仓库</a></span></div>
+  <div id="box"></div>
+<script>${safeScript(execInline)}</script>
+<script>
+(function () {
+  var data = ${safeScript(payload).replace(/</g, '\\u003c')};
+  var s = data.settings || {};
+  var board = JXG.JSXGraph.initBoard('box', {
+    boundingbox: [-10, 10, 10, -10],
+    axis: s.axis !== false, grid: s.grid !== false,
+    showCopyright: false, showNavigation: false,
+    zoom: { wheel: true, needshift: false }, pan: { needshift: false },
+    keepaspectratio: true, text: { display: 'internal' },
+  });
+  var executor = createExecutor(board);
+  var r = executor.execute(data.commands || []);
+  executor.applyMoves(data.moves || []);
+  var bad = r.filter(function (x) { return !x.ok; });
+  if (bad.length) console.warn('部分命令执行失败', bad);
+  // 背景色（含深色模式的 SVG 反色，与画板页一致）
+  var box = document.getElementById('box');
+  if (s.bg === 'dark') { box.style.background = '#0f172a'; var svg = box.querySelector('svg'); if (svg) svg.style.filter = 'invert(1) hue-rotate(180deg)'; }
+  else if (s.bg === 'beige') { box.style.background = '#FAF5EC'; }
+  window.__offlineBoard = { board: board, executor: executor, data: data }; // 调试/自测钩子
+})();
+</script>
+</body>
+</html>`;
+  download(name + '.html', html, 'text/html');
+  toast('已导出离线 HTML（约 ' + Math.round(html.length / 1024) + ' KB）：双击即可打开，无需联网');
+}
 
 $('btn-import').addEventListener('click', () => $('file-import').click());
 $('file-import').addEventListener('change', (e) => {

@@ -6,26 +6,38 @@
  *
  * 命令协议（commands 数组，按依赖顺序执行）：
  *   clear                                      清空画板
- *   point     {id,x,y,fixed?}                  点（默认可拖拽）
+ *   point     {id,x,y,fixed?}                  点（默认可拖拽；x/y 也可以是滑动条 id）
  *   segment   {id,from,to}                     线段
  *   ray       {id,from,to}                     射线
  *   line      {id,through:[A,B]}               直线
- *   circle    {id,center,through|radius}       圆
+ *   circle    {id,center,through|radius}       圆（radius 也可以是滑动条 id）
  *   polygon   {id,points:[A,B,C]}              多边形
  *   midpoint  {id,of:[A,B]}                    中点
  *   intersect {id,of:[o1,o2],index?}           交点（index 0/1）
  *   glider    {id,on,x,y}                      对象上的动点
  *   perpendicular {id,of,through}              垂线
  *   parallel  {id,of,through}                  平行线
+ *   slider    {id,x1,y1,x2,y2,min,max,value?,step?}  滑动条参数控件（拖动改值）
  *   function  {id,expr,from,to}                函数曲线（JSXGraph语法，如 "x^2"）
  *   text      {id,x,y,text}                    自由文本
- *   text      {id,x,y,bind:{kind,of}}          动态测量文本（kind: distance/length/radius/angle）
+ *   text      {id,x,y,bind:{kind,of}}          动态测量文本（kind: distance/length/radius/angle/value）
  *   angle     {id,points:[A,B,C]}              角（B为顶点）
  *   label     {target,text}                    设置/修改标签
  *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?}  样式
+ *
+ * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
+ * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
+ * 函数曲线的 expr 里直接写滑动条 id 即可（JSXGraph 会自动替换成 .Value()）。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#1565C0', strokeColor: '#1565C0', face: 'o', withLabel: true };
+
+/** 取元素的数值（滑动条/角等有 Value() 的元素），取不到返回 NaN */
+function numericOf(el) {
+  if (!el || typeof el.Value !== 'function') return NaN;
+  const v = Number(el.Value());
+  return Number.isFinite(v) ? v : NaN;
+}
 
 /** 动态测量文本：返回 JXG 文本内容函数（每次画板更新时调用，拖拽实时刷新） */
 function bindText(bind, registry) {
@@ -53,12 +65,25 @@ function bindText(bind, registry) {
     if (!el) return gone;
     return () => '角度 = ' + (typeof el.Value === 'function' ? (el.Value() * 180 / Math.PI).toFixed(1) : '?') + '°';
   }
+  if (bind.kind === 'value') {
+    // 显示滑动条（或其他有 Value() 的元素）的实时数值
+    const el = get(bind.of);
+    if (!el) return gone;
+    const dg = Number(bind.digits);
+    const digits = Math.max(0, Math.min(6, Number.isFinite(dg) ? dg : 2));
+    const prefix = bind.prefix == null ? '' : String(bind.prefix);
+    return () => {
+      const v = numericOf(el);
+      return prefix + (Number.isFinite(v) ? v.toFixed(digits) : '?');
+    };
+  }
   return gone;
 }
 
 export function createExecutor(board) {
   const registry = new Map();    // id -> JXG 元素
   const plainPoints = new Set(); // 可通过 moves 覆盖坐标的自由点
+  const sliders = new Set();     // 滑动条 id（值随 moves 一起持久化）
 
   function resolve(ref) {
     if (typeof ref === 'number') return ref;
@@ -75,6 +100,23 @@ export function createExecutor(board) {
   const resolveList = (arr) => (Array.isArray(arr) ? arr.map(resolve) : []);
   const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
 
+  /** 数值位置上的反查：字符串若是已注册 id，返回取实时值的函数（交给 JXG 做动态依赖） */
+  function valueGetter(v) {
+    if (typeof v === 'string' && registry.has(v)) {
+      const el = registry.get(v);
+      return () => numericOf(el);
+    }
+    return null;
+  }
+  /** 数值参数：数字照旧；元素 id 则转成取值函数；都不是则用默认值 */
+  function numOrRef(v, d) {
+    if (v == null) return d;
+    const direct = Number(v);
+    if (Number.isFinite(direct)) return direct;
+    const g = valueGetter(v);
+    return g || d;
+  }
+
   // 给元素设置标签文本（point 行内 label 与 label op 共用）
   function applyLabel(el, text) {
     if (!el || text == null || text === '') return;
@@ -88,7 +130,8 @@ export function createExecutor(board) {
     const opt = { name: cmd.id || '' };
     switch (cmd.op) {
       case 'point': {
-        const pt = board.create('point', [num(cmd.x, 0), num(cmd.y, 0)], { ...POINT_STYLE, ...opt, fixed: !!cmd.fixed });
+        // x/y 可以是常数，也可以是滑动条 id —— 后者拖条时点会跟着移动
+        const pt = board.create('point', [numOrRef(cmd.x, 0), numOrRef(cmd.y, 0)], { ...POINT_STYLE, ...opt, fixed: !!cmd.fixed });
         applyLabel(pt, cmd.label); // 模型有时把 label 直接放在点上，与独立 label op 等价
         return pt;
       }
@@ -113,8 +156,18 @@ export function createExecutor(board) {
           try { second = resolve(cmd.through); } catch (_) { second = null; }
         }
         if (second === null) {
-          const r = Number(cmd.radius);
-          second = Number.isFinite(r) && r > 0 ? r : 1;
+          const g = valueGetter(cmd.radius);
+          if (g) {
+            // 半径绑定滑动条：夹一个下限，避免拖到 0 时圆退化报错
+            second = () => {
+              const v = g();
+              const a = Number.isFinite(v) ? Math.abs(v) : NaN;
+              return Number.isFinite(a) && a > 1e-6 ? a : 1e-6;
+            };
+          } else {
+            const r = Number(cmd.radius);
+            second = Number.isFinite(r) && r > 0 ? r : 1;
+          }
         }
         return board.create('circle', [c, second], opt);
       }
@@ -129,7 +182,26 @@ export function createExecutor(board) {
       }
       case 'glider':
         return board.create('glider', [num(cmd.x, 0), num(cmd.y, 0), resolve(cmd.on)], opt);
+      case 'slider': {
+        // 滑动条：可拖动的数值参数控件。id 应尽量用单个小写字母（a/b/c…），
+        // 因为函数表达式里是直接按名字引用它的（JSXGraph 会自动替换成 .Value()）。
+        // 未指定位置时按已有个数往下排，避免多个滑动条叠在一起。
+        const idx = sliders.size;
+        const x1 = num(cmd.x1, -8), y1 = num(cmd.y1, Math.min(-1.5, -9 + idx * 0.9));
+        const x2 = num(cmd.x2, x1 + 6), y2 = num(cmd.y2, y1);
+        let min = num(cmd.min, 0), max = num(cmd.max, 10);
+        if (max < min) [min, max] = [max, min];
+        const start = Math.min(max, Math.max(min, num(cmd.value, num(cmd.start, min))));
+        const step = Number(cmd.step);
+        return board.create('slider', [[x1, y1], [x2, y2], [min, start, max]], {
+          ...opt,
+          withLabel: true,
+          snapWidth: Number.isFinite(step) && step > 0 ? step : -1,
+        });
+      }
       case 'function':
+        // expr 里出现滑动条名字时，JSXGraph 的表达式解析器会自动取它的实时值，
+        // 因此拖动滑动条曲线会跟着重算——无需额外处理。
         return board.create('functiongraph', [String(cmd.expr || ''), num(cmd.from, -10), num(cmd.to, 10)], { ...opt, strokeColor: '#C62828', strokeWidth: 2 });
       case 'text': {
         // bind：动态测量文本（内容为函数，拖拽时实时刷新）
@@ -183,6 +255,7 @@ export function createExecutor(board) {
     }
     registry.clear();
     plainPoints.clear();
+    sliders.clear();
   }
 
   /** 从画板和注册表移除单个元素（删除工具/取消未完成作图用） */
@@ -192,8 +265,11 @@ export function createExecutor(board) {
     try { board.removeObject(el); } catch (_) { /* 忽略 */ }
     registry.delete(id);
     plainPoints.delete(id);
+    sliders.delete(id);
     return true;
   }
+
+  const isLiteralNum = (v) => v != null && Number.isFinite(Number(v));
 
   /** 执行命令数组，返回每条命令的执行结果（成功/失败+原因） */
   function execute(commands) {
@@ -206,7 +282,9 @@ export function createExecutor(board) {
         if (cmd.id) {
           if (registry.has(cmd.id)) throw new Error(`id「${cmd.id}」重复定义`);
           if (el) registry.set(cmd.id, el);
-          if (cmd.op === 'point') plainPoints.add(cmd.id);
+          // 坐标被别的对象驱动的点是依赖点，不能再当成可拖拽的自由点保存坐标
+          if (cmd.op === 'point' && isLiteralNum(cmd.x) && isLiteralNum(cmd.y)) plainPoints.add(cmd.id);
+          if (cmd.op === 'slider') sliders.add(cmd.id);
         }
         out.push({ ok: true, op: cmd.op, id: cmd.id || null });
       } catch (e) {
@@ -216,14 +294,21 @@ export function createExecutor(board) {
     return out;
   }
 
-  /** 当前画板元素摘要（作为 AI 的上下文） */
+  /** 当前画板元素摘要（作为 AI 的上下文）；滑动条带出当前值，方便 AI 接着改 */
   function describe() {
     const items = [];
-    for (const [id, el] of registry) items.push(id + '(' + (el.elType || '?') + ')');
+    for (const [id, el] of registry) {
+      if (el.elType === 'slider') {
+        const v = numericOf(el);
+        items.push(id + '(滑动条=' + (Number.isFinite(v) ? Math.round(v * 100) / 100 : '?') + ')');
+      } else {
+        items.push(id + '(' + (el.elType || '?') + ')');
+      }
+    }
     return items.length ? items.join(', ') : '（空画板）';
   }
 
-  /** 导出自由点当前坐标（拖拽后保存用） */
+  /** 导出自由点坐标 + 滑动条当前值（拖拽后保存用） */
   function moves() {
     const out = [];
     for (const id of plainPoints) {
@@ -232,14 +317,28 @@ export function createExecutor(board) {
         out.push({ id, x: Math.round(el.X() * 1000) / 1000, y: Math.round(el.Y() * 1000) / 1000 });
       }
     }
+    for (const id of sliders) {
+      const v = numericOf(registry.get(id));
+      if (Number.isFinite(v)) out.push({ id, v: Math.round(v * 1000) / 1000 });
+    }
     return out;
   }
 
-  /** 加载时把保存的坐标覆盖回自由点 */
+  /** 加载时把保存的坐标覆盖回自由点、把保存的数值写回滑动条 */
   function applyMoves(list) {
     const COORDS_BY_USER = 1; // JXG.COORDS_BY_USER 的固定值，避免依赖全局
+    let restoredSlider = false;
     for (const m of Array.isArray(list) ? list : []) {
-      if (!m || !plainPoints.has(m.id)) continue;
+      if (!m) continue;
+      // 滑动条：{id, v}
+      if (m.v !== undefined && sliders.has(m.id)) {
+        const el = registry.get(m.id);
+        const v = Number(m.v);
+        if (!el || !Number.isFinite(v)) continue;
+        try { el.setValue(v); restoredSlider = true; } catch (_) { /* 忽略 */ }
+        continue;
+      }
+      if (!plainPoints.has(m.id)) continue;
       const el = registry.get(m.id);
       if (!el) continue;
       const x = Number(m.x), y = Number(m.y);
@@ -247,6 +346,8 @@ export function createExecutor(board) {
       try { el.setPosition(COORDS_BY_USER, [x, y]); }
       catch (_) { try { el.moveTo([x, y]); } catch (_) { /* 忽略 */ } }
     }
+    // 滑动条是几何体的上游，写回后必须整体刷新一次，依赖它的点/圆/曲线才会跟到新值
+    if (restoredSlider) { try { board.update(); } catch (_) { /* 忽略 */ } }
   }
 
   return { execute, describe, moves, applyMoves, clearAll, remove, registry, has: (id) => registry.has(id) };
