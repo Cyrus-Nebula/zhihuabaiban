@@ -72,6 +72,10 @@
     <span class="toolbar-sep"></span>
     <span class="toolbar-label">函数</span>
     <input id="fn-input" type="text" placeholder="如 x^2 或 sin(x)" />
+    <span class="toolbar-label" title="定义域：曲线只画在这个 x 区间内">x∈</span>
+    <input id="fn-from" class="fn-range" type="number" step="0.5" value="-10" title="定义域左端" aria-label="定义域左端" />
+    <span class="toolbar-label">~</span>
+    <input id="fn-to" class="fn-range" type="number" step="0.5" value="10" title="定义域右端" aria-label="定义域右端" />
     <button id="btn-fn-add" class="btn small" type="button">添加曲线</button>
     <span id="tool-hint" class="tool-hint"></span>
   </div>
@@ -132,6 +136,19 @@
           <div class="obj-props-row">
             <span class="obj-props-label">线型</span>
             <div id="obj-dashes" class="obj-seg"></div>
+          </div>
+          <div class="obj-props-row obj-props-range hidden" id="obj-range-row" title="定义域：x 的作图区间；值域：只画 y 落在该区间内的曲线段（留空表示不裁剪）">
+            <span class="obj-props-label">范围</span>
+            <span class="obj-range-tag">x</span>
+            <input id="obj-x-from" class="obj-num" type="number" step="0.5" aria-label="定义域左端" />
+            <span class="obj-range-tag">~</span>
+            <input id="obj-x-to" class="obj-num" type="number" step="0.5" aria-label="定义域右端" />
+            <span class="obj-range-tag">y</span>
+            <input id="obj-y-min" class="obj-num" type="number" step="0.5" placeholder="-∞" aria-label="值域下限" />
+            <span class="obj-range-tag">~</span>
+            <input id="obj-y-max" class="obj-num" type="number" step="0.5" placeholder="+∞" aria-label="值域上限" />
+            <button id="obj-range-apply" class="btn small" type="button">应用</button>
+            <button id="obj-range-clear" class="btn small ghost" type="button" title="清空值域裁剪，恢复完整曲线">不裁剪</button>
           </div>
           <div class="obj-props-row">
             <span class="obj-props-label">名称</span>

@@ -199,10 +199,37 @@ export function createExecutor(board) {
           snapWidth: Number.isFinite(step) && step > 0 ? step : -1,
         });
       }
-      case 'function':
+      case 'function': {
         // expr 里出现滑动条名字时，JSXGraph 的表达式解析器会自动取它的实时值，
         // 因此拖动滑动条曲线会跟着重算——无需额外处理。
-        return board.create('functiongraph', [String(cmd.expr || ''), num(cmd.from, -10), num(cmd.to, 10)], { ...opt, strokeColor: '#C62828', strokeWidth: 2 });
+        // 取值范围：from/to 是定义域（x 区间，默认 -10~10）；ymin/ymax 是值域裁剪
+        // （只画 y 落在区间内的那一段曲线，留空表示不裁剪）。
+        const expr = String(cmd.expr || '');
+        let from = num(cmd.from, -10), to = num(cmd.to, 10);
+        if (to < from) { const t = from; from = to; to = t; }
+        let ymin = cmd.ymin, ymax = cmd.ymax;
+        if (Array.isArray(cmd.range) && ymin == null && ymax == null) { ymin = cmd.range[0]; ymax = cmd.range[1]; }
+        const lo = Number(ymin), hi = Number(ymax);
+        let fn = expr;
+        if (Number.isFinite(lo) || Number.isFinite(hi)) {
+          let a = Number.isFinite(lo) ? lo : -Infinity;
+          let b = Number.isFinite(hi) ? hi : Infinity;
+          if (b < a) { const t = a; a = b; b = t; }
+          // 值域裁剪：把区间外的采样点记成 NaN，JXGraph 会自动断开/略过这些点。
+          // 表达式仍走 JessieCode 编译（与 JXGraph 内部一致），所以滑动条联动照样生效。
+          const compile = board.jc && typeof board.jc.snippet === 'function';
+          if (!compile) {
+            // 极端情况（引擎缺 JessieCode）：退化为只按定义域出图，不裁剪值域
+            return board.create('functiongraph', [expr, from, to], { ...opt, strokeColor: '#C62828', strokeWidth: 2 });
+          }
+          const snip = board.jc.snippet(expr, true, 'x', false);
+          fn = (x) => {
+            const v = snip(x);
+            return (Number.isFinite(v) && v >= a && v <= b) ? v : NaN;
+          };
+        }
+        return board.create('functiongraph', [fn, from, to], { ...opt, strokeColor: '#C62828', strokeWidth: 2 });
+      }
       case 'text': {
         // bind：动态测量文本（内容为函数，拖拽时实时刷新）
         //   {kind:'distance', of:[A,B]} 两点距离
