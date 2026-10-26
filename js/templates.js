@@ -36,7 +36,7 @@ window.DAJIAO_TEMPLATES = [
       { op: 'polygon', id: 'sq2', points: ['A', 'C', 'C2', 'A2'] },
       { op: 'polygon', id: 'sq3', points: ['B', 'C', 'C3', 'B3'] },
       { op: 'angle', id: 'angA', points: ['B', 'A', 'C'] },
-      { op: 'style', target: 'sq1', color: '#1565C0', fill: true, strokeWidth: 2 },
+      { op: 'style', target: 'sq1', color: '#3E44D9', fill: true, strokeWidth: 2 },
       { op: 'style', target: 'sq2', color: '#2E7D32', fill: true, strokeWidth: 2 },
       { op: 'style', target: 'sq3', color: '#C62828', fill: true, strokeWidth: 2 },
       { op: 'text', id: 't1', x: 1.5, y: -3.6, text: '9' },
@@ -82,7 +82,7 @@ window.DAJIAO_TEMPLATES = [
     desc: '造桥选址经典问题：利用对称点找 AM+MB 最短路径',
     thumb:
       '<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">' +
-      '<line x1="8" y1="52" x2="112" y2="52" stroke="#1565C0" stroke-width="2" stroke-dasharray="5 4"/>' +
+      '<line x1="8" y1="52" x2="112" y2="52" stroke="#3E44D9" stroke-width="2" stroke-dasharray="5 4"/>' +
       '<path d="M30 20 L60 52 L86 26" fill="none" stroke="#C62828" stroke-width="2.5"/>' +
       '<path d="M30 20 L30 78" stroke="#BDBDBD" stroke-width="1.5" stroke-dasharray="4 3"/>' +
       '<circle cx="30" cy="20" r="3" fill="#37474F"/>' +
@@ -95,7 +95,7 @@ window.DAJIAO_TEMPLATES = [
       { op: 'line', id: 'l1', through: ['R1', 'R2'] },
       { op: 'style', target: 'R1', hidden: true },
       { op: 'style', target: 'R2', hidden: true },
-      { op: 'style', target: 'l1', color: '#1565C0', strokeWidth: 2, dash: 2 },
+      { op: 'style', target: 'l1', color: '#3E44D9', strokeWidth: 2, dash: 2 },
       { op: 'point', id: 'A', x: -3, y: 4, fixed: true },
       { op: 'point', id: 'B', x: 5, y: 3, fixed: true },
       { op: 'point', id: 'A2', x: -3, y: -8, fixed: true },
@@ -124,13 +124,13 @@ window.DAJIAO_TEMPLATES = [
       '<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">' +
       '<path d="M15 8 Q60 76 105 8" fill="none" stroke="#2E7D32" stroke-width="2"/>' +
       '<path d="M25 15 Q60 75 95 15" fill="none" stroke="#C62828" stroke-width="2"/>' +
-      '<path d="M35 40 Q60 72 85 40" fill="none" stroke="#1565C0" stroke-width="2"/>' +
+      '<path d="M35 40 Q60 72 85 40" fill="none" stroke="#3E44D9" stroke-width="2"/>' +
       '</svg>',
     commands: [
       { op: 'function', id: 'f1', expr: 'x^2', from: -3, to: 3 },
       { op: 'style', target: 'f1', color: '#C62828', strokeWidth: 2 },
       { op: 'function', id: 'f2', expr: '0.5*x^2', from: -4.4, to: 4.4 },
-      { op: 'style', target: 'f2', color: '#1565C0', strokeWidth: 2 },
+      { op: 'style', target: 'f2', color: '#3E44D9', strokeWidth: 2 },
       { op: 'function', id: 'f3', expr: '2*x^2', from: -2.1, to: 2.1 },
       { op: 'style', target: 'f3', color: '#2E7D32', strokeWidth: 2 },
       { op: 'point', id: 'V', x: 0, y: 0, fixed: true },
@@ -150,7 +150,7 @@ window.DAJIAO_TEMPLATES = [
     thumb:
       '<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">' +
       '<line x1="15" y1="65" x2="105" y2="15" stroke="#C62828" stroke-width="2"/>' +
-      '<line x1="15" y1="70" x2="105" y2="35" stroke="#1565C0" stroke-width="2"/>' +
+      '<line x1="15" y1="70" x2="105" y2="35" stroke="#3E44D9" stroke-width="2"/>' +
       '<line x1="15" y1="45" x2="105" y2="5" stroke="#2E7D32" stroke-width="2"/>' +
       '<line x1="25" y1="65" x2="95" y2="25" stroke="#F9A825" stroke-width="2"/>' +
       '</svg>',
@@ -158,7 +158,7 @@ window.DAJIAO_TEMPLATES = [
       { op: 'function', id: 'f1', expr: 'x', from: -8, to: 8 },
       { op: 'style', target: 'f1', color: '#C62828', strokeWidth: 2 },
       { op: 'function', id: 'f2', expr: '2*x', from: -5, to: 5 },
-      { op: 'style', target: 'f2', color: '#1565C0', strokeWidth: 2 },
+      { op: 'style', target: 'f2', color: '#3E44D9', strokeWidth: 2 },
       { op: 'function', id: 'f3', expr: '0.5*x', from: -9, to: 9 },
       { op: 'style', target: 'f3', color: '#2E7D32', strokeWidth: 2 },
       { op: 'function', id: 'f4', expr: 'x + 2', from: -8, to: 6 },

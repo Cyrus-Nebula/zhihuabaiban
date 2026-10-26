@@ -50,7 +50,7 @@ export function createTools(ctx) {
   let lastClick = [0, 0];
 
   /* ---------- 多边形绘制预览（对标大角几何：折线预览 + 到鼠标的虚线） ---------- */
-  const PREVIEW_STYLE = { strokeColor: '#F59E0B', strokeWidth: 1.5, dash: 2, withLabel: false, highlight: false, name: '__preview__' };
+  const PREVIEW_STYLE = { strokeColor: '#6549D5', strokeWidth: 1.5, dash: 2, withLabel: false, highlight: false, name: '__preview__' };
   let previewChain = null; // 已选顶点折线
   let previewSeg = null;   // 最后顶点 -> 鼠标
   let previewRaf = 0;

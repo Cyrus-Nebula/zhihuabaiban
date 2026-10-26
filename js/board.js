@@ -282,7 +282,7 @@ function deleteObject(id) {
  * 故改为：点类 → 绑定的空心圆环（屏幕像素固定、自动跟随、点删除时自动消失）；
  * 线/面类 → 直接把 strokeColor 改为选中色（polygon 连 borders 一起改，恢复时同理）。
  */
-const SEL_COLOR = '#F97316';
+const SEL_COLOR = '#3E44D9'; // 品牌靛蓝（logo 渐变起点）
 const SEL_RING_R = 5; // 圆环半径（屏幕像素）
 const POINT_LIKE = new Set(['point', 'glider', 'midpoint', 'intersection', 'slider']);
 const TYPE_NAME = { point: '点', segment: '线段', line: '直线', ray: '射线', circle: '圆', polygon: '多边形', glider: '动点', text: '文本', functiongraph: '曲线', curve: '曲线', angle: '角', midpoint: '中点', intersect: '交点', perpendicular: '垂线', parallel: '平行线', slider: '滑动条' };
@@ -346,7 +346,7 @@ function showSelection() {
 }
 
 /* ---------- 对象面板 / 右键菜单 / 动态测量 ---------- */
-const OBJ_COLORS = ['#1565C0', '#C62828', '#2E7D32', '#F57C00', '#6A1B9A', '#37474F'];
+const OBJ_COLORS = ['#3E44D9', '#C62828', '#0F766E', '#B45309', '#7C3AED', '#37474F']; // 分类色板：首位为品牌靛蓝
 const EYE_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3l18 18"/><path d="M10.6 6.2A9.7 9.7 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.2 3.9M6.5 7.6A16.7 16.7 0 0 0 2 12s3.5 6.5 10 6.5c1.4 0 2.6-.3 3.8-.7"/></svg>';
 const TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 13h8l1-13M10 11v6M14 11v6"/></svg>';
@@ -354,8 +354,8 @@ let pendingMeasure = null; // 测距状态：已选第一个点，等待第二�
 
 function isHidden(el) { try { return el.evalVisProp('visible') === false; } catch (_) { return false; } }
 function elColor(el) {
-  try { const c = el.evalVisProp('strokeColor'); return typeof c === 'string' ? c : '#1565C0'; }
-  catch (_) { return '#1565C0'; }
+  try { const c = el.evalVisProp('strokeColor'); return typeof c === 'string' ? c : '#3E44D9'; }
+  catch (_) { return '#3E44D9'; }
 }
 function elWidth(el) { try { const w = Number(el.evalVisProp('strokeWidth')); return Number.isFinite(w) ? w : 2; } catch (_) { return 2; } }
 function elDash(el) { try { const d = Number(el.evalVisProp('dash')); return Number.isFinite(d) ? d : 0; } catch (_) { return 0; } }
@@ -1064,7 +1064,7 @@ ${safeScript(jxgCss)}
   .off-hdr { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 14px 20px; }
   .off-hdr b { font-size: 18px; }
   .off-tag { font-size: 12px; color: #64748b; }
-  .off-tag a { color: #01b88b; text-decoration: none; }
+  .off-tag a { color: #6549D5; text-decoration: none; }
   #box { width: min(96vw, 1080px); height: min(74vh, 700px); margin: 4px auto 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15, 23, 42, .08); }
 </style>
 <script>${safeScript(jxg)}</script>

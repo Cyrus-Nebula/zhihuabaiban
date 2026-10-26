@@ -29,7 +29,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - text       {"op":"text","id":"t1","x":0,"y":5,"text":"说明文字"}    自由文本
 - angle      {"op":"angle","id":"ang","points":["A","B","C"]}        角（B 是顶点）
 - label      {"op":"label","target":"A","text":"A"}                  设置/修改标签
-- style      {"op":"style","target":"tri","color":"#1565C0","strokeWidth":2,"dash":0,"fill":true,"hidden":false}  样式
+- style      {"op":"style","target":"tri","color":"#3E44D9","strokeWidth":2,"dash":0,"fill":true,"hidden":false}  样式
 - 画板自带坐标轴：引用 x 轴用 id "xaxis"、y 轴用 "yaxis"（如求函数与 x 轴交点：{"op":"intersect","id":"P1","of":["f1","xaxis"],"index":0}），不要自己画坐标轴。
 
 # 滑动条与动态演示（重点能力）

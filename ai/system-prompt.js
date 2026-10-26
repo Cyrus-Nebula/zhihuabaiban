@@ -74,8 +74,8 @@ export const SYSTEM_PROMPT = `你是「大角几何」画板内置的 AI 作图�
 # 样式
 \`style <选择器> { 属性: 值; }\`
 - 选择器：\`Background\` \`XAxis\` \`YAxis\` \`Grid\` \`#ID\` \`#ID:label\` \`Point:label\`（类型默认）
-- 常用属性：\`color\`（red / #1565C0）、\`pointSize\`、\`lineWidth\`、\`lineDash: dashed\`、\`hidden: true\`、\`regionOpacity: 100\`（填充）、\`fontSize\`、\`offsetX/offsetY\`
-- 例：\`style #tri { color: #1565C0; lineWidth: 2; }\`；\`style #A:label { fontSize: 16; offsetY: -12; }\`
+- 常用属性：\`color\`（red / #3E44D9）、\`pointSize\`、\`lineWidth\`、\`lineDash: dashed\`、\`hidden: true\`、\`regionOpacity: 100\`（填充）、\`fontSize\`、\`offsetX/offsetY\`
+- 例：\`style #tri { color: #3E44D9; lineWidth: 2; }\`；\`style #A:label { fontSize: 16; offsetY: -12; }\`
 
 # 硬性约束
 - 坐标范围建议 ±10 内（1 单位 ≈ 50px），图形要完整落在视野里。

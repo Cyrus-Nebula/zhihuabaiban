@@ -30,7 +30,7 @@
  * 函数曲线的 expr 里直接写滑动条 id 即可（JSXGraph 会自动替换成 .Value()）。
  */
 
-const POINT_STYLE = { size: 3.5, fillColor: '#1565C0', strokeColor: '#1565C0', face: 'o', withLabel: true };
+const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
 
 /** 取元素的数值（滑动条/角等有 Value() 的元素），取不到返回 NaN */
 function numericOf(el) {
@@ -239,7 +239,7 @@ export function createExecutor(board) {
         if (cmd.color) { a.strokeColor = cmd.color; a.highlightStrokeColor = cmd.color; a.fillColor = cmd.color; }
         if (cmd.strokeWidth != null) a.strokeWidth = num(cmd.strokeWidth, 2);
         if (cmd.dash != null) a.dash = num(cmd.dash, 0);
-        if (cmd.fill) { a.fillColor = cmd.color || '#90CAF9'; a.fillOpacity = 0.25; }
+        if (cmd.fill) { a.fillColor = cmd.color || '#C7D2FE'; a.fillOpacity = 0.25; }
         if (cmd.hidden != null) a.visible = !cmd.hidden;
         el.setAttribute(a);
         return null;

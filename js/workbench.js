@@ -25,7 +25,7 @@
   }
 
   const THUMB_W = 168, THUMB_H = 116, THUMB_PAD = 13;
-  const THUMB_BLUE = '#1565C0', THUMB_FILL = '#DBEAFE';
+  const THUMB_BLUE = '#3E44D9', THUMB_FILL = '#E0E7FF';
 
   /** 由保存的命令数组推算迷你预览 SVG；无内容时返回 null */
   function thumbSvg(cmds) {
