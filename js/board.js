@@ -180,16 +180,25 @@ function pushUndo() {
   redoStack.length = 0;
   updateUndoButtons();
 }
-function restore(s) {
-  const data = JSON.parse(s);
-  tools.clearPreview(); // 防止多边形预览元素在撤销/回放后残留
+/** 按当前 doc.commands 整体重放重建（改命令参数后用它落到画板上）；
+ *  自由点坐标等运行时状态来自 doc.moves，会原样套回去。 */
+function rebuildFromCommands(moves) {
+  tools.clearPreview(); // 防止多边形预览元素在重建后残留
+  // 自由点坐标/滑动条值属于运行时状态：不传就用重建前的最新值，避免被上一次保存的旧值冲掉
+  const mv = moves || executor.moves();
   executor.clearAll();
-  const cmds = Array.isArray(data.c) ? data.c : [];
+  const cmds = doc.commands;
   const r = executor.execute(cmds);
   doc.commands = cmds.filter((c, i) => r[i] && r[i].ok);
-  doc.moves = Array.isArray(data.m) ? data.m : [];
-  executor.applyMoves(doc.moves);
+  doc.moves = mv;
+  executor.applyMoves(mv);
   scheduleSave();
+}
+function restore(s) {
+  const data = JSON.parse(s);
+  doc.commands = Array.isArray(data.c) ? data.c : [];
+  doc.moves = Array.isArray(data.m) ? data.m : [];
+  rebuildFromCommands(doc.moves);
 }
 function undo() {
   if (blockIfReplaying()) return;
@@ -464,6 +473,19 @@ function refreshProps() {
   }
   segButtons($('obj-widths'), [[1, '细'], [2, '中'], [4, '粗']], elWidth(el), (w) => applyStyle(id, { strokeWidth: w }));
   segButtons($('obj-dashes'), [[0, '实线'], [4, '虚线'], [2, '点线']], elDash(el), (d) => applyStyle(id, { dash: d }));
+  // 函数曲线专属：取值范围（定义域 from~to + 值域裁剪 ymin~ymax）
+  const rangeRow = $('obj-range-row');
+  const fc = findCmd(id);
+  // 注意：JSXGraph 里 functiongraph 的 elType 是 'curve'，按作图命令判断最准
+  if (fc && fc.op === 'function') {
+    rangeRow.classList.remove('hidden');
+    $('obj-x-from').value = fc && Number.isFinite(Number(fc.from)) ? Number(fc.from) : -10;
+    $('obj-x-to').value = fc && Number.isFinite(Number(fc.to)) ? Number(fc.to) : 10;
+    $('obj-y-min').value = fc && fc.ymin != null ? fc.ymin : '';
+    $('obj-y-max').value = fc && fc.ymax != null ? fc.ymax : '';
+  } else {
+    rangeRow.classList.add('hidden');
+  }
   $('obj-rename').value = '';
   $('obj-toggle').textContent = isHidden(el) ? '显示' : '隐藏';
 }
@@ -654,7 +676,13 @@ function describeCmd(cmd) {
     case 'parallel': return `作平行线 ${cmd.id}：过 ${fmtList(cmd.through)} 平行于 ${fmtList(cmd.of)}`;
     case 'slider':
       return `添加滑动条 ${cmd.id}：${fmtNum(cmd.min)} ~ ${fmtNum(cmd.max)}${Number(cmd.step) > 0 ? `，步长 ${fmtNum(cmd.step)}` : '，连续'}，当前 ${fmtVal(cmd.value != null ? cmd.value : cmd.start)}`;
-    case 'function': return `绘制函数曲线 ${cmd.id}：y = ${cmd.expr}`;
+    case 'function': {
+      const dx = `x ∈ [${cmd.from == null ? -10 : cmd.from}, ${cmd.to == null ? 10 : cmd.to}]`;
+      const dy = (cmd.ymin != null || cmd.ymax != null)
+        ? `，值域 ${cmd.ymin == null ? '-∞' : cmd.ymin} ~ ${cmd.ymax == null ? '+∞' : cmd.ymax}`
+        : '';
+      return `绘制函数曲线 ${cmd.id}：y = ${cmd.expr}（${dx}${dy}）`;
+    }
     case 'text':
       if (cmd.bind) {
         const kind = { distance: '两点距离', length: '长度', radius: '半径', angle: '角度', value: '参数值' }[cmd.bind.kind] || cmd.bind.kind;
@@ -936,13 +964,63 @@ function normalizeExpr(raw) {
   s = s.replace(/(\d)\s*([xX])/g, '$1*$2').replace(/([xX])\s*(\d)/g, '$1*$2'); // 2x -> 2*x
   return s;
 }
+/** 读取工具栏的定义域输入，非法或空则回退 -10~10；左右颠倒时自动交换 */
+function readFnDomain() {
+  const a = Number($('fn-from').value);
+  const b = Number($('fn-to').value);
+  let from = Number.isFinite(a) ? a : -10;
+  let to = Number.isFinite(b) ? b : 10;
+  if (to < from) { const t = from; from = to; to = t; }
+  if (from === to) { to = from + 1; } // 退化区间会让曲线画不出来，撑开一格
+  return { from, to };
+}
 $('btn-fn-add').addEventListener('click', () => {
   if (blockIfReplaying()) return;
   const expr = normalizeExpr($('fn-input').value);
   if (!expr) { toast('先输入函数表达式'); return; }
+  const { from, to } = readFnDomain();
   pushUndo();
-  runCommands([{ op: 'function', id: nextId('f'), expr, from: -10, to: 10 }]);
+  runCommands([{ op: 'function', id: nextId('f'), expr, from, to }]);
   $('fn-input').value = '';
+});
+
+/* ---------- 函数取值范围（定义域 / 值域裁剪） ----------
+ * 曲线画出来之后仍可改范围：改的是它那条 function 命令，然后整体重放重建，
+ * 这样依赖该曲线的交点/动点等都跟着重建，不会出现悬空引用。
+ */
+function applyFunctionRange(id, from, to, ymin, ymax) {
+  if (blockIfReplaying()) return;
+  const cmd = doc.commands.find((c) => c.id === id && c.op === 'function');
+  if (!cmd) { toast('这条曲线没有可改范围的作图记录'); return; }
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) { toast('定义域不合法：左端需小于右端'); return; }
+  if ((ymin != null && !Number.isFinite(ymin)) || (ymax != null && !Number.isFinite(ymax))) { toast('值域不合法：请填数字或留空'); return; }
+  if (ymin != null && ymax != null && ymax < ymin) { const t = ymin; ymin = ymax; ymax = t; }
+  pushUndo();
+  cmd.from = from; cmd.to = to;
+  if (ymin == null) delete cmd.ymin; else cmd.ymin = ymin;
+  if (ymax == null) delete cmd.ymax; else cmd.ymax = ymax;
+  rebuildFromCommands();
+  if (executor.registry.has(id)) { clearSelection(); selectObject(id); }
+  refreshObjects();
+  refreshRecord();
+  const ytxt = (ymin != null || ymax != null)
+    ? `，值域 ${ymin == null ? '-∞' : ymin} ~ ${ymax == null ? '+∞' : ymax}`
+    : '，值域不限';
+  toast(`已更新 ${id} 的取值范围：x ∈ [${from}, ${to}]${ytxt}`);
+}
+$('obj-range-apply').addEventListener('click', () => {
+  if (!selectedId) return;
+  const n = (el) => { const v = el.value.trim(); return v === '' ? null : Number(v); };
+  const from = n($('obj-x-from')), to = n($('obj-x-to'));
+  if (from == null || to == null) { toast('请先填定义域左右端'); return; }
+  applyFunctionRange(selectedId, from, to, n($('obj-y-min')), n($('obj-y-max')));
+});
+$('obj-range-clear').addEventListener('click', () => {
+  if (!selectedId) return;
+  const n = (el) => { const v = el.value.trim(); return v === '' ? null : Number(v); };
+  const from = n($('obj-x-from')), to = n($('obj-x-to'));
+  if (from == null || to == null) { toast('请先填定义域左右端'); return; }
+  applyFunctionRange(selectedId, from, to, null, null);
 });
 
 /* ---------- 保存 / 导出 / 导入 ---------- */

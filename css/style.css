@@ -419,6 +419,13 @@ code {
   outline: none;
 }
 #fn-input:focus { border-color: var(--primary); }
+.fn-range {
+  width: 62px; flex: none;
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 6px; font-size: 13px; font-family: inherit;
+  color: var(--text); background: #fff; outline: none;
+}
+.fn-range:focus { border-color: var(--primary); }
 
 .board-main { flex: 1; display: flex; min-height: 0; }
 .board-box { flex: 1; min-width: 0; background: #fff; }
@@ -578,6 +585,16 @@ code {
   padding: 5px 8px; font-size: 12px; font-family: inherit; outline: none;
 }
 .obj-props-row input:focus { border-color: var(--primary); }
+.obj-props-range { gap: 6px; }
+.obj-props-range .btn { flex: none; }
+.obj-range-tag { font-size: 12px; color: var(--muted); flex: none; }
+.obj-props-row input.obj-num {
+  flex: 1 1 52px; min-width: 52px; max-width: 84px;
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px 6px; font-size: 12px; font-family: inherit;
+  color: var(--text); background: #fff; outline: none;
+}
+.obj-props-row input.obj-num:focus { border-color: var(--primary); }
 .obj-props-actions { gap: 6px; }
 .obj-props-actions .btn { flex: 1; }
 .obj-props-cmd { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); line-height: 1.6; word-break: break-all; }
@@ -1083,6 +1100,7 @@ code {
   .toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .toolbar::-webkit-scrollbar { display: none; }
   #fn-input { width: 130px; flex: none; }
+  .fn-range { width: 54px; flex: none; }
 
   /* 编辑器顶栏 */
   .editor-topbar { gap: 8px; padding: 8px 12px; }

@@ -24,7 +24,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - glider     {"op":"glider","id":"G","on":"c1","x":1,"y":1}          对象上的动点（可拖）
 - perpendicular {"op":"perpendicular","id":"p1","of":"l1","through":"A"}  垂线
 - parallel   {"op":"parallel","id":"pl1","of":"l1","through":"A"}    平行线
-- function   {"op":"function","id":"f1","expr":"x^2","from":-5,"to":5}  函数曲线
+- function   {"op":"function","id":"f1","expr":"x^2","from":-5,"to":5}  函数曲线（from/to 是定义域，默认 -10~10；可选 "ymin"/"ymax" 做值域裁剪，只画 y 落在该区间内的曲线段，如只要抛物线在 x 轴上方的部分：{"op":"function","id":"f1","expr":"x^2-4","from":-5,"to":5,"ymin":0}）
 - slider     {"op":"slider","id":"a","x1":-8,"y1":-9,"x2":-2,"y2":-9,"min":0,"max":5,"value":1,"step":0.1}  滑动条（用户可拖动的参数控件；x1,y1→x2,y2 是它在画板上的位置，省略会自动排到左下角）
 - text       {"op":"text","id":"t1","x":0,"y":5,"text":"说明文字"}    自由文本
 - angle      {"op":"angle","id":"ang","points":["A","B","C"]}        角（B 是顶点）
@@ -50,6 +50,11 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - 幂用 ^：x^2、x^3；乘号不可省略：2*x+1
 - 支持 sin/cos/tan/sqrt/abs/exp/ln/log、常量 pi 和 e
 - 例："x^2"、"sin(x)"、"2*x+1"、"sqrt(abs(x))"、"a*x^2"（a 是滑动条）
+
+# 函数取值范围（from/to/ymin/ymax）
+- 用户说"x 从 0 到 5""只看第一象限""定义域 [-2,3]""画 x≥0 的部分"→ 用 from/to 限定定义域。
+- 用户说"只要 x 轴上方""y 不超过 5 的那段""截断到 y∈[0,4]"→ 用 ymin/ymax 做值域裁剪（只给其中一个也行，另一个方向不限）。
+- 没提范围就别加，让曲线按默认 -10~10 出图；分段讨论（如"x<0 和 x≥0 分别画"）就画两条曲线，各自给不同的 from/to。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
