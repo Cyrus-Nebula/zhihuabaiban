@@ -145,40 +145,47 @@
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); heroAiGenerate(); }
   });
 
-  /* ---------- 导航：移动端汉堡菜单 + 滚动高亮 ---------- */
+  /* ---------- 导航：移动端汉堡菜单 ---------- */
   const navToggle = $('navToggle');
   const siteLinks = $('siteLinks');
-  navToggle.addEventListener('click', () => {
-    const open = siteLinks.classList.toggle('open');
+  function setMenu(open) {
+    siteLinks.classList.toggle('open', open);
     navToggle.setAttribute('aria-expanded', String(open));
     navToggle.setAttribute('aria-label', open ? '关闭菜单' : '打开菜单');
-  });
+  }
+  navToggle.addEventListener('click', () => setMenu(!siteLinks.classList.contains('open')));
   // 点击链接或空白处后收起
   siteLinks.addEventListener('click', (e) => {
-    if (e.target.closest('a')) siteLinks.classList.remove('open');
+    if (e.target.closest('a')) setMenu(false);
   });
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.site-nav')) siteLinks.classList.remove('open');
+    if (!e.target.closest('.site-nav')) setMenu(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setMenu(false);
   });
 
-  const linkMap = [
-    ['#quickstart', '快速入门'],
-    ['#templates', '资源库'],
-    ['#files', '我的画板'],
-    ['#about', '关于'],
-  ];
-  const spy = () => {
-    let current = '';
-    for (const [hash] of linkMap) {
-      const el = document.querySelector(hash);
-      if (el && el.getBoundingClientRect().top <= 120) current = hash;
-    }
-    siteLinks.querySelectorAll('a').forEach((a) => {
-      a.classList.toggle('active', a.getAttribute('href') === current);
+  /* ---------- 滚动高亮（IntersectionObserver 代替 scroll 轮询） ---------- */
+  const linkMap = ['#quickstart', '#templates', '#files', '#about'];
+  const linkEls = Array.from(siteLinks.querySelectorAll('a'));
+  if ('IntersectionObserver' in window) {
+    const visible = new Set();
+    const spyIO = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting) visible.add(en.target.id);
+        else visible.delete(en.target.id);
+      });
+      let current = '';
+      for (const hash of linkMap) {
+        if (visible.has(hash.slice(1))) current = hash;
+      }
+      linkEls.forEach((a) => a.classList.toggle('active', a.getAttribute('href') === current));
+    }, { rootMargin: '-96px 0px -55% 0px', threshold: 0 });
+    linkMap.forEach((h) => {
+      const el = document.querySelector(h);
+      if (el) spyIO.observe(el);
     });
-  };
-  window.addEventListener('scroll', spy, { passive: true });
-  spy();
+  }
 
   /* ---------- 快速入门面板：收起/展开 ---------- */
   const qsClose = $('qsClose');
@@ -231,4 +238,38 @@
     card.append(thumb, body);
     grid.appendChild(card);
   });
+
+  /* ---------- 滚动渐升入场 ----------
+     运行时才给元素打 data-reveal 标：CSS 里 [data-reveal] 初始是隐藏态，
+     若无 JS 运行则不会打标，页面正常全显，不会白屏。 */
+  const revealSel = [
+    '.hero-title', '.hero-sub', '.hero-ai', '.hero-action',
+    '.qs-panel', '.tpl-card', '.about-card', '.site-footer p',
+  ];
+  const revealEls = Array.from(document.querySelectorAll(revealSel.join(',')))
+    .filter((el) => !el.hidden && !el.closest('[hidden]'));
+  // 同一组内的卡片错峰 60ms，最多 4 档，避免长列表等待过久
+  revealEls.forEach((el, i) => {
+    el.setAttribute('data-reveal', '');
+    if (el.classList.contains('tpl-card')) {
+      el.style.transitionDelay = (i % 4) * 60 + 'ms';
+    }
+  });
+  if ('IntersectionObserver' in window && revealEls.length) {
+    const revealIO = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting) {
+          en.target.classList.add('revealed');
+          revealIO.unobserve(en.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    revealEls.forEach((el) => revealIO.observe(el));
+  } else {
+    revealEls.forEach((el) => el.classList.add('revealed'));
+  }
+  // prefers-reduced-motion 时 CSS 已降级为直接显示，这里兜底立即揭示
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    revealEls.forEach((el) => el.classList.add('revealed'));
+  }
 })();

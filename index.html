@@ -4,9 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>智绘几何 · 让数学可视化变得简单</title>
+  <meta name="description" content="智绘几何——开源免费的在线动态几何画板：AI 一句话作图、14 种手动作图工具、拖拽探索、模板案例，数据只存本机浏览器。" />
+  <meta name="theme-color" content="#01b88b" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="智绘几何 · 让数学可视化变得简单" />
+  <meta property="og:description" content="开源免费的在线动态几何画板：AI 一句话作图，数据只存本机。" />
+  <meta property="og:url" content="https://nebula-zhihua.pages.dev/" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/manrope@5/index.min.css" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body class="landing">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
   <!-- 顶部导航 -->
   <header class="site-nav">
     <a class="site-brand" href="index.html">
@@ -31,10 +43,12 @@
     </nav>
     <a class="btn btn-primary btn-sm site-cta" href="#hero">新建画板</a>
     <button class="nav-toggle" id="navToggle" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="siteLinks">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      <span class="nav-toggle-line" aria-hidden="true"></span>
+      <span class="nav-toggle-line" aria-hidden="true"></span>
     </button>
   </header>
 
+  <main id="main">
   <!-- 首屏 -->
   <section class="hero" id="hero">
     <div class="hero-decor" aria-hidden="true">
@@ -60,7 +74,7 @@
         </button>
         <input type="file" id="heroAiImgInput" accept="image/*" hidden />
         <button id="heroAiSend" class="hero-ai-send" type="button" title="生成画板" aria-label="生成画板">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
         </button>
       </div>
       <div id="heroAiImgPreview" class="ai-img-preview hidden">
@@ -136,9 +150,11 @@
       <p>所有文件仅保存在你自己的浏览器 localStorage 中，不上传任何服务器；换浏览器或清理缓存会丢失，重要画板请及时「导出 JSON」。</p>
     </div>
   </section>
+  </main>
 
   <footer class="site-footer">
     <p>平面画板 · <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a>（LGPL）｜AI · 智谱 GLM 免费模型｜立体画板 · 大角几何 SDK（Apache-2.0）</p>
+    <p>开源项目 · <a href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码</a>（MIT）｜本站不收集任何个人数据</p>
   </footer>
 
   <button class="fab-help" id="fabHelp" type="button" title="帮助：查看关于与常见问题" aria-label="帮助">?</button>

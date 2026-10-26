@@ -19,8 +19,15 @@
     </div>
     <div id="editorHost">
       <div class="loading-mask" id="loadingMask">
-        <div class="spinner"></div>
-        <div>正在加载画板引擎…</div>
+        <div class="skel-board" aria-hidden="true">
+          <div class="skel-canvas"></div>
+          <div class="skel-row">
+            <div class="skel-chip"></div>
+            <div class="skel-chip"></div>
+            <div class="skel-chip"></div>
+          </div>
+        </div>
+        <p class="loading-text">正在加载画板引擎…</p>
       </div>
       <div class="error-mask" id="errorMask">
         <h3>画板加载失败</h3>
