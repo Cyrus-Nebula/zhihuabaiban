@@ -5,6 +5,8 @@
  *  - 工具条：14 种作图工具（多步工具引擎 js/tools.js）+ 撤销/重做 + 函数曲线
  *  - 交互：点已有对象自动吸附、交点就近选取、选中高亮、Delete 级联删除、
  *          Ctrl+Z/Y 撤销重做、Ctrl+S 保存、Esc 取消、回车结束多边形
+ *  - 动画：顶部「▶ 动画」让滑动条自动播放（慢/中/快 + 往复 + 多选同步），课堂动态演示；
+ *          只改画面当前值，不写入存档；手动拖滑块或进入回放会自动停止
  *  - AI 面板：自然语言 -> ai/board-backend.js 生成命令 -> executor 逐条执行（带动画）
  *  - 保存：{name, commands, moves} 存 localStorage；打开时重放命令 + 覆盖坐标
  *  - 导出：PNG（SVG 序列化）/ 离线 HTML（单文件自包含，双击即开）/ JSON
@@ -109,6 +111,166 @@ document.addEventListener('click', (e) => {
   }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleSettingsPop(false); });
+
+/* ---------- 滑动条动画（自动播放）：课堂动态演示 ----------
+ * 对标大角几何「滑动条 + 自动播放」：选中滑动条后按给定速度连续改变它的值，
+ * 依赖它的点 / 圆 / 曲线随之实时重算，形成可讲解的动态演示。
+ * 纯前端（requestAnimationFrame + JXGraph slider.setValue），不联网、不改存档：
+ * 动画只作用于画面上的当前值，不动 doc.commands / doc.moves，刷新后回到保存值。
+ */
+const animPop = $('anim-pop');
+const animBtn = $('btn-anim');
+const animTarget = $('anim-target');
+const animSpeedBox = $('anim-speed');
+const animPingpong = $('anim-pingpong');
+const animPlayBtn = $('anim-play');
+const ANIM_PERIOD = { slow: 10, normal: 6, fast: 3 }; // 单趟（min→max）用时，秒
+let animPeriod = ANIM_PERIOD.normal;
+let anim = null; // { ids, ranges:{id:{min,max,cur}}, vals:{}, dir, pingpong, raf, last }
+
+/** 当前画板里可用的滑动条 id（按作图命令顺序） */
+function sliderIds() {
+  return doc.commands
+    .filter((c) => c && c.op === 'slider' && executor.registry.has(c.id))
+    .map((c) => c.id);
+}
+/** 滑动条取值区间：取自作图命令（比读引擎内部状态稳），当前值读引擎 */
+function sliderRange(id) {
+  const cmd = doc.commands.find((c) => c && c.op === 'slider' && c.id === id);
+  const el = executor.registry.get(id);
+  if (!cmd || !el) return null;
+  let min = Number(cmd.min), max = Number(cmd.max);
+  if (!Number.isFinite(min)) min = 0;
+  if (!Number.isFinite(max)) max = 10;
+  if (max < min) { const t = min; min = max; max = t; }
+  const cur = Number(typeof el.Value === 'function' ? el.Value() : NaN);
+  return { min, max, cur: Number.isFinite(cur) ? Math.min(max, Math.max(min, cur)) : min };
+}
+function syncAnimTargets() {
+  const ids = sliderIds();
+  const prev = animTarget.value;
+  animTarget.innerHTML = '';
+  if (!ids.length) {
+    const o = document.createElement('option');
+    o.value = ''; o.textContent = '（无滑动条）';
+    animTarget.appendChild(o);
+    return;
+  }
+  const all = document.createElement('option');
+  all.value = '__all__';
+  all.textContent = `全部（${ids.length} 个）`;
+  animTarget.appendChild(all);
+  for (const id of ids) {
+    const r = sliderRange(id) || { min: 0, max: 10 };
+    const o = document.createElement('option');
+    o.value = id;
+    o.textContent = `${id}：${fmtNum(r.min)} ~ ${fmtNum(r.max)}`;
+    animTarget.appendChild(o);
+  }
+  animTarget.value = Array.from(animTarget.options).some((o) => o.value === prev) ? prev : '__all__';
+}
+function animTargets() {
+  const ids = sliderIds();
+  if (!ids.length) return [];
+  return animTarget.value === '__all__' ? ids : ids.filter((id) => id === animTarget.value);
+}
+function animTick(ts) {
+  if (!anim) return;
+  const dt = anim.last ? Math.min(0.1, (ts - anim.last) / 1000) : 0; // 切后台回来不跳变
+  anim.last = ts;
+  let alive = false;
+  for (const id of anim.ids) {
+    const r = anim.ranges[id];
+    const el = executor.registry.get(id);
+    if (!r || !el || typeof el.setValue !== 'function') continue;
+    alive = true;
+    const span = r.max - r.min;
+    let v = anim.vals[id];
+    if (span > 0) {
+      v += anim.dir * (span / animPeriod) * dt;
+      if (v > r.max) {
+        if (anim.pingpong) { v = r.max - (v - r.max); anim.dir = -1; }
+        else v = r.min;
+      } else if (v < r.min) {
+        if (anim.pingpong) { v = r.min + (r.min - v); anim.dir = 1; }
+        else v = r.max;
+      }
+    }
+    v = Math.min(r.max, Math.max(r.min, v));
+    anim.vals[id] = v;
+    el.setValue(v); // 命令给了 step 时，引擎的 snapWidth 会把值吸附到步长
+  }
+  if (!alive) { animStop(); return; } // 滑动条被删掉 / 换了文档：自动收摊
+  try { board.update(); } catch (_) { /* 忽略单次更新异常，下一帧继续 */ }
+  anim.raf = requestAnimationFrame(animTick);
+}
+function animStart() {
+  if (blockIfReplaying()) return;
+  const ids = animTargets();
+  if (!ids.length) { toast('没有可播放的滑动条'); return; }
+  const ranges = {}, vals = {};
+  for (const id of ids) {
+    const r = sliderRange(id);
+    if (r) { ranges[id] = r; vals[id] = r.cur; }
+  }
+  if (!Object.keys(ranges).length) { toast('没有可播放的滑动条'); return; }
+  anim = { ids: Object.keys(ranges), ranges, vals, dir: 1, pingpong: animPingpong.checked, raf: 0, last: 0 };
+  animPlayBtn.textContent = '⏸ 暂停';
+  animBtn.textContent = '⏸ 动画中';
+  anim.raf = requestAnimationFrame(animTick);
+}
+function animStop() {
+  if (!anim) return;
+  cancelAnimationFrame(anim.raf);
+  anim = null;
+  animPlayBtn.textContent = '▶ 播放';
+  animBtn.textContent = '▶ 动画';
+}
+function isSliderId(id) {
+  const el = id ? executor.registry.get(id) : null;
+  return !!(el && el.elType === 'slider');
+}
+/** 鼠标是否落在某个滑动条手柄/轨道上：JXG 的 slider 手柄不在拾取表中，按几何位置判断 */
+function hitSliderHandle(evt) {
+  let p;
+  try { p = usrCoords(evt); } catch (_) { return false; }
+  for (const id of sliderIds()) {
+    const el = executor.registry.get(id);
+    if (!el || typeof el.X !== 'function' || typeof el.Y !== 'function') continue;
+    let x, y;
+    try { x = el.X(); y = el.Y(); } catch (_) { continue; }
+    if (Math.abs(p[0] - x) < 0.4 && Math.abs(p[1] - y) < 0.5) return true;
+  }
+  return false;
+}
+function toggleAnimPop(force) {
+  const show = typeof force === 'boolean' ? force : animPop.classList.contains('hidden');
+  if (show) { syncAnimTargets(); animPop.classList.remove('hidden'); }
+  else animPop.classList.add('hidden');
+  animBtn.setAttribute('aria-expanded', String(show));
+}
+animBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!sliderIds().length) { toast('先用「滑动条」工具添加参数控件，再播放动画'); return; }
+  toggleAnimPop();
+});
+animPlayBtn.addEventListener('click', () => { if (anim) animStop(); else animStart(); });
+animPingpong.addEventListener('change', () => { if (anim) anim.pingpong = animPingpong.checked; });
+animTarget.addEventListener('change', () => { if (anim) { animStop(); animStart(); } }); // 换目标立即重播
+animSpeedBox.querySelectorAll('button').forEach((b) => {
+  b.addEventListener('click', () => {
+    animPeriod = ANIM_PERIOD[b.dataset.speed] || ANIM_PERIOD.normal;
+    animSpeedBox.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+  });
+});
+// 注意：JSXGraph 会吃掉画板上的 click 冒泡，所以这里必须走捕获阶段，
+// 否则点了画板（最常见的"点空白处收起"）面板不会关。
+document.addEventListener('click', (e) => {
+  if (animBtn.contains(e.target)) return; // 按钮自己负责开合
+  if (!animPop.classList.contains('hidden') && !animPop.contains(e.target)) toggleAnimPop(false);
+}, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleAnimPop(false); });
+animSpeedBox.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.speed === 'normal'));
 
 setAxis.addEventListener('change', () => { boardSettings.axis = setAxis.checked; saveSettings(); applyAxisGrid(); });
 setGrid.addEventListener('change', () => { boardSettings.grid = setGrid.checked; saveSettings(); applyAxisGrid(); });
@@ -720,6 +882,7 @@ function blockIfReplaying() {
 
 function enterStep() {
   if (stepMode) return;
+  animStop(); // 进入回放前停掉动画，避免两者同时改画板
   if (!doc.commands.length) { toast('还没有作图记录，先画点什么吧'); return; }
   fullSnapshot = snap();
   stepCommands = doc.commands.slice();
@@ -926,6 +1089,7 @@ board.on('down', (evt) => {
       clearSelection();
       return;
     }
+    if (anim && (isSliderId(id) || hitSliderHandle(evt))) animStop(); // 手动拖滑块时让动画让位
     if (id) selectObject(id); else clearSelection();
     return;
   }

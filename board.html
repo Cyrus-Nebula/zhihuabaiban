@@ -41,6 +41,30 @@
         <div class="settings-note">设置自动保存在本机浏览器</div>
       </div>
     </div>
+    <div class="settings-wrap">
+      <button id="btn-anim" class="btn" type="button" aria-expanded="false" title="滑动条自动播放：让参数连续变化，形成课堂动态演示">▶ 动画</button>
+      <div id="anim-pop" class="settings-pop hidden" role="dialog" aria-label="动画播放">
+        <div class="settings-title">动画播放</div>
+        <div class="settings-row">
+          <span>滑动条</span>
+          <select id="anim-target" class="anim-select" aria-label="选择要自动播放的滑动条"></select>
+        </div>
+        <div class="settings-row">
+          <span>速度</span>
+          <div class="obj-seg" id="anim-speed">
+            <button type="button" data-speed="slow">慢</button>
+            <button type="button" data-speed="normal">中</button>
+            <button type="button" data-speed="fast">快</button>
+          </div>
+        </div>
+        <label class="settings-row" for="anim-pingpong">
+          <span>往复<em class="settings-sub">到端点后反向播放</em></span>
+          <input type="checkbox" id="anim-pingpong" class="switch" checked />
+        </label>
+        <button id="anim-play" class="btn btn-primary anim-play" type="button">▶ 播放</button>
+        <div class="settings-note">自动播放只改变画面上的参数值，不修改已保存的图形数据。</div>
+      </div>
+    </div>
     <button id="btn-save" class="btn" type="button">保存</button>
     <button id="btn-export-png" class="btn" type="button">导出 PNG</button>
     <button id="btn-export-html" class="btn" type="button" title="导出单个 HTML 文件：内嵌画板引擎与当前图形，双击即可离线打开，无需联网和账号">导出离线HTML</button>
