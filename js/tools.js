@@ -34,6 +34,7 @@ export function createTools(ctx) {
     perpendicular: { label: '垂线',   hint: '先点一条线，再点线外一点作垂线', steps: ['object', 'point'] },
     parallel:      { label: '平行线', hint: '先点一条线，再点线外一点作平行线', steps: ['object', 'point'] },
     angle:         { label: '角',     hint: '依次点击：起点、顶点、终点', steps: ['point', 'point', 'point'] },
+    trim:          { label: '裁剪',   hint: '先点一条线/圆，再在它上面点两点，取中间一段', steps: ['object', 'point', 'point'] },
     text:          { label: '文本',   hint: '点击画板放置文本', steps: ['newpoint'] },
     slider:        { label: '滑动条', hint: '点击画板放置滑动条：可调范围的数值参数控件', steps: ['newpoint'] },
     delete:        { label: '删除',   hint: '点击对象删除（依赖它的对象会一起删除）', steps: ['object'] },
@@ -151,6 +152,15 @@ export function createTools(ctx) {
         setTool('select');
         return true;
       }
+      if (current === 'trim') {
+        // 分段裁剪只认直线/射线/线段/圆（射线在 JXGraph 里也是 line）
+        const el = executor.registry.get(id);
+        const t = el && el.elType;
+        if (!el || (t !== 'line' && t !== 'segment' && t !== 'circle')) {
+          toast('分段裁剪只支持直线、射线、线段和圆');
+          return true;
+        }
+      }
       pending.push({ kind: 'object', id });
       afterStep(def);
       return true;
@@ -174,6 +184,20 @@ export function createTools(ctx) {
         ctx.endAction();
         setTool('select');
       });
+      return true;
+    }
+
+    if (current === 'trim') {
+      // 第 2/3 步：在选中的线/圆上放一个动点（自动吸附到对象上），两点定一段
+      const target = pending[0].id;              // 第 1 步拾取的线/圆
+      const prev = pending[pending.length - 1];  // 上一个裁剪点（动点，带坐标）
+      if (prev && Math.hypot(x - prev.x, y - prev.y) < 0.4) { toast('两个裁剪点太近了，分开一点'); return true; }
+      const gid = nextId('g');
+      const r = runCommands([{ op: 'glider', id: gid, on: target, x, y }]);
+      if (!r[0] || !r[0].ok) { toast('裁剪点放置失败：' + (r[0] && r[0].error)); return true; }
+      created.push(gid); // 取消时连这点一起清掉
+      pending.push({ kind: 'point', id: gid, x, y });
+      afterStep(def);
       return true;
     }
 
@@ -212,6 +236,7 @@ export function createTools(ctx) {
     const def = TOOLS[current];
     const ids = pending.map((p) => p.id);
     let cmd = null;
+    const extra = []; // 裁剪：隐藏原对象的后续命令（与主命令同一撤销单元）
     switch (current) {
       case 'segment': cmd = { op: 'segment', from: ids[0], to: ids[1] }; break;
       case 'line': cmd = { op: 'line', through: [ids[0], ids[1]] }; break;
@@ -242,12 +267,44 @@ export function createTools(ctx) {
         cmd = { op: 'intersect', of: [ids[0], ids[1]], index };
         break;
       }
+      case 'trim': {
+        // 分段裁剪（对标大角几何：一个圆裁半边、一条线取一段，无需重画）：
+        // 两个裁剪点是放在原对象上的动点，所以裁剪结果会随原对象动态变化。
+        const target = ids[0];
+        const el = executor.registry.get(target);
+        const c0 = ctx.findCmd(target);
+        // 继承原对象的颜色/线宽/线型：裁剪后看起来就是"原来那条被截短了"
+        let sc = null, sw = null, sd = null;
+        try { sc = el.evalVisProp('strokeColor'); } catch (_) { /* 忽略 */ }
+        try { sw = Number(el.evalVisProp('strokeWidth')); } catch (_) { /* 忽略 */ }
+        try { sd = Number(el.evalVisProp('dash')); } catch (_) { /* 忽略 */ }
+        if (el && el.elType === 'circle' && c0 && c0.center != null) {
+          cmd = { op: 'arc', id: nextId('arc'), center: c0.center, from: ids[1], to: ids[2] };
+          if (typeof sc === 'string') cmd.color = sc;
+          if (Number.isFinite(sw)) cmd.strokeWidth = sw;
+          if (Number.isFinite(sd)) cmd.dash = sd;
+        } else if (el && (el.elType === 'line' || el.elType === 'segment')) {
+          cmd = { op: 'segment', id: nextId('s'), from: ids[1], to: ids[2] };
+          if (typeof sc === 'string' || Number.isFinite(sw) || Number.isFinite(sd)) {
+            extra.push({ op: 'style', target: cmd.id,
+              color: typeof sc === 'string' ? sc : undefined,
+              strokeWidth: Number.isFinite(sw) ? sw : undefined,
+              dash: Number.isFinite(sd) ? sd : undefined });
+          }
+        } else {
+          toast('分段裁剪只支持直线、射线、线段和圆');
+        }
+        if (cmd) extra.push({ op: 'style', target, hidden: true }); // 原对象隐藏，对象面板可随时恢复
+        break;
+      }
       default: break;
     }
     pending = [];
     created = [];
     // 点/单步工具没有对象命令，不分配 id（避免编号跳号）
-    if (cmd) { cmd.id = nextId(PREFIX[current] || 'o'); runCommands(cmd); }
+    if (cmd) { if (!cmd.id) cmd.id = nextId(PREFIX[current] || 'o'); runCommands(cmd); }
+    for (const c of extra) runCommands(c);
+    if (cmd && current === 'trim') toast('已裁剪：原对象已隐藏，可在对象面板「显示」恢复');
     ctx.endAction();
     setTool('select');
   }

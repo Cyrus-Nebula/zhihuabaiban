@@ -22,6 +22,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - midpoint   {"op":"midpoint","id":"M","of":["A","B"]}               中点（依赖对象）
 - intersect  {"op":"intersect","id":"P","of":["l1","c1"],"index":0}  交点（index 0 或 1）
 - glider     {"op":"glider","id":"G","on":"c1","x":1,"y":1}          对象上的动点（可拖）
+- arc        {"op":"arc","id":"arc1","center":"O","from":"A","to":"B"}  圆弧（以 O 为圆心，从 A 点扫到 B 点，默认逆时针；A/B 定半径与终角，可选 "clockwise":true 改顺时针，可带 color/strokeWidth/dash）
 - perpendicular {"op":"perpendicular","id":"p1","of":"l1","through":"A"}  垂线
 - parallel   {"op":"parallel","id":"pl1","of":"l1","through":"A"}    平行线
 - function   {"op":"function","id":"f1","expr":"x^2","from":-5,"to":5}  函数曲线（from/to 是定义域，默认 -10~10；可选 "ymin"/"ymax" 做值域裁剪，只画 y 落在该区间内的曲线段，如只要抛物线在 x 轴上方的部分：{"op":"function","id":"f1","expr":"x^2-4","from":-5,"to":5,"ymin":0}）
@@ -55,6 +56,10 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - 用户说"x 从 0 到 5""只看第一象限""定义域 [-2,3]""画 x≥0 的部分"→ 用 from/to 限定定义域。
 - 用户说"只要 x 轴上方""y 不超过 5 的那段""截断到 y∈[0,4]"→ 用 ymin/ymax 做值域裁剪（只给其中一个也行，另一个方向不限）。
 - 没提范围就别加，让曲线按默认 -10~10 出图；分段讨论（如"x<0 和 x≥0 分别画"）就画两条曲线，各自给不同的 from/to。
+
+# 分段裁剪（圆弧 / 线段截取）
+- 用户说"只要这个圆的左半边/上半圆/一段弧"→ 用 arc：center 给圆心 id，from/to 给圆上两个点（直径两端 = 半圆）；要动态弧先把 from/to 设成圆上的 glider。
+- 用户说"这条线只要中间一段"→ 在线上放两个 glider，再用 segment 连它们，原线加 {"op":"style","target":"l1","hidden":true} 隐藏。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

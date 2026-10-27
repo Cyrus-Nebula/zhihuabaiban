@@ -154,7 +154,7 @@ const REF_FIELDS = {
   segment: ['from', 'to'], ray: ['from', 'to'], line: ['through'],
   circle: ['center', 'through', 'radius'], polygon: ['points'], midpoint: ['of'],
   intersect: ['of'], glider: ['on'], perpendicular: ['of', 'through'],
-  parallel: ['of', 'through'], angle: ['points'],
+  parallel: ['of', 'through'], angle: ['points'], arc: ['center', 'from', 'to'],
   // 点坐标可以是滑动条 id（动态联动），删滑动条时要连带删掉依赖它的点
   point: ['x', 'y'],
 };
@@ -294,7 +294,7 @@ function deleteObject(id) {
 const SEL_COLOR = '#3E44D9'; // 品牌靛蓝（logo 渐变起点）
 const SEL_RING_R = 5; // 圆环半径（屏幕像素）
 const POINT_LIKE = new Set(['point', 'glider', 'midpoint', 'intersection', 'slider']);
-const TYPE_NAME = { point: '点', segment: '线段', line: '直线', ray: '射线', circle: '圆', polygon: '多边形', glider: '动点', text: '文本', functiongraph: '曲线', curve: '曲线', angle: '角', midpoint: '中点', intersect: '交点', perpendicular: '垂线', parallel: '平行线', slider: '滑动条' };
+const TYPE_NAME = { point: '点', segment: '线段', line: '直线', ray: '射线', circle: '圆', polygon: '多边形', glider: '动点', text: '文本', functiongraph: '曲线', curve: '曲线', angle: '角', midpoint: '中点', intersect: '交点', perpendicular: '垂线', parallel: '平行线', slider: '滑动条', arc: '圆弧' };
 let selectedId = null;
 let selRing = null;
 let selOrigColor = null;
@@ -672,6 +672,7 @@ function describeCmd(cmd) {
     case 'midpoint': return `取中点 ${cmd.id}：${fmtList(cmd.of)} 的中点`;
     case 'intersect': return `取交点 ${cmd.id}：${fmtList(cmd.of)}`;
     case 'glider': return `创建动点 ${cmd.id}：在 ${cmd.on} 上 ${fmtPt([cmd.x, cmd.y])}`;
+    case 'arc': return `绘制圆弧 ${cmd.id}：以 ${cmd.center} 为圆心，从 ${cmd.from} 扫到 ${cmd.to}${cmd.clockwise ? '（顺时针）' : ''}`;
     case 'perpendicular': return `作垂线 ${cmd.id}：过 ${fmtList(cmd.through)} 垂直于 ${fmtList(cmd.of)}`;
     case 'parallel': return `作平行线 ${cmd.id}：过 ${fmtList(cmd.through)} 平行于 ${fmtList(cmd.of)}`;
     case 'slider':
@@ -900,6 +901,7 @@ const tools = createTools({
   board, executor, nextId, runCommands,
   beginAction, endAction,
   deleteObject,
+  findCmd,
   removeCmds: (ids) => { const s = new Set(ids); doc.commands = doc.commands.filter((c) => !s.has(c.id)); },
   toast, usrCoords, usrToScreen,
   onToolChange: applyToolUi,

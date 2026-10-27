@@ -15,6 +15,7 @@
  *   midpoint  {id,of:[A,B]}                    中点
  *   intersect {id,of:[o1,o2],index?}           交点（index 0/1）
  *   glider    {id,on,x,y}                      对象上的动点
+ *   arc       {id,center,from,to,color?,strokeWidth?,dash?,clockwise?}  圆弧（以 center 为圆心，从 from 点扫到 to 点）
  *   perpendicular {id,of,through}              垂线
  *   parallel  {id,of,through}                  平行线
  *   slider    {id,x1,y1,x2,y2,min,max,value?,step?}  滑动条参数控件（拖动改值）
@@ -182,6 +183,20 @@ export function createExecutor(board) {
       }
       case 'glider':
         return board.create('glider', [num(cmd.x, 0), num(cmd.y, 0), resolve(cmd.on)], opt);
+      case 'arc': {
+        // 圆弧：JSXGraph arc 三件套 = 圆心 + 半径点 + 终角点（底层是 curve）。
+        // from/to 一般为圆上的两个点（分段裁剪工具会把它们放成圆上的动点），
+        // 原圆变大变小时弧随之贴合；color/strokeWidth/dash 可省略，默认与线/圆一致（蓝 2px 实线）。
+        const a = {
+          ...opt,
+          strokeColor: cmd.color || '#0072B2',
+          highlightStrokeColor: cmd.color || '#0072B2',
+          strokeWidth: cmd.strokeWidth != null ? num(cmd.strokeWidth, 2) : 2,
+          orientation: cmd.clockwise ? 'clockwise' : 'counterclockwise',
+        };
+        if (cmd.dash != null) a.dash = num(cmd.dash, 0);
+        return board.create('arc', [resolve(cmd.center), resolve(cmd.from), resolve(cmd.to)], a);
+      }
       case 'slider': {
         // 滑动条：可拖动的数值参数控件。id 应尽量用单个小写字母（a/b/c…），
         // 因为函数表达式里是直接按名字引用它的（JSXGraph 会自动替换成 .Value()）。
