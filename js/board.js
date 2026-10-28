@@ -9,7 +9,7 @@
  *          只改画面当前值，不写入存档；手动拖滑块或进入回放会自动停止
  *  - AI 面板：自然语言 -> ai/board-backend.js 生成命令 -> executor 逐条执行（带动画）
  *  - 保存：{name, commands, moves} 存 localStorage；打开时重放命令 + 覆盖坐标
- *  - 导出：PNG（SVG 序列化）/ 离线 HTML（单文件自包含，双击即开）/ JSON
+ *  - 导出：PNG（SVG 序列化）/ SVG 矢量图（SVG 根克隆，可无限缩放）/ 离线 HTML（单文件自包含，双击即开）/ JSON
  *
  * 注意：config.js / store.js / models.js 是经典脚本（挂全局），本模块直接用
  * 全局绑定，不做 import；executor.js / tools.js 是 ES module，正常 import。
@@ -1252,6 +1252,52 @@ $('btn-export-png').addEventListener('click', () => {
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
   } catch (e) {
     toast('PNG 导出失败：' + e.message);
+  }
+});
+
+/* 导出 SVG 矢量图：直接序列化画板当前的 SVG 根（含内部渲染的文本标签），
+ * 加好 xmlns / 尺寸并垫一张背景矩形，得到单文件、可无限缩放的矢量图。
+ * 全程离线、不依赖服务器与账号，对标大角几何「导出 SVG 矢量图」。 */
+/** 构造可独立打开的 SVG 字符串；出错返回 null。抽出便于自测（window.__exportBoardSvg）。 */
+function exportBoardSvg() {
+  try {
+    const svg = board.renderer.svgRoot;
+    const rect = svg.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width || 800));
+    const h = Math.max(1, Math.round(rect.height || 600));
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    clone.setAttribute('width', String(w));
+    clone.setAttribute('height', String(h));
+    // 垫背景矩形：单独打开 SVG 时有底色，与画板页一致。
+    // 深色模式下整张 svg 被 CSS 反色，白底会被反成深底，故统一填白即可。
+    const bg = (boardSettings.bg === 'beige') ? '#FAF5EC' : '#ffffff';
+    const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bgRect.setAttribute('x', '0');
+    bgRect.setAttribute('y', '0');
+    bgRect.setAttribute('width', String(w));
+    bgRect.setAttribute('height', String(h));
+    bgRect.setAttribute('fill', bg);
+    clone.insertBefore(bgRect, clone.firstChild);
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone);
+  } catch (e) {
+    return null;
+  }
+}
+window.__exportBoardSvg = exportBoardSvg;
+$('btn-export-svg').addEventListener('click', () => {
+  if (blockIfReplaying()) return;
+  try {
+    const str = exportBoardSvg();
+    if (!str) { toast('SVG 导出失败'); return; }
+    const rect = board.renderer.svgRoot.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width || 800));
+    const h = Math.max(1, Math.round(rect.height || 600));
+    download((nameInput.value.trim() || '画板') + '.svg', str, 'image/svg+xml');
+    toast('已导出 SVG 矢量图（' + w + '×' + h + '）：可无限缩放，适合课件与印刷');
+  } catch (e) {
+    toast('SVG 导出失败：' + e.message);
   }
 });
 
