@@ -13,7 +13,9 @@
  *   circle    {id,center,through|radius}       圆（radius 也可以是滑动条 id）
  *   polygon   {id,points:[A,B,C]}              多边形
  *   midpoint  {id,of:[A,B]}                    中点
- *   intersect {id,of:[o1,o2],index?}           交点（index 0/1）
+ *   intersect {id,of:[o1,o2],index?|select?}  交点（多个交点时用 index 或 select 指定取哪一个：
+ *                                              select = top/bottom/left/right/near(配 near:[x,y])；
+ *                                              index = 0/1/2… 按序号取）
  *   glider    {id,on,x,y}                      对象上的动点
  *   arc       {id,center,from,to,color?,strokeWidth?,dash?,clockwise?}  圆弧（以 center 为圆心，从 from 点扫到 to 点）
  *   perpendicular {id,of,through}              垂线
@@ -79,6 +81,134 @@ function bindText(bind, registry) {
     };
   }
   return gone;
+}
+
+/* ---------- 交点筛选（对标大角几何 2D 工具「交点筛选」）----------
+ * 两个对象相交时可能有多个交点。JSXGraph 的 intersection 接受第三个 parent 作为
+ * "取第几个交点"的下标（0/1/2…），但一次只返回单个点、下标越界也不报错（坐标变成 NaN）。
+ * 之前所有写法都漏了这个下标参数——AI 写 {"index":1} 想取第二个交点时，实际画出来的
+ * 仍然是第一个点。这里把候选算出来再按条件挑一个，顺便让「取上方那个交点」这种
+ * 语义化需求能表达成命令里的 select 字段（重建/拖拽后依然稳定指向同一个分支）。
+ */
+
+/** 语义筛选条件 select 的中文名（UI 与作图记录共用） */
+export const SELECT_CN = {
+  top: '上方', bottom: '下方', left: '左侧', right: '右侧',
+  near: '最近', first: '第一个', last: '最后一个',
+};
+
+/** 几何体是否真的经过某点（用于识破"伪交点"）——认不出来的类型一律放行，避免误杀 */
+function elContainsPoint(el, x, y, tol) {
+  const t = el && el.elType;
+  try {
+    if (t === 'circle') {
+      return Math.abs(Math.hypot(x - el.center.X(), y - el.center.Y()) - el.Radius()) < tol;
+    }
+    if (t === 'line' || t === 'axis' || t === 'segment' || t === 'arrow' || t === 'ticks') {
+      const p1 = el.point1, p2 = el.point2;
+      if (p1 && p2) {
+        const dx = p2.X() - p1.X(), dy = p2.Y() - p1.Y();
+        const len = Math.hypot(dx, dy);
+        if (len > 0) return Math.abs((x - p1.X()) * dy - (y - p1.Y()) * dx) / len < tol;
+      }
+      return true;
+    }
+    if ((t === 'curve' || t === 'functiongraph') && typeof el.X === 'function' && typeof el.Y === 'function') {
+      // 函数曲线的参数就是 x：X(x)≈x 时，只要 Y(x) 也对得上就算在曲线上
+      if (Math.abs(el.X(x) - x) < tol) return Math.abs(el.Y(x) - y) < tol * 8;
+    }
+  } catch (_) { /* 忽略：算不出来就当通过 */ }
+  return true;
+}
+
+/** 试探两个对象的全部交点：返回 [{index,x,y}…]（index 是 JSXGraph 的下标，去重后可能不连续） */
+export function intersectCandidates(board, o1, o2, limit) {
+  const out = [];
+  if (!board || !o1 || !o2) return out;
+  const unit = Math.abs(Number(board.unitX)) > 0 ? Math.abs(Number(board.unitX)) : 30;
+  const tol = Math.max(0.5 / unit, 1e-6);       // 判定"在不在几何体上"：约半个屏幕像素
+  const same = Math.max(0.05 / unit, 1e-9);     // 判定"是不是同一个点"：相切时两支只差浮点噪声
+  const max = Number(limit) > 0 ? Number(limit) : 4;
+  for (let i = 0; i < max; i++) {
+    let made = null;
+    try { made = board.create('intersection', [o1, o2, i], { name: '', withLabel: false }); }
+    catch (_) { break; } // 这两个类型根本不能求交
+    const arr = Array.isArray(made) ? made : [made];
+    let x = NaN, y = NaN;
+    try { x = Number(arr[0].X()); y = Number(arr[0].Y()); } catch (_) { /* 忽略 */ }
+    arr.forEach((p) => { try { board.removeObject(p); } catch (_) { /* 忽略 */ } });
+    if (!Number.isFinite(x) || !Number.isFinite(y)) break; // 越界：后面也不会再有
+    // 并不相交时 JSXGraph 不会报错，而是给回一个 (0,0) 之类的伪点——必须验明正身
+    if (!elContainsPoint(o1, x, y, tol) || !elContainsPoint(o2, x, y, tol)) continue;
+    if (out.some((c) => Math.hypot(c.x - x, c.y - y) < same)) continue; // 相切：两支是同一个点
+    out.push({ index: i, x, y });
+  }
+  return out;
+}
+
+/** 按命令里的 select / index 决定用第几个候选（返回 cands 的下标） */
+export function pickIntersectIndex(cands, cmd) {
+  const list = Array.isArray(cands) ? cands : [];
+  const n = list.length;
+  if (!n) return 0;
+  const argmin = (fn) => { let bi = 0, bv = Infinity; list.forEach((c, i) => { const v = fn(c); if (v < bv) { bv = v; bi = i; } }); return bi; };
+  const argmax = (fn) => argmin((c) => -fn(c));
+  const sel = String((cmd && (cmd.select || cmd.pick)) || '').toLowerCase();
+  switch (sel) {
+    case 'top': case 'upper': case '上': return argmax((c) => c.y);
+    case 'bottom': case 'lower': case '下': return argmin((c) => c.y);
+    case 'left': case '左': return argmin((c) => c.x);
+    case 'right': case '右': return argmax((c) => c.x);
+    case 'first': return 0;
+    case 'last': return n - 1;
+    case 'near': case 'nearest': case '最近': {
+      const raw = cmd && cmd.near;
+      const ref = Array.isArray(raw) ? [Number(raw[0]), Number(raw[1])] : null;
+      if (!ref || !Number.isFinite(ref[0]) || !Number.isFinite(ref[1])) break;
+      return argmin((c) => Math.hypot(c.x - ref[0], c.y - ref[1]));
+    }
+    default: break;
+  }
+  // 没写筛选条件（或条件认不出来）：写了 index 就按 index 取，否则第 0 个（旧行为）
+  const idx = Number(cmd && cmd.index);
+  if (Number.isFinite(idx)) return Math.max(0, Math.min(n - 1, Math.trunc(idx)));
+  return 0;
+}
+
+/** 候选的人类可读标签：两个候选按方位说（上/下、左/右），多了就报序号 */
+export function intersectCandidateLabels(cands) {
+  const list = Array.isArray(cands) ? cands : [];
+  if (list.length < 2) return list.length ? [{ key: 'only', text: '交点', select: null, index: 0 }] : [];
+  if (list.length === 2) {
+    const [a, b] = list;
+    const vertical = Math.abs(b.y - a.y) >= Math.abs(b.x - a.x);
+    if (vertical) {
+      const upper = a.y >= b.y ? 0 : 1;
+      return [
+        { key: 'top', text: SELECT_CN.top, select: 'top', index: upper },
+        { key: 'bottom', text: SELECT_CN.bottom, select: 'bottom', index: 1 - upper },
+      ];
+    }
+    const left = a.x <= b.x ? 0 : 1;
+    return [
+      { key: 'left', text: SELECT_CN.left, select: 'left', index: left },
+      { key: 'right', text: SELECT_CN.right, select: 'right', index: 1 - left },
+    ];
+  }
+  return list.map((c, i) => ({ key: 'i' + i, text: `第 ${i + 1} 个`, select: null, index: i }));
+}
+
+/** 命令当前选中的是哪个候选（用于在 UI 里标记激活态） */
+export function intersectActiveLabel(cands, cmd) {
+  const labels = intersectCandidateLabels(cands);
+  if (!labels.length) return null;
+  const list = Array.isArray(cands) ? cands : [];
+  const xi = list[pickIntersectIndex(list, cmd)];
+  if (xi) {
+    const hit = labels.find((L) => L.index === xi.index);
+    if (hit) return hit;
+  }
+  return labels[0];
 }
 
 export function createExecutor(board) {
@@ -177,9 +307,14 @@ export function createExecutor(board) {
       case 'midpoint':
         return board.create('midpoint', resolveList(cmd.of), opt);
       case 'intersect': {
-        const pts = board.create('intersection', [resolve(cmd.of && cmd.of[0]), resolve(cmd.of && cmd.of[1])]);
-        const i = Math.max(0, Math.min(1, num(cmd.index, 0)));
-        return Array.isArray(pts) ? pts[i] : pts;
+        // 两个对象可能有多个交点：先算出有效候选，再按 select（方位语义）/ index（序号）挑一个，
+        // 最后把下标作为第三个 parent 交给 JSXGraph——不给下标它就永远只返回第一个分支。
+        const o1 = resolve(cmd.of && cmd.of[0]);
+        const o2 = resolve(cmd.of && cmd.of[1]);
+        const cands = intersectCandidates(board, o1, o2);
+        if (!cands.length) throw new Error('这两个对象没有交点（可能并不相交，或交点超出了画板范围）');
+        const pick = cands[pickIntersectIndex(cands, cmd)];
+        return board.create('intersection', [o1, o2, pick.index], opt);
       }
       case 'glider':
         return board.create('glider', [num(cmd.x, 0), num(cmd.y, 0), resolve(cmd.on)], opt);

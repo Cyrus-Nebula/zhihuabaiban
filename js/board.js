@@ -15,7 +15,7 @@
  * 全局绑定，不做 import；executor.js / tools.js 是 ES module，正常 import。
  */
 
-import { createExecutor } from './executor.js';
+import { createExecutor, intersectCandidates, intersectCandidateLabels, intersectActiveLabel, SELECT_CN } from './executor.js';
 import { createTools } from './tools.js';
 
 const CFG = window.DAJIAO_CONFIG || {};
@@ -648,8 +648,55 @@ function refreshProps() {
   } else {
     rangeRow.classList.add('hidden');
   }
+  // 交点筛选（对标大角几何 2D 工具）：多交点的对象可以在候选之间来回切换，
+  // 切换只改命令里的 select / index，不重画整个图形之外的东西（重放保持一致）。
+  const pickRow = $('obj-pick-row');
+  const choices = intersectChoices(id);
+  if (choices.labels.length > 1) {
+    pickRow.classList.remove('hidden');
+    const active = intersectActiveLabel(choices.cands, fc);
+    segButtons($('obj-picks'), choices.labels.map((L) => [L.key, L.text]),
+      active ? active.key : null,
+      (key) => {
+        const L = choices.labels.find((x) => x.key === key);
+        if (L) switchIntersect(id, L);
+      });
+  } else {
+    pickRow.classList.add('hidden');
+  }
   $('obj-rename').value = '';
   $('obj-toggle').textContent = isHidden(el) ? '显示' : '隐藏';
+}
+
+/** 某个交点对象当前有哪些候选（>=2 个才谈得上筛选） */
+function intersectChoices(id) {
+  const c = findCmd(id);
+  if (!c || c.op !== 'intersect') return { cands: [], labels: [] };
+  const refs = Array.isArray(c.of) ? c.of : [];
+  const o1 = executor.registry.get(refs[0]);
+  const o2 = executor.registry.get(refs[1]);
+  if (!o1 || !o2) return { cands: [], labels: [] };
+  let cands = [];
+  try { cands = intersectCandidates(board, o1, o2); } catch (_) { cands = []; }
+  return { cands, labels: intersectCandidateLabels(cands) };
+}
+
+/** 切换交点：改写命令的筛选条件后整体重放，选中的屏幕高亮要重新挂到新元素上 */
+function switchIntersect(id, label) {
+  const c = findCmd(id);
+  if (!c || !label) return;
+  pushUndo();
+  delete c.index;
+  delete c.select;
+  delete c.near;
+  if (label.select) c.select = label.select;
+  else c.index = label.index;
+  rebuildFromCommands();
+  clearSelection();
+  refreshObjects();
+  refreshRecord();
+  if (executor.registry.has(id)) selectObject(id);
+  toast('交点已切换到「' + label.text + '」');
 }
 function segButtons(container, options, current, onPick) {
   container.innerHTML = '';
@@ -771,6 +818,11 @@ function openCtxMenu(cx, cy, id) {
   item('线宽：粗', () => applyStyle(id, { strokeWidth: 4 }));
   item('虚线', () => applyStyle(id, { dash: 4 }));
   item('点线', () => applyStyle(id, { dash: 2 }));
+  // 多交点对象：右键直接切换取哪一支（与属性面板「交点」行等价）
+  const ch = intersectChoices(id);
+  if (ch.labels.length > 1) {
+    for (const L of ch.labels) item('交点：' + L.text, () => switchIntersect(id, L));
+  }
   item(isHidden(el) ? '显示' : '隐藏', () => toggleVisible(id));
   const ml = measureLabelFor(el);
   if (ml) item(ml, () => measureObject(id));
@@ -832,7 +884,15 @@ function describeCmd(cmd) {
         : `绘制圆 ${cmd.id}：圆心 ${cmd.center}，半径 ${fmtNum(cmd.radius)}`;
     case 'polygon': return `绘制多边形 ${cmd.id}：顶点 ${fmtList(cmd.points)}`;
     case 'midpoint': return `取中点 ${cmd.id}：${fmtList(cmd.of)} 的中点`;
-    case 'intersect': return `取交点 ${cmd.id}：${fmtList(cmd.of)}`;
+    case 'intersect': {
+      const tag = cmd.select ? SELECT_CN[cmd.select] : null;
+      const ord = Number.isFinite(Number(cmd.index)) ? Number(cmd.index) + 1 : 0;
+      let how = '';
+      if (tag) how = `，${tag}那个`;
+      else if (ord > 1) how = `，第 ${ord} 个`;
+      else if (cmd.near) how = `，离 (${fmtList(cmd.near)}) 最近`;
+      return `取交点 ${cmd.id}：${fmtList(cmd.of)}${how}`;
+    }
     case 'glider': return `创建动点 ${cmd.id}：在 ${cmd.on} 上 ${fmtPt([cmd.x, cmd.y])}`;
     case 'arc': return `绘制圆弧 ${cmd.id}：以 ${cmd.center} 为圆心，从 ${cmd.from} 扫到 ${cmd.to}${cmd.clockwise ? '（顺时针）' : ''}`;
     case 'perpendicular': return `作垂线 ${cmd.id}：过 ${fmtList(cmd.through)} 垂直于 ${fmtList(cmd.of)}`;
@@ -1334,8 +1394,9 @@ async function exportOfflineHtml() {
     toast('导出失败：' + e.message);
     return;
   }
-  // executor 是 ES module；内联进经典 <script> 时去掉 export 关键字即可（函数体不动）
-  const execInline = execSrc.replace(/(^|\n)\s*export\s+(function\s+createExecutor)/, '$1$2');
+  // executor 是 ES module；内联进经典 <script> 时去掉 export 关键字即可（函数体不动）。
+  // 注意要剥掉所有顶层 export（不止 createExecutor 一个），否则内联后整段脚本语法报错。
+  const execInline = execSrc.replace(/(^|\n)\s*export\s+(?=(function|const|let|var|class|default)\b)/g, '$1');
   if (!/function createExecutor/.test(execInline)) {
     toast('导出失败：执行器源码格式异常');
     return;

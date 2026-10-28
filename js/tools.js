@@ -18,6 +18,11 @@
  *    onToolChange, onProgress }
  */
 
+import { intersectCandidates, intersectCandidateLabels } from './executor.js';
+
+// 点类元素：屏幕取点（吸附/选中）时优先命中它们
+const POINT_LIKE = new Set(['point', 'glider', 'midpoint', 'intersection']);
+
 export function createTools(ctx) {
   const { board, executor, nextId, runCommands, toast, usrCoords, usrToScreen } = ctx;
 
@@ -30,7 +35,7 @@ export function createTools(ctx) {
     circle:        { label: '圆',     hint: '先点圆心，再点圆上一点', steps: ['point', 'point'] },
     polygon:       { label: '多边形', hint: '依次点击顶点（≥3 个），回车结束', steps: ['point'], open: true },
     midpoint:      { label: '中点',   hint: '点击两个点，取它们的中点', steps: ['point', 'point'] },
-    intersect:     { label: '交点',   hint: '点击两条线/圆，自动取离点击近的交点', steps: ['object', 'object'] },
+    intersect:     { label: '交点',   hint: '点击两条线/圆，有多个交点时在弹出的候选里挑一个', steps: ['object', 'object'] },
     perpendicular: { label: '垂线',   hint: '先点一条线，再点线外一点作垂线', steps: ['object', 'point'] },
     parallel:      { label: '平行线', hint: '先点一条线，再点线外一点作平行线', steps: ['object', 'point'] },
     angle:         { label: '角',     hint: '依次点击：起点、顶点、终点', steps: ['point', 'point', 'point'] },
@@ -114,12 +119,12 @@ export function createTools(ctx) {
     }
     return any;
   }
-  /** 拾取已有点（吸附用） */
+  /** 拾取已有点（吸附/选中用）。交点、中点这类"派生点"也算点——
+   *  否则点一个落在圆上的交点时，会先命中底下的圆而选不中点本身。 */
   function pickPoint(evt) {
     const rev = reverseRegistry();
     for (const el of underMouse(evt)) {
-      const t = el.elType;
-      if (t === 'point' || t === 'glider') { const id = rev.get(el); if (id) return id; }
+      if (POINT_LIKE.has(el.elType)) { const id = rev.get(el); if (id) return id; }
     }
     return null;
   }
@@ -223,6 +228,74 @@ export function createTools(ctx) {
     progress(`${def.hint}（${pending.length}/${def.steps.length}）`);
   }
 
+  /** 交点命令：候选有方位语义就写 select（拖动后仍稳定指向同一支），否则写序号 index */
+  function makeIntersectCmd(ids, cands, label) {
+    const c = { op: 'intersect', of: [ids[0], ids[1]] };
+    const L = label || null;
+    if (L && L.select) c.select = L.select;
+    else {
+      const cand = (cands && cands[L ? L.index : 0]) || null;
+      c.index = cand ? cand.index : 0;
+    }
+    return c;
+  }
+  /** 候选点的坐标小字：(1.23, 4.56) */
+  function fmtCoord(p) {
+    const r = (v) => (Number.isFinite(v) ? String(Math.round(v * 100) / 100) : '?');
+    return `(${r(p && p.x)}, ${r(p && p.y)})`;
+  }
+
+  /** 多交点时让用户在候选里挑一个（Esc / 点外部 = 取消，回传 null） */
+  function askChoice(x, y, opts, done) {
+    const o = opts || {};
+    const [sx, sy] = usrToScreen(x, y);
+    const box = document.createElement('div');
+    box.className = 'float-choice';
+    if (o.title) {
+      const t = document.createElement('div');
+      t.className = 'float-choice-title';
+      t.textContent = o.title;
+      box.appendChild(t);
+    }
+    for (const op of (o.options || [])) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'float-choice-item';
+      const lab = document.createElement('span');
+      lab.className = 'fc-text';
+      lab.textContent = op.text;
+      b.appendChild(lab);
+      if (op.sub) {
+        const s = document.createElement('span');
+        s.className = 'fc-sub';
+        s.textContent = op.sub;
+        b.appendChild(s);
+      }
+      b.addEventListener('click', () => close(op.value));
+      box.appendChild(b);
+    }
+    document.body.appendChild(box);
+    const W = box.offsetWidth || 208;
+    const H = box.offsetHeight || 120;
+    box.style.left = Math.max(8, Math.min(sx, window.innerWidth - W - 8)) + 'px';
+    box.style.top = Math.max(8, Math.min(sy, window.innerHeight - H - 8)) + 'px';
+    let closed = false;
+    const close = (val) => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('mousedown', outside, true);
+      document.removeEventListener('keydown', onKey, true);
+      box.remove();
+      done(val);
+    };
+    function outside(ev) { if (!box.contains(ev.target)) close(null); }
+    function onKey(ev) { if (ev.key === 'Escape') { ev.stopPropagation(); close(null); } }
+    setTimeout(() => {
+      document.addEventListener('mousedown', outside, true);
+      document.addEventListener('keydown', onKey, true);
+    }, 0);
+  }
+
   function createPoint(x, y) {
     const cmd = { op: 'point', id: nextId('P'), x, y };
     const r = runCommands(cmd);
@@ -236,6 +309,7 @@ export function createTools(ctx) {
     const def = TOOLS[current];
     const ids = pending.map((p) => p.id);
     let cmd = null;
+    let deferred = false; // 交点筛选等需要用户再选一次：由回调收尾，避免下面提前 endAction
     const extra = []; // 裁剪：隐藏原对象的后续命令（与主命令同一撤销单元）
     switch (current) {
       case 'segment': cmd = { op: 'segment', from: ids[0], to: ids[1] }; break;
@@ -248,23 +322,36 @@ export function createTools(ctx) {
       case 'parallel': cmd = { op: 'parallel', of: ids[0], through: ids[1] }; break;
       case 'angle': cmd = { op: 'angle', points: [ids[0], ids[1], ids[2]] }; break;
       case 'intersect': {
-        // 两个候选交点都试算，保留离点击位置近的那个
-        let index = 0;
-        try {
-          const o1 = executor.registry.get(ids[0]);
-          const o2 = executor.registry.get(ids[1]);
-          const pts = board.create('intersection', [o1, o2]);
-          const arr = Array.isArray(pts) ? pts : [pts];
-          if (arr.length > 1) {
-            let bd = Infinity;
-            arr.forEach((p, i) => {
-              const d = (p.X() - lastClick[0]) ** 2 + (p.Y() - lastClick[1]) ** 2;
-              if (d < bd) { bd = d; index = i; }
-            });
-          }
-          arr.forEach((p) => { try { board.removeObject(p); } catch (_) { /* 忽略 */ } });
-        } catch (_) { /* 交不存在等情况交给 execute 报错 */ }
-        cmd = { op: 'intersect', of: [ids[0], ids[1]], index };
+        // 交点筛选（对标大角几何 2D 工具「交点筛选」）：
+        // 先把有效候选算出来——只有一个就直接画（保持原有的顺手）；
+        // 有多个则弹候选浮层让用户按方位明确指定，写进命令的 select 字段，
+        // 这样之后拖动画图、保存重开、回放都稳定指向同一个分支。
+        const o1 = executor.registry.get(ids[0]);
+        const o2 = executor.registry.get(ids[1]);
+        let cands = [];
+        try { cands = intersectCandidates(board, o1, o2); } catch (_) { cands = []; }
+        if (!cands.length) { toast('这两个对象没有交点'); break; }
+        const labels = intersectCandidateLabels(cands);
+        if (labels.length > 1) {
+          deferred = true;
+          askChoice(lastClick[0], lastClick[1], {
+            title: `选一个交点（${labels.length} 个候选）`,
+            options: labels.map((L) => ({
+              value: L,
+              text: L.text,
+              sub: fmtCoord(cands[L.index]),
+            })),
+          }, (choice) => {
+            if (!choice) { ctx.endAction(); toast('已取消'); setTool('select'); return; }
+            const c = makeIntersectCmd(ids, cands, choice);
+            c.id = nextId('x');
+            runCommands([c]);
+            ctx.endAction();
+            setTool('select');
+          });
+          break;
+        }
+        cmd = makeIntersectCmd(ids, cands, labels[0]);
         break;
       }
       case 'trim': {
@@ -301,6 +388,7 @@ export function createTools(ctx) {
     }
     pending = [];
     created = [];
+    if (deferred) return; // 弹出筛选层了，等用户选完再落命令
     // 点/单步工具没有对象命令，不分配 id（避免编号跳号）
     if (cmd) { if (!cmd.id) cmd.id = nextId(PREFIX[current] || 'o'); runCommands(cmd); }
     for (const c of extra) runCommands(c);
@@ -407,6 +495,7 @@ export function createTools(ctx) {
     pick: pickObject,
     pickPoint,
     askInput,
+    askChoice,
     clearPreview,
   };
 }

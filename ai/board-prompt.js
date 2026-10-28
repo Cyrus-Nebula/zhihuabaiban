@@ -20,7 +20,11 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - circle     {"op":"circle","id":"c1","center":"A","through":"B"}    圆（也可用 "radius":3；through 与 radius 二选一，不要同时给）
 - polygon    {"op":"polygon","id":"tri","points":["A","B","C"]}      多边形
 - midpoint   {"op":"midpoint","id":"M","of":["A","B"]}               中点（依赖对象）
-- intersect  {"op":"intersect","id":"P","of":["l1","c1"],"index":0}  交点（index 0 或 1）
+- intersect  {"op":"intersect","id":"P","of":["l1","c1"],"select":"top"}  交点（两个对象可能有多个交点，必须用 select 指定取哪个）
+  · select 取值："top"最上方 / "bottom"最下方 / "left"最靠左 / "right"最靠右 / "near"离某点最近（需同时给 "near":[x,y]）
+  · 也可以写 "index":0 或 1 按序号取；不写筛选条件时默认取第一个（序号 0）
+  · 要一次画出全部交点（如"求函数与 x 轴的两个交点""两圆交于 A、B"），就写两条 intersect 命令，分别给不同条件：
+    {"op":"intersect","id":"A","of":["f1","xaxis"],"select":"left"}   {"op":"intersect","id":"B","of":["f1","xaxis"],"select":"right"}
 - glider     {"op":"glider","id":"G","on":"c1","x":1,"y":1}          对象上的动点（可拖）
 - arc        {"op":"arc","id":"arc1","center":"O","from":"A","to":"B"}  圆弧（以 O 为圆心，从 A 点扫到 B 点，默认逆时针；A/B 定半径与终角，可选 "clockwise":true 改顺时针，可带 color/strokeWidth/dash）
 - perpendicular {"op":"perpendicular","id":"p1","of":"l1","through":"A"}  垂线
@@ -31,7 +35,8 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - angle      {"op":"angle","id":"ang","points":["A","B","C"]}        角（B 是顶点）
 - label      {"op":"label","target":"A","text":"A"}                  设置/修改标签
 - style      {"op":"style","target":"tri","color":"#3E44D9","strokeWidth":2,"dash":0,"fill":true,"hidden":false}  样式
-- 画板自带坐标轴：引用 x 轴用 id "xaxis"、y 轴用 "yaxis"（如求函数与 x 轴交点：{"op":"intersect","id":"P1","of":["f1","xaxis"],"index":0}），不要自己画坐标轴。
+- 画板自带坐标轴：引用 x 轴用 id "xaxis"、y 轴用 "yaxis"（如求函数与 x 轴靠左的交点：{"op":"intersect","id":"P1","of":["f1","xaxis"],"select":"left"}），不要自己画坐标轴。
+- 提醒：两圆相交、直线与圆相交、函数与直线相交往往有 2 个交点，只写一条 intersect 只画得出一个点，需要两个点就写两条并给出不同 select。
 
 # 滑动条与动态演示（重点能力）
 - 需要"动态演示/参数变化/动画/可调"的效果时，用 slider 造参数，再让它驱动几何体：
