@@ -1361,6 +1361,133 @@ $('btn-export-svg').addEventListener('click', () => {
   }
 });
 
+/* ---------- 导出：黑白试题图（纯黑线条 + 白底，适合打印/试卷） ---------- */
+/**
+ * 把任意 SVG 字符串重新着色为黑白：白底，几何线条统一成黑色，网格等浅色线保留浅灰，
+ * 文本黑色，去掉彩色填充（多边形/圆只留轮廓）。基于 DOMParser 解析后逐元素处理，
+ * 返回重新序列化后的字符串；解析失败则原样返回。抽出为纯函数便于自测（window.__recolorSvgToBW）。
+ */
+function recolorSvgToBW(svgString) {
+  try {
+    const doc = new DOMParser().parseFromString(svgString, 'image/svg+xml');
+    const svg = doc.documentElement;
+    if (!svg || svg.nodeName.toLowerCase() !== 'svg') return svgString;
+    const NS = 'http://www.w3.org/2000/svg';
+
+    // 颜色 -> [r,g,b]；none/transparent/currentColor 返回 null
+    const parseColor = (c) => {
+      if (!c) return null;
+      c = String(c).trim().toLowerCase();
+      if (c === 'none' || c === 'transparent' || c === 'currentcolor') return null;
+      if (c[0] === '#') {
+        let h = c.slice(1);
+        if (h.length === 3) h = h.split('').map((x) => x + x).join('');
+        if (h.length === 6 || h.length === 8) {
+          const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+          if ([r, g, b].every(Number.isFinite)) return [r, g, b];
+        }
+        return null;
+      }
+      const m = c.match(/rgba?\(([^)]+)\)/);
+      if (m) { const p = m[1].split(/[,\s/]+/).map(Number); if (p.length >= 3 && p.slice(0, 3).every(Number.isFinite)) return [p[0], p[1], p[2]]; }
+      return null;
+    };
+    const luminance = (rgb) => (rgb ? (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255 : 1);
+    // 线条：浅色（网格等）保留浅灰，其余（彩色/深色几何）统一变黑
+    const strokeMap = (raw) => {
+      const rgb = parseColor(raw);
+      if (!rgb) return raw; // none/transparent 等保持
+      return luminance(rgb) > 0.85 ? '#cfcfcf' : '#000000';
+    };
+
+    const fixEl = (el) => {
+      const tag = (el.tagName || '').toLowerCase();
+      const isText = tag === 'text' || tag === 'tspan' || tag === 'flowpara' || tag === 'flowspan';
+      ['stroke', 'fill'].forEach((kind) => {
+        const v = el.getAttribute(kind);
+        if (v == null) return;
+        const nv = isText
+          ? '#000000'
+          : (kind === 'stroke' ? strokeMap(v) : 'none');
+        if (nv !== v) el.setAttribute(kind, nv);
+      });
+      const st = el.getAttribute('style');
+      if (st) {
+        let ns = st;
+        ns = ns.replace(/stroke\s*:\s*([^;]+)/gi, (_, col) => 'stroke: ' + (isText ? '#000000' : strokeMap(col)));
+        ns = ns.replace(/fill\s*:\s*([^;]+)/gi, () => 'fill: ' + (isText ? '#000000' : 'none'));
+        if (ns !== st) el.setAttribute('style', ns);
+      }
+    };
+    const all = svg.querySelectorAll('*');
+    for (let i = 0; i < all.length; i++) fixEl(all[i]);
+
+    // 白底：首元素不是白底矩形则插入一个（覆盖整张画板）
+    const first = svg.firstElementChild;
+    if (!first || first.getAttribute('fill') !== '#ffffff') {
+      const bg = doc.createElementNS(NS, 'rect');
+      bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
+      bg.setAttribute('width', '100%'); bg.setAttribute('height', '100%');
+      bg.setAttribute('fill', '#ffffff');
+      svg.insertBefore(bg, svg.firstChild);
+    } else {
+      first.setAttribute('fill', '#ffffff');
+    }
+    const out = new XMLSerializer().serializeToString(svg);
+    // DOMParser/XMLSerializer 不会保留 <?xml ?> 声明，单独打开 SVG 时补回以保证是标准独立文件
+    return out.startsWith('<?xml') ? out : '<?xml version="1.0" encoding="UTF-8"?>\n' + out;
+  } catch (e) {
+    return svgString;
+  }
+}
+
+/** 构造黑白试题图 SVG：在彩色 SVG 导出（exportBoardSvg）基础上重新着色为纯黑白。出错返回 null。 */
+function exportBoardSvgBW() {
+  try {
+    const color = exportBoardSvg();
+    if (!color) return null;
+    return recolorSvgToBW(color);
+  } catch (e) { return null; }
+}
+window.__recolorSvgToBW = recolorSvgToBW;
+window.__exportBoardSvgBW = exportBoardSvgBW;
+
+$('btn-export-bw-png').addEventListener('click', () => {
+  if (blockIfReplaying()) return;
+  try {
+    const str = exportBoardSvgBW();
+    if (!str) { toast('黑白试题图导出失败'); return; }
+    const rect = board.renderer.svgRoot.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width || 800));
+    const h = Math.max(1, Math.round(rect.height || 600));
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = w * scale; canvas.height = h * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(scale, scale); ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((b) => {
+        if (b) download((nameInput.value.trim() || '画板') + '_黑白试题.png', b);
+        else toast('黑白试题图导出失败');
+      }, 'image/png');
+    };
+    img.onerror = () => toast('黑白试题图导出失败');
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+  } catch (e) { toast('黑白试题图导出失败：' + e.message); }
+});
+
+$('btn-export-bw-svg').addEventListener('click', () => {
+  if (blockIfReplaying()) return;
+  try {
+    const str = exportBoardSvgBW();
+    if (!str) { toast('黑白试题图导出失败'); return; }
+    download((nameInput.value.trim() || '画板') + '_黑白试题.svg', str, 'image/svg+xml');
+    toast('已导出黑白试题图（纯黑线条 + 白底，适合打印试卷）');
+  } catch (e) { toast('黑白试题图导出失败：' + e.message); }
+});
+
 /* ---------- 导出：离线 HTML（单文件，双击即开） ----------
  * 把画板引擎（vendor/jsxgraphcore.js + jsxgraph.css）、命令执行器
  * （js/executor.js，内联时去掉 export 关键字，仍是同一份源码）和当前画板的
