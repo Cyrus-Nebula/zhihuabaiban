@@ -9,7 +9,8 @@
  *          只改画面当前值，不写入存档；手动拖滑块或进入回放会自动停止
  *  - AI 面板：自然语言 -> ai/board-backend.js 生成命令 -> executor 逐条执行（带动画）
  *  - 保存：{name, commands, moves} 存 localStorage；打开时重放命令 + 覆盖坐标
- *  - 导出：PNG（SVG 序列化）/ SVG 矢量图（SVG 根克隆，可无限缩放）/ 离线 HTML（单文件自包含，双击即开）/ JSON
+ *  - 导出：PNG / SVG 矢量图 / 黑白试题图 / 离线 HTML（单文件自包含）/
+ *          LaTeX-TikZ（可编译文档、黑白文档、tikzpicture 片段）/ JSON
  *
  * 注意：config.js / store.js / models.js 是经典脚本（挂全局），本模块直接用
  * 全局绑定，不做 import；executor.js / tools.js 是 ES module，正常 import。
@@ -101,7 +102,7 @@ function syncSettingsUi() {
 }
 function toggleSettingsPop(force) {
   const show = typeof force === 'boolean' ? force : setPop.classList.contains('hidden');
-  if (show) { syncSettingsUi(); setPop.classList.remove('hidden'); }
+  if (show) { toggleLatexPop(false); toggleAnimPop(false); syncSettingsUi(); setPop.classList.remove('hidden'); }
   else setPop.classList.add('hidden');
 }
 $('btn-settings').addEventListener('click', (e) => { e.stopPropagation(); toggleSettingsPop(); });
@@ -245,7 +246,7 @@ function hitSliderHandle(evt) {
 }
 function toggleAnimPop(force) {
   const show = typeof force === 'boolean' ? force : animPop.classList.contains('hidden');
-  if (show) { syncAnimTargets(); animPop.classList.remove('hidden'); }
+  if (show) { toggleLatexPop(false); toggleSettingsPop(false); syncAnimTargets(); animPop.classList.remove('hidden'); }
   else animPop.classList.add('hidden');
   animBtn.setAttribute('aria-expanded', String(show));
 }
@@ -1488,8 +1489,501 @@ $('btn-export-bw-svg').addEventListener('click', () => {
   } catch (e) { toast('黑白试题图导出失败：' + e.message); }
 });
 
+/* ---------- 导出：LaTeX / TikZ 代码（对标大角几何「导出 LaTeX / TikZ 代码」） ----------
+ * 把画板上的几何对象翻译成 TikZ 画图语句，产出可直接编译的 .tex（或供粘贴的 tikzpicture 片段），
+ * 用于把图形插到论文、讲义、试卷里，矢量无损缩放。
+ * 全程在本地浏览器计算：不联网、不上传、不引入账号与云端依赖，契合开源/离线可用定位。
+ * 覆盖：点（含标签）、线段/直线/射线（无限延伸的部分自动裁剪到可视框）、圆、多边形（含填充）、
+ * 圆弧、角度标记、曲线（按当前图形采样成折线）、文本；坐标轴与网格按画板设置输出。
+ */
+
+// TikZ 里已有含义的词，不能直接当坐标名
+const TIKZ_RESERVED = new Set(['cycle', 'draw', 'fill', 'node', 'at', 'to', 'and', 'left', 'right', 'above', 'below',
+  'north', 'south', 'east', 'west', 'center', 'black', 'white', 'red', 'blue', 'green', 'current', 'near', 'start', 'end']);
+
+/** 把对象 id 变成合法的 TikZ 坐标名（只允许字母数字，且必须以字母开头），并保证不重名 */
+function tikzName(id, i, used) {
+  let base = String(id == null ? '' : id).replace(/[^A-Za-z0-9]/g, '');
+  if (!base) base = 'P' + i;
+  if (!/^[A-Za-z]/.test(base)) base = 'P' + base;
+  let name = base;
+  let k = 2;
+  while (used.has(name) || TIKZ_RESERVED.has(name)) name = base + (k++);
+  used.add(name);
+  return name;
+}
+
+/** 把颜色注册成 xcolor 颜色名：\definecolor{c3E44D9}{HTML}{3E44D9}，返回名字；无法识别返回 null */
+function tikzColorName(color, colors) {
+  if (typeof color !== 'string') return null;
+  let h = color.trim().replace(/^#/, '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+  h = h.toUpperCase();
+  colors.set('c' + h, h);
+  return 'c' + h;
+}
+
+/**
+ * LaTeX 文本节点转义：$...$ 之间按行内公式原样保留（如 $x_1$、$a^2$），
+ * 公式之外转义会打断编译、或触发 "Missing $ inserted" 的字符（& % # _ ^ ~ $）。
+ */
+function escapeTexNode(s) {
+  const txt = htmlToPlain(s);
+  if (!txt) return '';
+  // 按配对的 $...$ 切分：偶数段是正文，奇数段是行内公式
+  return String(txt).split(/(\$[^$]*\$)/g).map((part, i) => {
+    if (i % 2 === 1) return part.replace(/%/g, '\\%'); // 公式里 % 同样要转义，否则后面全是注释
+    return part.replace(/[&%#_^~$]/g, (m) => ({
+      '&': '\\&', '%': '\\%', '#': '\\#', '_': '\\_', '^': '\\textasciicircum', '~': '\\textasciitilde', '$': '\\$',
+    }[m]));
+  }).join('').trim();
+}
+
+/** 去掉 JXGraph 标签里可能的 <sup>/<sub>/<b> 等标记，还原成纯文本（会保留 ^m / _n 数学写法） */
+function htmlToPlain(s) {
+  let t = String(s == null ? '' : s);
+  // 换行：优先保留图形里的换行意图
+  t = t.replace(/<(br|\/p|p)\s*\/?>/gi, '\\\\');
+  t = t.replace(/<sup>\s*(-?[\d.]+)\s*<\/sup>/gi, '^{$1}');
+  t = t.replace(/<sub>\s*(-?[\d.]+)\s*<\/sub>/gi, '_{$1}');
+  t = t.replace(/<[^>]*>/g, '');
+  t = t.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
+  return t;
+}
+
+/** 数字写入 TeX：保留 3 位小数并去掉多余的 0；非数字返回 null（由调用方跳过该图元） */
+function tikzNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? String(Math.round(n * 1000) / 1000) : null;
+}
+
+/** 对象的画线属性（颜色/线宽/虚线）；黑白模式只保留线型，避免打扰排版 */
+function tikzStroke(el, colors, bw) {
+  const opt = [];
+  if (!bw) {
+    const c = tikzColorName(elColor(el), colors);
+    if (c) opt.push('draw=' + c);
+    const w = elWidth(el);
+    if (Number.isFinite(w) && w > 0) opt.push('line width=' + (Math.max(0.1, w * 0.25)).toFixed(2) + 'pt');
+  }
+  const d = elDash(el);
+  if (d > 0) opt.push(d >= 3 ? 'densely dotted' : 'dashed');
+  return opt;
+}
+
+/** 直线（方向 dx,dy）与可视框的两个交点参数 t（升序）；退化时返回 null */
+function clipLineT(px, py, dx, dy, bb) {
+  const [xmin, ymax, xmax, ymin] = bb;
+  const EPS = 1e-9;
+  const ts = [];
+  if (Math.abs(dx) > EPS) { ts.push((xmin - px) / dx, (xmax - px) / dx); }
+  if (Math.abs(dy) > EPS) { ts.push((ymin - py) / dy, (ymax - py) / dy); }
+  const inside = [];
+  for (const t of ts) {
+    const x = px + dx * t, y = py + dy * t;
+    if (x >= xmin - 1e-6 && x <= xmax + 1e-6 && y >= ymin - 1e-6 && y <= ymax + 1e-6) inside.push(t);
+  }
+  if (inside.length < 2) return null;
+  inside.sort((a, b) => a - b);
+  return inside;
+}
+
+/**
+ * 画板上的点→TikZ（\coordinate）、线段/直线/射线→\draw。返回 picture 片段与统计。
+ * 纯逻辑、无副作用，便于自测（window.__buildTikZPicture）。
+ */
+function buildTikZPicture(opts) {
+  opts = opts || {};
+  const bw = !!opts.bw;
+  try { board.update(); } catch (_) { /* 更新失败就用现有缓存数据 */ }
+  const bb = board.getBoundingBox();            // [xmin, ymax, xmax, ymin]
+  const xmin = bb[0], ymax = bb[1], xmax = bb[2], ymin = bb[3];
+  const spanX = Math.abs(xmax - xmin) || 20;
+  const widthCm = Number(opts.widthCm) || 10;   // 目标宽度（cm），只影响比例不影响精度
+  const scale = Math.round((widthCm / spanX) * 10000) / 10000;
+
+  const colors = new Map();   // 颜色名 -> hex（用于导出 \definecolor）
+  const used = new Set();
+  const nameByEl = new Map(); // JXG 元素 -> TikZ 坐标名（同一点在多种图元间复用）
+  const body = [];            // 正文：网格/轴 + 各图元
+  const coords = [];          // \coordinate 定义
+  const labels = [];          // 点的标签节点
+  const texts = [];           // 文本节点（最后画，避免被线条压住）
+  let count = 0;
+
+  /** 引用一个点：能复用已命名的 \coordinate 就用名字，否则直接写坐标 */
+  function ptRef(el) {
+    if (el && nameByEl.has(el)) return '(' + nameByEl.get(el) + ')';
+    try {
+      const x = tikzNum(el.X()), y = tikzNum(el.Y());
+      if (x !== null && y !== null) return '(' + x + ', ' + y + ')';
+    } catch (_) { /* 取不到坐标就跳过该图元 */ }
+    return null;
+  }
+
+  const entries = Array.from(executor.registry.entries());
+
+  // —— 第一轮：先把所有点登记成 \coordinate，后面的图元就能按名字引用 ——
+  entries.forEach(([id, el], i) => {
+    if (!el || el.elType === 'slider') return;
+    const t = el.elType;
+    if (t !== 'point' && t !== 'glider' && t !== 'midpoint' && t !== 'intersection') return;
+    if (isHidden(el)) return;
+    try {
+      const x = tikzNum(el.X()), y = tikzNum(el.Y());
+      if (x === null || y === null) return;
+      const name = tikzName(id, i + 1, used);
+      nameByEl.set(el, name);
+      coords.push('  \\coordinate (' + name + ') at (' + x + ', ' + y + ');');
+    } catch (_) { /* 坐标不可用时跳过 */ }
+  });
+
+  // —— 网格与坐标轴：跟随画板设置，缺谐波? 保持与屏幕一致 ——
+  if (boardSettings.grid) {
+    body.push('  % 网格');
+    body.push('  \\draw[step=1, help lines] (' + tikzNum(xmin) + ', ' + tikzNum(ymin) + ') grid (' + tikzNum(xmax) + ', ' + tikzNum(ymax) + ');');
+  }
+  if (boardSettings.axis) {
+    body.push('  % 坐标轴');
+    const axisOpt = (bw ? ['thin'] : ['thin']);
+    if (ymin <= 0 && 0 <= ymax) {
+      body.push('  \\draw[' + axisOpt.concat(['<->']).join(', ') + '] (' + tikzNum(xmin) + ', 0) -- (' + tikzNum(xmax) + ', 0);');
+    }
+    if (xmin <= 0 && 0 <= xmax) {
+      body.push('  \\draw[' + axisOpt.concat(['<->']).join(', ') + '] (0, ' + tikzNum(ymin) + ') -- (0, ' + tikzNum(ymax) + ');');
+    }
+  }
+
+  // —— 第二轮：按创建顺序落图元 ——
+  entries.forEach(([id, el], i) => {
+    if (!el) return;
+    if (isHidden(el)) return;
+    const t = el.elType;
+    try {
+      if (t === 'slider') {
+        // 滑动条是演示用的交互控件，纸面上没有对应图元：只把数值写进注释
+        let v = NaN;
+        try { v = Number(el.Value()); } catch (_) { v = NaN; }
+        body.push('  % 滑动条 ' + id + ' = ' + (Number.isFinite(v) ? String(Math.round(v * 1000) / 1000) : '?') + '（交互控件，导出当前值于此处）');
+        return;
+      }
+      if (t === 'point' || t === 'glider' || t === 'midpoint' || t === 'intersection') {
+        const name = nameByEl.get(el);
+        if (!name) return;
+        const dotOpt = ['fill=' + (bw ? 'white' : 'white'), 'draw=' + (bw ? 'black' : (tikzColorName(elColor(el), colors) || 'black'))];
+        const lw = elWidth(el);
+        if (Number.isFinite(lw) && lw > 0) dotOpt.push('line width=' + (Math.max(0.1, lw * 0.25)).toFixed(2) + 'pt');
+        body.push('  \\filldraw[' + dotOpt.join(', ') + '] (' + name + ') circle[radius=2pt];');
+        const lab = pointLabelText(id, el);
+        if (lab) {
+          const math = /^[A-Za-z][A-Za-z0-9']{0,2}$/.test(lab); // 单个字母/代号走数学斜体，更像几何教材
+          const content = math ? '$' + lab + '$' : escapeTexNode(lab);
+          if (content) labels.push('  \\node[anchor=west, inner sep=1.5pt, ' + (bw ? 'black' : elTextColor(el, colors)) + '] at (' + name + ') {' + content + '};');
+        }
+        count++;
+        return;
+      }
+      if (t === 'segment') {
+        const a = ptRef(el.point1), b = ptRef(el.point2);
+        if (a && b) {
+          body.push('  \\draw[' + tikzStroke(el, colors, bw).join(', ') + '] ' + a + ' -- ' + b + ';');
+          count++;
+        }
+        return;
+      }
+      if (t === 'line') {
+        const p1 = ptRef(el.point1), p2 = ptRef(el.point2);
+        if (!p1 || !p2) return;
+        const x1 = el.point1.X(), y1 = el.point1.Y(), x2 = el.point2.X(), y2 = el.point2.Y();
+        if (![x1, y1, x2, y2].every(Number.isFinite)) return;
+        let sf = true, sl = true;
+        try { sf = el.evalVisProp('straightFirst') !== false; } catch (_) { /* 取不到属性时按直线处理 */ }
+        try { sl = el.evalVisProp('straightLast') !== false; } catch (_) { /* 同上 */ }
+        const opt = tikzStroke(el, colors, bw);
+        if (sf && sl) {
+          // 双向无限延伸：裁到可视框，避免 standalone 页面被撑到框外
+          const dx = x2 - x1, dy = y2 - y1;
+          const ts = clipLineT(x1, y1, dx, dy, bb);
+          if (!ts) return;
+          const ax = tikzNum(x1 + dx * ts[0]), ay = tikzNum(y1 + dy * ts[0]);
+          const bx = tikzNum(x1 + dx * ts[ts.length - 1]), by = tikzNum(y1 + dy * ts[ts.length - 1]);
+          if (ax === null || bx === null) return;
+          body.push('  \\draw[' + opt.join(', ') + '] (' + ax + ', ' + ay + ') -- (' + bx + ', ' + by + ');');
+        } else if (sf || sl) {
+          // 射线：只朝一个方向延伸（straightLast 为真表示由 point1 指向 point2）
+          const dx = sl ? (x2 - x1) : (x1 - x2), dy = sl ? (y2 - y1) : (y1 - y2);
+          const ox = sl ? x1 : x2, oy = sl ? y1 : y2;
+          const ts = clipLineT(ox, oy, dx, dy, bb) || [];
+          let tmax = ts.length ? ts[ts.length - 1] : 1;
+          if (!(tmax > 0)) tmax = Math.max(1, Math.abs(xmax - xmin) + Math.abs(ymax - ymin));
+          const sx = tikzNum(ox), sy = tikzNum(oy);
+          const ex = tikzNum(ox + dx * tmax), ey = tikzNum(oy + dy * tmax);
+          if (sx === null || ex === null) return;
+          body.push('  \\draw[' + opt.join(', ') + '] (' + sx + ', ' + sy + ') -- (' + ex + ', ' + ey + ');');
+        } else {
+          body.push('  \\draw[' + opt.join(', ') + '] ' + p1 + ' -- ' + p2 + ';');
+        }
+        count++;
+        return;
+      }
+      if (t === 'circle') {
+        const r = Number(el.Radius());
+        const cRef = ptRef(el.center);
+        if (cRef && Number.isFinite(r) && r > 0) {
+          body.push('  \\draw[' + tikzStroke(el, colors, bw).join(', ') + '] ' + cRef + ' circle[radius=' + tikzNum(r) + '];');
+          count++;
+        }
+        return;
+      }
+      if (t === 'polygon') {
+        const verts = Array.isArray(el.vertices) ? el.vertices : [];
+        if (verts.length < 3) return;
+        let pts = verts.map(ptRef).filter(Boolean);
+        // JSXGraph 的 vertices 末尾会重复首点用于闭合，去掉后用 --cycle
+        if (pts.length > 1 && pts[0] === pts[pts.length - 1]) pts = pts.slice(0, -1);
+        if (pts.length < 3) return;
+        const opt = tikzStroke(el, colors, bw);
+        let fillOp = 0, fillCol = null;
+        try { fillOp = Number(el.evalVisProp('fillOpacity')); } catch (_) { fillOp = 0; }
+        try { fillCol = el.evalVisProp('fillColor'); } catch (_) { fillCol = null; }
+        if (!bw && Number.isFinite(fillOp) && fillOp > 0 && fillCol && String(fillCol).toLowerCase() !== 'none') {
+          const fn = tikzColorName(fillCol, colors);
+          if (fn) opt.push('fill=' + fn, 'fill opacity=' + (Math.round(fillOp * 100) / 100));
+        }
+        body.push('  \\draw[' + opt.join(', ') + '] ' + pts.join(' -- ') + ' -- cycle;');
+        count++;
+        return;
+      }
+      if (t === 'arc') {
+        // 圆弧：圆心 + 半径 + 起讫角，用 TikZ 的 arc 精确表达（不做折线近似）
+        const c = el.center, rp = el.radiuspoint, ap = el.anglepoint;
+        const r = Number(el.Radius());
+        if (!c || !rp || !ap || !Number.isFinite(r) || r <= 0) return;
+        const cx = c.X(), cy = c.Y(), ax = rp.X(), ay = rp.Y(), bx = ap.X(), by = ap.Y();
+        if (![cx, cy, ax, ay, bx, by].every(Number.isFinite)) return;
+        let a1 = Math.atan2(ay - cy, ax - cx) * 180 / Math.PI;
+        let a2 = Math.atan2(by - cy, bx - cx) * 180 / Math.PI;
+        let cw = false;
+        try { cw = String(el.evalVisProp('orientation')) === 'clockwise'; } catch (_) { cw = false; }
+        if (cw) { while (a2 >= a1 - 1e-6) a2 -= 360; }
+        else { while (a2 <= a1 + 1e-6) a2 += 360; }
+        const startRef = ptRef(rp) || '(' + tikzNum(ax) + ', ' + tikzNum(ay) + ')';
+        body.push('  \\draw[' + tikzStroke(el, colors, bw).join(', ') + '] ' + startRef
+          + ' arc[start angle=' + tikzNum(a1) + ', end angle=' + tikzNum(a2) + ', radius=' + tikzNum(r) + '];');
+        count++;
+        return;
+      }
+      if (t === 'angle') {
+        // JSXGraph 把顶点放在第二个父点（作图工具点击顺序：起点、顶点、终点），
+        // 内部对应 el.center / el.point1，两条边落在 point2、point3 上。
+        // TikZ 的 {angle = X--V--Y} 要求 V 是顶点，故这里按「边点—顶点—边点」重排。
+        const vertex = el.center || el.point1;
+        const refs = [ptRef(el.point2), ptRef(vertex), ptRef(el.point3)];
+        if (refs.some((v) => !v)) return;
+        let rad = NaN;
+        try { rad = Number(el.Radius()); } catch (_) { rad = NaN; }
+        const rc = Number.isFinite(rad) && rad > 0 ? (Math.round(rad * scale * 100) / 100) : 0.8;
+        const opt = tikzStroke(el, colors, bw).concat(['angle radius=' + rc + 'cm']);
+        body.push('  \\pic[' + opt.join(', ') + '] {angle = ' + refs[0] + '--' + refs[1] + '--' + refs[2] + '};');
+        count++;
+        return;
+      }
+      if (t === 'text') {
+        const x = tikzNum(el.X()), y = tikzNum(el.Y());
+        const content = escapeTexNode(textContentOf(id, el));
+        if (x !== null && y !== null && content) {
+          texts.push('  \\node[' + texAnchor(el) + ', ' + (bw ? 'black' : elTextColor(el, colors)) + '] at (' + x + ', ' + y + ') {' + content + '};');
+          count++;
+        }
+        return;
+      }
+      if (t === 'curve') {
+        // 曲线（函数图像/参数曲线等）：按当前图形采样成折线，保证与屏幕所见一致
+        const src = Array.isArray(el.points) ? el.points : [];
+        const step = Math.max(1, Math.ceil(src.length / 240)); // 最多 240 点：够平滑且不让文件膨胀
+        const pts = [];
+        for (let k = 0; k < src.length; k += step) {
+          const c = src[k] && src[k].usrCoords;
+          if (!c) continue;
+          const px = tikzNum(c[1]), py = tikzNum(c[2]);
+          if (px === null || py === null) continue;
+          pts.push('(' + px + ', ' + py + ')');
+        }
+        if (pts.length < 2) return;
+        body.push('  \\draw[' + tikzStroke(el, colors, bw).join(', ') + '] ' + pts.join(' -- ') + ';');
+        count++;
+        return;
+      }
+    } catch (_) { /* 单个图元翻译失败不影响其余部分 */ }
+  });
+
+  return {
+    body: [].concat(
+      coords.length ? ['  % 点'].concat(coords) : [],
+      body,
+      labels.length ? ['  % 标签'].concat(labels) : [],
+      texts.length ? ['  % 文本'].concat(texts) : []
+    ),
+    count, colors, scale, xmin, xmax, ymin, ymax,
+  };
+}
+
+/** 点的标签文本：改名（label 命令）> point 命令上的 label > JXGraph 渲染文本（默认是对象 id） */
+function pointLabelText(id, el) {
+  let txt = null;
+  for (const c of doc.commands) {
+    if (c && c.op === 'label' && String(c.target) === String(id) && c.text != null && String(c.text) !== '') txt = String(c.text);
+  }
+  if (txt == null) {
+    const self = findCmd(id);
+    if (self && self.label != null && String(self.label) !== '') txt = String(self.label);
+  }
+  if (txt == null) {
+    try {
+      const h = el && el.label && el.label.htmlStr;
+      if (typeof h === 'string') txt = h;
+    } catch (_) { txt = null; }
+  }
+  return txt ? htmlToPlain(txt) : '';
+}
+
+/** 文本图元的内容：动态测量（bind）取当前渲染值；静态文本优先用命令原文以保住 LaTeX 写法 */
+function textContentOf(id, el) {
+  const cmd = findCmd(id);
+  let rendered = '';
+  try { rendered = typeof el.htmlStr === 'string' ? el.htmlStr : ''; } catch (_) { rendered = ''; }
+  if (cmd && cmd.bind) return rendered;
+  if (cmd && cmd.text != null) return String(cmd.text);
+  return rendered;
+}
+
+/** 文本/标签颜色：与所属线条同色，视觉上与画板保持一致 */
+function elTextColor(el, colors) {
+  const c = tikzColorName(elColor(el), colors);
+  return c ? ('text=' + c) : 'text=black';
+}
+
+/** JXGraph 文本的 anchorX/anchorY 映射为 TikZ 的 anchor */
+function texAnchor(el) {
+  let ax = 'middle', ay = 'middle';
+  try { ax = String(el.evalVisProp('anchorX') || 'middle'); } catch (_) { /* 默认居中 */ }
+  try { ay = String(el.evalVisProp('anchorY') || 'middle'); } catch (_) { /* 默认居中 */ }
+  const h = ax === 'left' ? 'west' : (ax === 'right' ? 'east' : 'center');
+  const v = ay === 'top' ? 'north' : (ay === 'bottom' ? 'south' : 'center');
+  return 'anchor=' + (v === 'center' && h === 'center' ? 'center' : (v === 'center' ? h : (h === 'center' ? v : v + ' ' + h)));
+}
+
+/**
+ * 生成 LaTeX/TikZ 文本：
+ *   {bw:true}       —— 纯黑白，适合论文/试卷排版
+ *   {fragment:true} —— 只输出 tikzpicture 片段，便于粘贴到已有文档
+ * 失败返回 null。抽出便于自测（window.__exportBoardTikZ）。
+ */
+function exportBoardTikZ(opts) {
+  opts = opts || {};
+  const bw = !!opts.bw;
+  try {
+    const r = buildTikZPicture({ bw });
+    if (!r || !r.body.length) return null;
+    const colors = Array.from(r.colors.entries()).map(([n, hex]) => '\\definecolor{' + n + '}{HTML}{' + hex + '}');
+    const bodyStr = r.body.join('\n');
+    if (opts.fragment) {
+      return [
+        '% 由「智绘几何」导出的 TikZ 片段（' + r.count + ' 个图元）',
+        '% 依赖：\\usepackage{tikz} 与 \\usetikzlibrary{angles,quotes}',
+        '% 颜色定义请一并复制：' + (colors.join(' ') || '（无自定义颜色）'),
+        '\\begin{tikzpicture}[scale=' + r.scale + ']',
+        bodyStr,
+        '\\end{tikzpicture}',
+      ].join('\n') + '\n';
+    }
+    // 只有真正出现非 ASCII 内容（如中文标注）时才引 ctex，避免给纯西文文档加无关宏包；
+    // 我们自己的中文注释行不计入判断
+    const userContent = bodyStr.split('\n').filter((l) => !/^\s*%/.test(l)).join('\n');
+    const needCjk = /[^\x00-\x7F]/.test(userContent);
+    const head = [
+      '% 由「智绘几何」导出：https://github.com/Cyrus-Nebula/zhihuabaiban',
+      '% 画板：' + (nameInput.value.trim() || '未命名画板') + '    图元数：' + r.count + '    导出时间：' + new Date().toLocaleString('zh-CN'),
+      '% 编译：xelatex 或 pdflatex 均可；文件在本地生成，无需联网与账号。',
+      '\\documentclass[tikz, border=2mm]{standalone}',
+      '\\usepackage{tikz}',
+      '\\usetikzlibrary{angles, quotes}',
+      '\\usepackage{amsmath, amssymb}',
+    ];
+    if (needCjk) {
+      head.push('% 含中文标注，需要 UTF-8 中文支持（推荐 xelatex 编译）');
+      head.push('% 发行版若未装 ctex，删掉下一行即可，中文会缺失但不影响其余部分编译');
+      head.push('\\usepackage[UTF8]{ctex}');
+    }
+    if (colors.length) head.push('% 图形颜色取自画板实际取色，集中在这里便于统一替换', ...colors);
+    return head.concat([
+      '\\begin{document}',
+      '\\begin{tikzpicture}[scale=' + r.scale + ']',
+      bodyStr,
+      '\\end{tikzpicture}',
+      '\\end{document}',
+    ]).join('\n') + '\n';
+  } catch (e) {
+    return null;
+  }
+}
+window.__exportBoardTikZ = exportBoardTikZ;
+window.__buildTikZPicture = buildTikZPicture;
+window.__escapeTexNode = escapeTexNode;
+window.__htmlToPlain = htmlToPlain;
+
+function saveAsTikZ(opts) {
+  toggleLatexPop(false);
+  if (blockIfReplaying()) return;
+  try {
+    const str = exportBoardTikZ(opts);
+    if (!str) { toast('LaTeX 导出失败'); return; }
+    const base = (nameInput.value.trim() || '画板').replace(/[\\/:*?"<>|]/g, '_');
+    if (opts.fragment) {
+      download(base + '_tikz片段.txt', str, 'text/plain;charset=utf-8');
+      toast('已导出 TikZ 片段：粘贴到你自己的文档里即可编译');
+    } else if (opts.bw) {
+      download(base + '_黑白.tex', str, 'application/x-tex;charset=utf-8');
+      toast('已导出黑白 LaTeX 文档（' + base + '_黑白.tex）：适合论文与试卷');
+    } else {
+      download(base + '.tex', str, 'application/x-tex;charset=utf-8');
+      toast('已导出 LaTeX 文档（' + base + '.tex）：xelatex/pdflatex 直接编译');
+    }
+  } catch (e) {
+    toast('LaTeX 导出失败：' + e.message);
+  }
+}
+
+/* LaTeX 导出弹层：与「设置 / 动画」弹层同一套交互（点外部或 Esc 关闭，互相互斥） */
+const latexPop = $('latex-pop');
+const latexBtn = $('btn-export-latex');
+function toggleLatexPop(force) {
+  if (!latexPop || !latexBtn) return;
+  const show = typeof force === 'boolean' ? force : latexPop.classList.contains('hidden');
+  if (show) { setPop.classList.add('hidden'); animPop.classList.add('hidden'); }
+  latexPop.classList.toggle('hidden', !show);
+  latexBtn.setAttribute('aria-expanded', String(show));
+}
+if (latexBtn && latexPop) {
+  latexBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleLatexPop(); });
+  document.addEventListener('click', (e) => {
+    if (!latexPop.classList.contains('hidden') && !latexPop.contains(e.target) && e.target !== latexBtn) toggleLatexPop(false);
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleLatexPop(false); });
+  const bindTikzBtn = (id, opts) => {
+    const b = $(id);
+    if (b) b.addEventListener('click', (e) => { e.stopPropagation(); saveAsTikZ(opts); });
+  };
+  bindTikzBtn('btn-latex-doc', {});
+  bindTikzBtn('btn-latex-bw', { bw: true });
+  bindTikzBtn('btn-latex-frag', { fragment: true });
+}
+
 /* ---------- 导出：离线 HTML（单文件，双击即开） ----------
  * 把画板引擎（vendor/jsxgraphcore.js + jsxgraph.css）、命令执行器
+ * （js/executor.js，内联时去掉 export 关键字，仍是同一份源码）和当前画板的
  * （js/executor.js，内联时去掉 export 关键字，仍是同一份源码）和当前画板的
  * commands/moves/设置打成一个自包含 HTML：
  *   - 不联网、不依赖服务器、不需要账号，浏览器直接打开即可看到可拖拽的图形

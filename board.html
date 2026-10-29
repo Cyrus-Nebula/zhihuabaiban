@@ -71,6 +71,18 @@
     <button id="btn-export-bw-png" class="btn" type="button" title="导出黑白试题图（PNG）：纯黑线条 + 白底，适合打印试卷，全程离线、无需联网与账号">导出黑白试题(PNG)</button>
     <button id="btn-export-bw-svg" class="btn" type="button" title="导出黑白试题图（SVG 矢量）：纯黑线条 + 白底、可无限缩放，适合印刷试卷，全程离线">导出黑白试题(SVG)</button>
     <button id="btn-export-html" class="btn" type="button" title="导出单个 HTML 文件：内嵌画板引擎与当前图形，双击即可离线打开，无需联网和账号">导出离线HTML</button>
+    <div class="settings-wrap">
+      <button id="btn-export-latex" class="btn" type="button" aria-expanded="false" title="导出 LaTeX / TikZ 代码：把图形插到论文、讲义与试卷里，矢量无损缩放，全程离线生成">导出 LaTeX</button>
+      <div id="latex-pop" class="settings-pop hidden" role="dialog" aria-label="导出 LaTeX / TikZ">
+        <div class="settings-title">导出 LaTeX / TikZ</div>
+        <div class="tikz-list">
+          <button id="btn-latex-doc" class="btn btn-primary" type="button">可编译文档（保留颜色）</button>
+          <button id="btn-latex-bw" class="btn" type="button">黑白文档（论文 / 试卷）</button>
+          <button id="btn-latex-frag" class="btn" type="button">TikZ 片段（粘到已有文档）</button>
+        </div>
+        <div class="tikz-desc">曲线按当前图形采样成折线；文件在你本机即时生成，不联网、不需要账号。</div>
+      </div>
+    </div>
     <button id="btn-export-json" class="btn" type="button">导出 JSON</button>
     <button id="btn-import" class="btn" type="button">导入</button>
     <input id="file-import" type="file" accept=".json,application/json" hidden />

@@ -374,6 +374,11 @@ code {
   .settings-pop { width: 220px; }
 }
 
+/* LaTeX / TikZ 导出面板 */
+.tikz-list { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
+.tikz-list .btn { width: 100%; justify-content: center; }
+.tikz-desc { margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9; font-size: 11px; line-height: 1.6; color: var(--muted); }
+
 .toolbar {
   display: flex; align-items: center; gap: 6px;
   padding: 8px 16px;
