@@ -102,7 +102,7 @@ function syncSettingsUi() {
 }
 function toggleSettingsPop(force) {
   const show = typeof force === 'boolean' ? force : setPop.classList.contains('hidden');
-  if (show) { toggleLatexPop(false); toggleAnimPop(false); syncSettingsUi(); setPop.classList.remove('hidden'); }
+  if (show) { toggleLatexPop(false); toggleAnimPop(false); toggleEmbedPop(false); syncSettingsUi(); setPop.classList.remove('hidden'); }
   else setPop.classList.add('hidden');
 }
 $('btn-settings').addEventListener('click', (e) => { e.stopPropagation(); toggleSettingsPop(); });
@@ -246,7 +246,7 @@ function hitSliderHandle(evt) {
 }
 function toggleAnimPop(force) {
   const show = typeof force === 'boolean' ? force : animPop.classList.contains('hidden');
-  if (show) { toggleLatexPop(false); toggleSettingsPop(false); syncAnimTargets(); animPop.classList.remove('hidden'); }
+  if (show) { toggleLatexPop(false); toggleSettingsPop(false); toggleEmbedPop(false); syncAnimTargets(); animPop.classList.remove('hidden'); }
   else animPop.classList.add('hidden');
   animBtn.setAttribute('aria-expanded', String(show));
 }
@@ -2017,7 +2017,7 @@ const latexBtn = $('btn-export-latex');
 function toggleLatexPop(force) {
   if (!latexPop || !latexBtn) return;
   const show = typeof force === 'boolean' ? force : latexPop.classList.contains('hidden');
-  if (show) { setPop.classList.add('hidden'); animPop.classList.add('hidden'); }
+  if (show) { setPop.classList.add('hidden'); animPop.classList.add('hidden'); toggleEmbedPop(false); }
   latexPop.classList.toggle('hidden', !show);
   latexBtn.setAttribute('aria-expanded', String(show));
 }
@@ -2036,50 +2036,58 @@ if (latexBtn && latexPop) {
   bindTikzBtn('btn-latex-frag', { fragment: true });
 }
 
-/* ---------- 导出：离线 HTML（单文件，双击即开） ----------
+/* ---------- 导出：离线 HTML（单文件，双击即开）+ 嵌入到第三方网页 ----------
  * 把画板引擎（vendor/jsxgraphcore.js + jsxgraph.css）、命令执行器
- * （js/executor.js，内联时去掉 export 关键字，仍是同一份源码）和当前画板的
  * （js/executor.js，内联时去掉 export 关键字，仍是同一份源码）和当前画板的
  * commands/moves/设置打成一个自包含 HTML：
  *   - 不联网、不依赖服务器、不需要账号，浏览器直接打开即可看到可拖拽的图形
  *   - 适合课件分发、存档、内网/离线环境使用
+ *   - 「导出离线 HTML」直接下载这份文件；「嵌入」面板的 iframe 方式下载同一份文件，
+ *     再给用户一段 <iframe src="..."> 片段贴进自己的网页 / 笔记 / 课件
  * 导出的页面暴露 window.__offlineBoard = {board, executor, data}，便于调试。
  */
 const escHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 /** 内联进 <script> 前转义 "</script"，避免源码/数据里的字符串提前闭合脚本标签 */
 const safeScript = (s) => String(s).replace(/<\/script/gi, '<\\/script');
 
-$('btn-export-html').addEventListener('click', () => exportOfflineHtml());
-
-async function exportOfflineHtml() {
-  if (blockIfReplaying()) return;
-  saveNow();
-  const name = nameInput.value.trim() || '画板';
-  let jxg = '', jxgCss = '', execSrc = '';
-  try {
-    const [a, b, c] = await Promise.all([
-      fetch('vendor/jsxgraphcore.js'),
-      fetch('vendor/jsxgraph.css'),
-      fetch('js/executor.js'),
-    ]);
-    if (!a.ok) throw new Error('读取 JSXGraph 引擎失败（HTTP ' + a.status + '）');
-    if (!b.ok) throw new Error('读取 JSXGraph 样式失败（HTTP ' + b.status + '）');
-    if (!c.ok) throw new Error('读取命令执行器失败（HTTP ' + c.status + '）');
-    [jxg, jxgCss, execSrc] = await Promise.all([a.text(), b.text(), c.text()]);
-  } catch (e) {
-    toast('导出失败：' + e.message);
-    return;
-  }
+/** 读取打包所需的三份源码，顺手把 executor 从 ES module 转成可内联的经典脚本 */
+async function readStandaloneSources() {
+  const [a, b, c] = await Promise.all([
+    fetch('vendor/jsxgraphcore.js'),
+    fetch('vendor/jsxgraph.css'),
+    fetch('js/executor.js'),
+  ]);
+  if (!a.ok) throw new Error('读取 JSXGraph 引擎失败（HTTP ' + a.status + '）');
+  if (!b.ok) throw new Error('读取 JSXGraph 样式失败（HTTP ' + b.status + '）');
+  if (!c.ok) throw new Error('读取命令执行器失败（HTTP ' + c.status + '）');
+  const [jxg, jxgCss, execSrc] = await Promise.all([a.text(), b.text(), c.text()]);
   // executor 是 ES module；内联进经典 <script> 时去掉 export 关键字即可（函数体不动）。
   // 注意要剥掉所有顶层 export（不止 createExecutor 一个），否则内联后整段脚本语法报错。
   const execInline = execSrc.replace(/(^|\n)\s*export\s+(?=(function|const|let|var|class|default)\b)/g, '$1');
-  if (!/function createExecutor/.test(execInline)) {
-    toast('导出失败：执行器源码格式异常');
-    return;
-  }
-  // 画板数据：命令 + 拖拽后的坐标/滑动条值 + 当时的画板设置（轴/网格/背景）
-  const payload = JSON.stringify({ name, settings: boardSettings, commands: doc.commands, moves: doc.moves });
-  const html = `<!DOCTYPE html>
+  if (!/function createExecutor/.test(execInline)) throw new Error('执行器源码格式异常');
+  return { jxg, jxgCss, execInline };
+}
+
+/** 当前画板的完整快照：命令 + 拖拽后的坐标/滑动条值 + 画板设置 */
+function boardPayload(name) {
+  return JSON.stringify({
+    name: name || nameInput.value.trim() || '画板',
+    settings: boardSettings,
+    commands: doc.commands,
+    moves: doc.moves,
+  });
+}
+
+/**
+ * 把 payload + sources 拼成一个自包含 HTML 字符串。
+ * 「导出离线 HTML」直接下载它；「嵌入」面板的 iframe 方式下载同一份文件再拼 iframe 片段。
+ */
+function buildStandaloneHtml(payload, sources) {
+  const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+  const name = (data && data.name) || '画板';
+  const { jxg, jxgCss, execInline } = sources;
+  const payloadText = typeof data === 'string' ? data : JSON.stringify(data);
+  return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
@@ -2102,7 +2110,7 @@ ${safeScript(jxgCss)}
 <script>${safeScript(execInline)}</script>
 <script>
 (function () {
-  var data = ${safeScript(payload).replace(/</g, '\\u003c')};
+  var data = ${safeScript(payloadText).replace(/</g, '\\u003c')};
   var s = data.settings || {};
   var board = JXG.JSXGraph.initBoard('box', {
     boundingbox: [-10, 10, 10, -10],
@@ -2125,8 +2133,167 @@ ${safeScript(jxgCss)}
 </script>
 </body>
 </html>`;
+}
+
+$('btn-export-html').addEventListener('click', () => exportOfflineHtml());
+
+async function exportOfflineHtml() {
+  if (blockIfReplaying()) return;
+  saveNow();
+  let sources;
+  try {
+    sources = await readStandaloneSources();
+  } catch (e) {
+    toast('导出失败：' + e.message);
+    return;
+  }
+  const name = nameInput.value.trim() || '画板';
+  const html = buildStandaloneHtml(boardPayload(name), sources);
   download(name + '.html', html, 'text/html');
   toast('已导出离线 HTML（约 ' + Math.round(html.length / 1024) + ' KB）：双击即可打开，无需联网');
+}
+
+/* ---------- 导出：嵌入到第三方网页 / 笔记 / 课件 ----------
+ * 对标大角几何「iframe / SDK 嵌入第三方网页，保持动态可交互」与「一键嵌入自媒体或笔记软件」。
+ * 本站做法依旧是零账号、零云端：
+ *   - iframe 方式：下载一份自包含 HTML（与「导出离线 HTML」同一份文件），代码里 <iframe src> 指向它；
+ *     放到自己的站点 / 内网 / 本地目录都能跑，图形可拖拽、滑动条可动，全程不联网。
+ *   - JS 内嵌方式：命令数据内联进容器，配一句 <script type="module" src="js/embed.js">，
+ *     由本地运行时 js/embed.js 在原页挂载画板（不走 CDN、不要 SDK Key、不需要账号）。
+ */
+const embedPop = $('embed-pop');
+const embedBtn = $('btn-export-embed');
+const embedCode = $('embed-code');
+const embedDesc = $('embed-desc');
+const embedModeBox = $('embed-modes');
+const embedW = $('embed-w');
+const embedH = $('embed-h');
+let embedMode = 'iframe';
+
+const EMBED_DESC = {
+  iframe: '把下载的单文件 HTML（内含画板引擎与当前图形）放进你的站点 / 内网目录，粘贴这段代码即可：图形可拖拽、滑动条可动，不联网、不需要账号。',
+  js: '数据已内联，贴到自家站点任意页面即可（不能用外链脚本的场合请改用 iframe 方式）。页面的同目录需保留 3 个静态文件：js/embed.js、js/executor.js、vendor/（含 jsxgraphcore.js），全部来自开源仓库。',
+};
+
+/** 拼接可粘贴的嵌入代码。纯字符串处理，便于自测（window.__buildEmbedSnippet） */
+function buildEmbedSnippet(mode, opts) {
+  const o = opts || {};
+  const w = String(o.width || '100%').trim() || '100%';
+  const raw = String(o.height == null ? 480 : o.height).trim();
+  const h = /^\d+(\.\d+)?$/.test(raw) ? raw + 'px' : (raw || '480px');
+  const title = String(o.title == null ? '画板' : o.title);
+  const style = `width:${escHtml(w)};max-width:100%;height:${escHtml(h)}`;
+  if (mode === 'js') {
+    return [
+      '<!-- 智绘几何 · 嵌入画板（数据内联，本地 SDK 挂载） -->',
+      `<div class="zhihui-board-embed" data-zhihui-board data-zhihui-title="${escHtml(title)}" style="${style}">`,
+      // 内联 JSON：把 < 换成 \u003c，避免数据里的字符串提前闭合 script 标签
+      `<script type="application/json">${String(o.json || '').replace(/</g, '\\u003c')}</script>`,
+      '</div>',
+      `<script type="module" src="${escHtml(o.runtime || 'js/embed.js')}"></script>`,
+    ].join('\n');
+  }
+  return [
+    '<!-- 智绘几何 · 嵌入画板（iframe，指向自包含单文件） -->',
+    `<iframe src="${escHtml(o.file || 'board.html')}" title="${escHtml(title)}" loading="lazy"`,
+    `        style="${style};border:1px solid #e5e7eb;border-radius:12px;background:#fff"></iframe>`,
+  ].join('\n');
+}
+
+function embedBasename() {
+  return (nameInput.value.trim() || '画板').replace(/[\\/:*?"<>|]/g, '_');
+}
+function refreshEmbedCode() {
+  if (!embedCode) return;
+  const title = nameInput.value.trim() || '画板';
+  const common = {
+    width: embedW && embedW.value.trim() ? embedW.value.trim() : '100%',
+    height: embedH && embedH.value.trim() ? embedH.value.trim() : '480',
+    title,
+  };
+  embedCode.value = embedMode === 'js'
+    ? buildEmbedSnippet('js', { ...common, json: boardPayload(title), runtime: 'js/embed.js' })
+    : buildEmbedSnippet('iframe', { ...common, file: embedBasename() + '.html' });
+  if (embedDesc) embedDesc.textContent = EMBED_DESC[embedMode] || '';
+}
+/** 弹层默认贴着按钮右侧对齐，按钮靠左时会被顶出视口：按实际位置做一次贴边修正 */
+function placeEmbedPop() {
+  if (!embedPop) return;
+  embedPop.style.transform = '';
+  requestAnimationFrame(() => {
+    const r = embedPop.getBoundingClientRect();
+    const pad = 8;
+    if (r.left < pad) embedPop.style.transform = 'translateX(' + Math.round(pad - r.left) + 'px)';
+    else if (r.right > window.innerWidth - pad) {
+      embedPop.style.transform = 'translateX(' + Math.round(window.innerWidth - pad - r.right) + 'px)';
+    }
+  });
+}
+function toggleEmbedPop(force) {
+  if (!embedPop || !embedBtn) return;
+  const show = typeof force === 'boolean' ? force : embedPop.classList.contains('hidden');
+  if (show) { toggleSettingsPop(false); toggleAnimPop(false); toggleLatexPop(false); refreshEmbedCode(); }
+  embedPop.classList.toggle('hidden', !show);
+  embedBtn.setAttribute('aria-expanded', String(show));
+  if (show) placeEmbedPop();
+}
+async function copyToClipboard(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (_) { /* 无剪贴板权限时降级 */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (_) { return false; }
+}
+if (embedModeBox) {
+  embedModeBox.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-mode]');
+    if (!b) return;
+    embedMode = b.dataset.mode;
+    embedModeBox.querySelectorAll('button[data-mode]').forEach((x) => x.classList.toggle('active', x === b));
+    refreshEmbedCode();
+  });
+}
+[embedW, embedH].forEach((el) => el && el.addEventListener('input', refreshEmbedCode));
+if (embedBtn && embedPop) {
+  embedBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleEmbedPop(); });
+  document.addEventListener('click', (e) => {
+    if (!embedPop.classList.contains('hidden') && !embedPop.contains(e.target) && e.target !== embedBtn) toggleEmbedPop(false);
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleEmbedPop(false); });
+}
+if ($('embed-copy')) {
+  $('embed-copy').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (blockIfReplaying()) return;
+    const ok = await copyToClipboard(embedCode.value || '');
+    toast(ok ? '已复制嵌入代码' : '复制失败，请手动全选代码复制');
+  });
+}
+if ($('embed-download')) {
+  $('embed-download').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (blockIfReplaying()) return;
+    const base = embedBasename();
+    if (embedMode === 'js') {
+      download(base + '.json', boardPayload(nameInput.value.trim() || '画板'), 'application/json');
+      toast('已下载 ' + base + '.json：与 js/embed.js、js/executor.js、vendor/ 放同一目录即可生效');
+      return;
+    }
+    saveNow();
+    let sources;
+    try { sources = await readStandaloneSources(); }
+    catch (err) { toast('下载失败：' + err.message); return; }
+    const html = buildStandaloneHtml(boardPayload(nameInput.value.trim() || '画板'), sources);
+    download(base + '.html', html, 'text/html');
+    toast('已下载 ' + base + '.html：与代码里的 src 放在同目录即可，双击也能单独打开');
+  });
 }
 
 $('btn-import').addEventListener('click', () => $('file-import').click());
@@ -2327,4 +2494,10 @@ refreshObjects();
 refreshRecord();
 
 /* ---------- 调试/测试钩子（控制台与自动化测试用） ---------- */
-window.__dajiao = { board, executor, tools, getDoc: () => doc, restore, selectObject, clearSelection, deleteObject, refreshObjects };
+window.__buildStandaloneHtml = buildStandaloneHtml;
+window.__readStandaloneSources = readStandaloneSources;
+window.__boardPayload = boardPayload;
+window.__buildEmbedSnippet = buildEmbedSnippet;
+window.__refreshEmbedCode = refreshEmbedCode;
+window.__toggleEmbedPop = toggleEmbedPop;
+window.__dajiao = { board, executor, tools, getDoc: () => doc, restore, selectObject, clearSelection, deleteObject, refreshObjects, runCommands };

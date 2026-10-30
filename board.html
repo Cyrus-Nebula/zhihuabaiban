@@ -73,6 +73,30 @@
     <button id="btn-export-bw-svg" class="btn" type="button" title="导出黑白试题图（SVG 矢量）：纯黑线条 + 白底、可无限缩放，适合印刷试卷，全程离线">导出黑白试题(SVG)</button>
     <button id="btn-export-html" class="btn" type="button" title="导出单个 HTML 文件：内嵌画板引擎与当前图形，双击即可离线打开，无需联网和账号">导出离线HTML</button>
     <div class="settings-wrap">
+      <button id="btn-export-embed" class="btn" type="button" aria-expanded="false" title="嵌入到网页 / 笔记：生成可粘贴的 iframe 或 JS 嵌入代码，图形保持可拖拽、滑动条可动，全程离线、无需账号">嵌入</button>
+      <div id="embed-pop" class="settings-pop embed-pop hidden" role="dialog" aria-label="嵌入到网页 / 笔记">
+        <div class="settings-title">嵌入到网页 / 笔记</div>
+        <div class="obj-seg embed-modes" id="embed-modes">
+          <button type="button" class="active" data-mode="iframe">iframe（通用）</button>
+          <button type="button" data-mode="js">JS 内嵌</button>
+        </div>
+        <div class="settings-row">
+          <span>宽度</span>
+          <input id="embed-w" class="embed-num" type="text" value="100%" aria-label="嵌入宽度" />
+        </div>
+        <div class="settings-row">
+          <span>高度<span class="settings-sub">纯数字按 px 处理</span></span>
+          <input id="embed-h" class="embed-num" type="text" value="480" aria-label="嵌入高度" />
+        </div>
+        <textarea id="embed-code" class="embed-code" rows="6" readonly aria-label="嵌入代码"></textarea>
+        <div class="embed-acts">
+          <button id="embed-copy" class="btn btn-primary" type="button">复制代码</button>
+          <button id="embed-download" class="btn" type="button">下载配套文件</button>
+        </div>
+        <div id="embed-desc" class="tikz-desc"></div>
+      </div>
+    </div>
+    <div class="settings-wrap">
       <button id="btn-export-latex" class="btn" type="button" aria-expanded="false" title="导出 LaTeX / TikZ 代码：把图形插到论文、讲义与试卷里，矢量无损缩放，全程离线生成">导出 LaTeX</button>
       <div id="latex-pop" class="settings-pop hidden" role="dialog" aria-label="导出 LaTeX / TikZ">
         <div class="settings-title">导出 LaTeX / TikZ</div>

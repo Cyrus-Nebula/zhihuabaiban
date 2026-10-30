@@ -374,6 +374,26 @@ code {
   .settings-pop { width: 220px; }
 }
 
+/* 嵌入面板（iframe / JS 内嵌第三方网页与笔记） */
+.embed-pop { width: 320px; }
+.embed-modes { display: flex; gap: 6px; padding: 4px 0 8px; }
+.embed-modes button {
+  flex: 1; padding: 4px 6px; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text);
+}
+.embed-modes button.active { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.embed-num {
+  max-width: 96px; border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px 6px; font-size: 12px; font-family: inherit; color: var(--text); background: #fff; text-align: right;
+}
+.embed-code {
+  width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px; resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.55;
+  color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+}
+.embed-acts { display: flex; gap: 6px; margin-top: 8px; }
+.embed-acts .btn { flex: 1; justify-content: center; }
+
 /* LaTeX / TikZ 导出面板 */
 .tikz-list { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
 .tikz-list .btn { width: 100%; justify-content: center; }

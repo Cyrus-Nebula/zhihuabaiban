@@ -15,7 +15,8 @@
 - **动态测量**：长度 / 半径 / 角度 / 两点距离、**滑动条参数值**，拖拽实时刷新
 - **作图记录与回放**：每一步操作以中文列出，可逐步 / 变速重演绘制过程
 - **画板设置**：坐标轴与网格显隐、三种背景色、新画的点自动对齐网格
-- **文件管理**：本地保存多个画板，卡片网格 + 自动缩略图，支持导入 / 导出 JSON 原文件、导出 PNG、导出 JPG、导出 SVG、**导出黑白试题图**、**导出离线 HTML**、**导出 LaTeX / TikZ**
+- **嵌入到网页 / 笔记**：顶栏「嵌入」生成可粘贴的嵌入代码，图形保持可拖拽、滑动条可动；`iframe` 方式配合下载的自包含单文件 HTML，`JS 内嵌` 方式由本地运行时 `js/embed.js` 在原页挂载画板——两条路都不联网、不需要账号与 SDK Key
+- **文件管理**：本地保存多个画板，卡片网格 + 自动缩略图，支持导入 / 导出 JSON 原文件、导出 PNG、导出 JPG、导出 SVG、**导出黑白试题图**、**导出离线 HTML**、**导出 LaTeX / TikZ**、**嵌入到网页 / 笔记**
 - **离线 HTML 导出**：一键把画板打包成单个 HTML 文件（内嵌画板引擎与图形），双击即开、无需联网和账号，适合课件分发与离线环境
 - **黑白试题图导出**：一键把当前图形导出为纯黑线条 + 白底的 PNG / SVG（彩色几何统一变黑、网格保留浅灰、文本黑色、去掉彩色填充），适合直接贴进试卷 / 打印，全程离线、无需联网与账号
 - **LaTeX / TikZ 导出**：把图形翻译成 TikZ 画图语句，产出可直接编译的 `.tex`（或可粘贴的 `tikzpicture` 片段），矢量无损缩放，方便写论文、讲义与试卷；覆盖点（含标签）、线段 / 直线 / 射线、圆、多边形（含填充）、圆弧、角度标记、曲线与文本，坐标轴和网格跟随画板设置，另有黑白版可选。三种导出都是在本浏览器里即时算出来的，不联网、不需要账号
@@ -183,6 +184,23 @@ AI 输出 `{"message": "...", "commands": [...]}`，前端 `js/executor.js` 逐�
 - **3D 画板打不开**：appId 未配或域名没加白名单（3D 是路线A，需要对方平台）。
 - **换浏览器/清缓存文件会丢**：文件只在 localStorage，重要画板及时「导出 JSON」。
 - **想把画板发给别人 / 离线打开**：顶栏「导出离线 HTML」——下载到的是一个自包含单文件（约 1 MB，内嵌 JSXGraph 引擎和当前图形），拷到任何电脑上双击就能打开，图形照样可以拖拽，不依赖网络、服务器和账号。
+- **想把画板嵌进自己的网页 / 课件 / 笔记**：顶栏「嵌入」——选 `iframe`（通用，配合同目录下那份自包含 HTML）或 `JS 内嵌`（数据内联 + 本地运行时 `js/embed.js` 原页挂载），生成带宽高设置的可粘贴代码，复制即可；运行时只需三个静态文件：`js/embed.js`、`js/executor.js`、`vendor/`（含 `jsxgraphcore.js` 与 `jsxgraph.css`），没有 CDN、没有账号、没有 SDK Key。
+
+### 嵌入用法示例
+
+```html
+<!-- 方式一：JS 内嵌（本地运行时原页挂载，数据内联） -->
+<div class="zhihui-board-embed" data-zhihui-board data-zhihui-title="勾股定理" style="width:100%;height:480px">
+  <script type="application/json">{"name":"勾股定理","commands":[{"op":"point","id":"A","x":-4,"y":-2}],"moves":[]}</script>
+</div>
+<script type="module" src="js/embed.js"></script>
+
+<!-- 方式二：iframe（指向同目录下的自包含单文件） -->
+<iframe src="勾股定理.html" title="勾股定理" loading="lazy"
+        style="width:100%;max-width:100%;height:480px;border:1px solid #e5e7eb;border-radius:12px;background:#fff"></iframe>
+```
+
+容器还支持 `data-zhihui-src="boards/xxx.json"`（数据放外链文件、页面更轻）与 `data-zhihui-credit="off"`（不显示署名）；运行时 API 为 `window.ZhihuiBoard.mount(容器, 数据)` / `ZhihuiBoard.autoMount()`。
 
 ## 开源致谢
 
