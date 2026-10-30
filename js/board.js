@@ -1316,6 +1316,61 @@ $('btn-export-png').addEventListener('click', () => {
   }
 });
 
+/* ---------- 导出：JPG（栅格图，体积小、带白底，适合贴进文档/网页） ---------- */
+/**
+ * 把画板栅格化为 JPEG Blob：与 PNG 同源（SVG→canvas 栅格化），区别仅为编码为 JPEG。
+ * JPG 不支持透明通道，故画布先铺白底再绘制，保证深色模式 / 透明区域也得到白底。
+ * 全程离线、不依赖服务器与账号，对标大角几何「导出 JPG」。
+ * 返回 Promise<Blob>，按钮与自测共用。抽出为纯函数便于自测（window.__exportBoardJpg）。
+ */
+function exportBoardJpgBlob() {
+  return new Promise((resolve, reject) => {
+    try {
+      const svg = board.renderer.svgRoot;
+      const rect = svg.getBoundingClientRect();
+      const w = Math.max(1, Math.round(rect.width || 800));
+      const h = Math.max(1, Math.round(rect.height || 600));
+      const clone = svg.cloneNode(true);
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      clone.setAttribute('width', String(w));
+      clone.setAttribute('height', String(h));
+      const str = new XMLSerializer().serializeToString(clone);
+      const img = new Image();
+      img.onload = () => {
+        const scale = 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = w * scale; canvas.height = h * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((b) => {
+          if (b) resolve(b);
+          else reject(new Error('JPG 编码失败'));
+        }, 'image/jpeg', 0.92);
+      };
+      img.onerror = () => reject(new Error('SVG 序列化错误'));
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+    } catch (e) { reject(e); }
+  });
+}
+window.__exportBoardJpg = exportBoardJpgBlob;
+// 自测用：返回 dataURL 字符串，便于断言文件头与体积
+window.__exportBoardJpgDataUrl = () => exportBoardJpgBlob().then((b) => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result);
+  r.onerror = () => rej(new Error('读取 Blob 失败'));
+  r.readAsDataURL(b);
+}));
+
+$('btn-export-jpg').addEventListener('click', () => {
+  if (blockIfReplaying()) return;
+  exportBoardJpgBlob().then((b) => {
+    download((nameInput.value.trim() || '画板') + '.jpg', b);
+    toast('已导出 JPG 图片（' + b.size + ' 字节）：体积小，适合贴进文档与网页');
+  }).catch((e) => toast('JPG 导出失败：' + e.message));
+});
+
 /* 导出 SVG 矢量图：直接序列化画板当前的 SVG 根（含内部渲染的文本标签），
  * 加好 xmlns / 尺寸并垫一张背景矩形，得到单文件、可无限缩放的矢量图。
  * 全程离线、不依赖服务器与账号，对标大角几何「导出 SVG 矢量图」。 */
