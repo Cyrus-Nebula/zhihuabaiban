@@ -193,10 +193,21 @@ export async function resolveUser(request, env) {
     const payload = await verifyToken(token, env.JWT_SECRET);
     // 令牌版本校验：改密/删号后旧令牌立即失效
     if (env.DB && typeof payload.tv === 'number') {
-      const row = await env.DB.prepare('SELECT token_version FROM users WHERE id=?')
-        .bind(payload.sub).first().catch(() => null);
-      if (!row) return { authenticated: false, error: 'token_revoked' };
-      if (Number(row.token_version) !== payload.tv) return { authenticated: false, error: 'token_revoked' };
+      let tvRow;
+      try {
+        tvRow = await env.DB.prepare('SELECT token_version FROM users WHERE id=?').bind(payload.sub).first();
+      } catch (e2) {
+        // 存量库无 token_version 列：跳过版本校验（吊销能力暂不可用，但登录不中断）
+        if (String(e2 && e2.message || e2).includes('token_version')) tvRow = 'NO_COLUMN';
+        else throw e2;
+      }
+      if (tvRow === 'NO_COLUMN') {
+        // 无列，无法校验版本，直接放行
+      } else if (!tvRow) {
+        return { authenticated: false, error: 'token_revoked' };
+      } else if (Number(tvRow.token_version) !== payload.tv) {
+        return { authenticated: false, error: 'token_revoked' };
+      }
     }
     return { authenticated: true, userId: payload.sub, email: payload.email || null };
   } catch {
@@ -216,8 +227,16 @@ export async function registerUser({ email, password }, env) {
   if (existing) return { status: 409, body: { error: 'email_taken', message: '该邮箱已注册，请直接登录' }, token: null };
   const id = genUserId();
   const hash = await hashPassword(password);
-  await env.DB.prepare('INSERT INTO users (id, email, password_hash, token_version, created_at) VALUES (?,?,?,?,?)')
-    .bind(id, e, hash, 0, Date.now()).run();
+  // 兼容存量库：若 users 表尚无 token_version 列，退化为不含该列的插入
+  try {
+    await env.DB.prepare('INSERT INTO users (id, email, password_hash, token_version, created_at) VALUES (?,?,?,?,?)')
+      .bind(id, e, hash, 0, Date.now()).run();
+  } catch (e2) {
+    if (String(e2 && e2.message || e2).includes('token_version')) {
+      await env.DB.prepare('INSERT INTO users (id, email, password_hash, created_at) VALUES (?,?,?,?)')
+        .bind(id, e, hash, Date.now()).run();
+    } else throw e2;
+  }
   const token = await signToken({ sub: id, email: e, tv: 0 }, env.JWT_SECRET);
   return { status: 200, body: { ok: true, user: { id, email: e } }, token };
 }
@@ -242,7 +261,16 @@ export async function loginUser({ email, password }, env, request) {
       };
     }
   }
-  const row = await env.DB.prepare('SELECT id, email, password_hash, token_version FROM users WHERE email=?').bind(e).first();
+  let row;
+  try {
+    row = await env.DB.prepare('SELECT id, email, password_hash, token_version FROM users WHERE email=?').bind(e).first();
+  } catch (e2) {
+    // 存量库无 token_version 列时退化读取
+    if (String(e2 && e2.message || e2).includes('token_version')) {
+      row = await env.DB.prepare('SELECT id, email, password_hash FROM users WHERE email=?').bind(e).first();
+      if (row) row.token_version = 0;
+    } else throw e2;
+  }
   if (!row) { await recordFail(env, e, clientIp(request)); return { status: 401, body: { error: 'invalid_credentials', message: '邮箱或密码错误' }, token: null }; }
   const ok = await verifyPassword(password, row.password_hash);
   if (!ok) { await recordFail(env, e, clientIp(request)); return { status: 401, body: { error: 'invalid_credentials', message: '邮箱或密码错误' }, token: null }; }
@@ -266,7 +294,14 @@ export async function changePassword({ oldPassword, newPassword }, env, request)
   }
   const hash = await hashPassword(newPassword);
   const newTv = (Number(row.token_version) || 0) + 1;
-  await env.DB.prepare('UPDATE users SET password_hash=?, token_version=? WHERE id=?').bind(hash, newTv, user.userId).run();
+  // 兼容存量库：若 users 表尚无 token_version 列，仅更新密码哈希（跳过版本自增）
+  try {
+    await env.DB.prepare('UPDATE users SET password_hash=?, token_version=? WHERE id=?').bind(hash, newTv, user.userId).run();
+  } catch (e2) {
+    if (String(e2 && e2.message || e2).includes('token_version')) {
+      await env.DB.prepare('UPDATE users SET password_hash=? WHERE id=?').bind(hash, user.userId).run();
+    } else throw e2;
+  }
   const token = await signToken({ sub: user.userId, email: user.email, tv: newTv }, env.JWT_SECRET);
   return { status: 200, body: { ok: true }, token };
 }
