@@ -41,9 +41,73 @@
         <div class="settings-note">设置自动保存在本机浏览器</div>
       </div>
     </div>
+    <div class="settings-wrap">
+      <button id="btn-anim" class="btn" type="button" aria-expanded="false" title="滑动条自动播放：让参数连续变化，形成课堂动态演示">▶ 动画</button>
+      <div id="anim-pop" class="settings-pop hidden" role="dialog" aria-label="动画播放">
+        <div class="settings-title">动画播放</div>
+        <div class="settings-row">
+          <span>滑动条</span>
+          <select id="anim-target" class="anim-select" aria-label="选择要自动播放的滑动条"></select>
+        </div>
+        <div class="settings-row">
+          <span>速度</span>
+          <div class="obj-seg" id="anim-speed">
+            <button type="button" data-speed="slow">慢</button>
+            <button type="button" data-speed="normal">中</button>
+            <button type="button" data-speed="fast">快</button>
+          </div>
+        </div>
+        <label class="settings-row" for="anim-pingpong">
+          <span>往复<em class="settings-sub">到端点后反向播放</em></span>
+          <input type="checkbox" id="anim-pingpong" class="switch" checked />
+        </label>
+        <button id="anim-play" class="btn btn-primary anim-play" type="button">▶ 播放</button>
+        <div class="settings-note">自动播放只改变画面上的参数值，不修改已保存的图形数据。</div>
+      </div>
+    </div>
     <button id="btn-save" class="btn" type="button">保存</button>
     <button id="btn-export-png" class="btn" type="button">导出 PNG</button>
+    <button id="btn-export-jpg" class="btn" type="button" title="导出 JPG 图片：体积小、带白底，适合贴进 Word/课件与网页，全程离线、无需联网与账号">导出 JPG</button>
+    <button id="btn-export-svg" class="btn" type="button" title="导出 SVG 矢量图：可无限缩放，适合课件与印刷，全程离线、无需联网与账号">导出 SVG</button>
+    <button id="btn-export-bw-png" class="btn" type="button" title="导出黑白试题图（PNG）：纯黑线条 + 白底，适合打印试卷，全程离线、无需联网与账号">导出黑白试题(PNG)</button>
+    <button id="btn-export-bw-svg" class="btn" type="button" title="导出黑白试题图（SVG 矢量）：纯黑线条 + 白底、可无限缩放，适合印刷试卷，全程离线">导出黑白试题(SVG)</button>
     <button id="btn-export-html" class="btn" type="button" title="导出单个 HTML 文件：内嵌画板引擎与当前图形，双击即可离线打开，无需联网和账号">导出离线HTML</button>
+    <div class="settings-wrap">
+      <button id="btn-export-embed" class="btn" type="button" aria-expanded="false" title="嵌入到网页 / 笔记：生成可粘贴的 iframe 或 JS 嵌入代码，图形保持可拖拽、滑动条可动，全程离线、无需账号">嵌入</button>
+      <div id="embed-pop" class="settings-pop embed-pop hidden" role="dialog" aria-label="嵌入到网页 / 笔记">
+        <div class="settings-title">嵌入到网页 / 笔记</div>
+        <div class="obj-seg embed-modes" id="embed-modes">
+          <button type="button" class="active" data-mode="iframe">iframe（通用）</button>
+          <button type="button" data-mode="js">JS 内嵌</button>
+        </div>
+        <div class="settings-row">
+          <span>宽度</span>
+          <input id="embed-w" class="embed-num" type="text" value="100%" aria-label="嵌入宽度" />
+        </div>
+        <div class="settings-row">
+          <span>高度<span class="settings-sub">纯数字按 px 处理</span></span>
+          <input id="embed-h" class="embed-num" type="text" value="480" aria-label="嵌入高度" />
+        </div>
+        <textarea id="embed-code" class="embed-code" rows="6" readonly aria-label="嵌入代码"></textarea>
+        <div class="embed-acts">
+          <button id="embed-copy" class="btn btn-primary" type="button">复制代码</button>
+          <button id="embed-download" class="btn" type="button">下载配套文件</button>
+        </div>
+        <div id="embed-desc" class="tikz-desc"></div>
+      </div>
+    </div>
+    <div class="settings-wrap">
+      <button id="btn-export-latex" class="btn" type="button" aria-expanded="false" title="导出 LaTeX / TikZ 代码：把图形插到论文、讲义与试卷里，矢量无损缩放，全程离线生成">导出 LaTeX</button>
+      <div id="latex-pop" class="settings-pop hidden" role="dialog" aria-label="导出 LaTeX / TikZ">
+        <div class="settings-title">导出 LaTeX / TikZ</div>
+        <div class="tikz-list">
+          <button id="btn-latex-doc" class="btn btn-primary" type="button">可编译文档（保留颜色）</button>
+          <button id="btn-latex-bw" class="btn" type="button">黑白文档（论文 / 试卷）</button>
+          <button id="btn-latex-frag" class="btn" type="button">TikZ 片段（粘到已有文档）</button>
+        </div>
+        <div class="tikz-desc">曲线按当前图形采样成折线；文件在你本机即时生成，不联网、不需要账号。</div>
+      </div>
+    </div>
     <button id="btn-export-json" class="btn" type="button">导出 JSON</button>
     <button id="btn-import" class="btn" type="button">导入</button>
     <button id="btn-cloud" class="btn" type="button" title="保存到云端（需登录）">同步到云端</button>
@@ -65,6 +129,7 @@
     <button class="tool" data-tool="perpendicular" type="button" title="先点一条线，再点线外一点">垂线</button>
     <button class="tool" data-tool="parallel" type="button" title="先点一条线，再点线外一点">平行线</button>
     <button class="tool" data-tool="angle" type="button" title="依次点起点、顶点、终点">角</button>
+    <button class="tool" data-tool="trim" type="button" title="分段裁剪：先点一条线/圆，再在它上面点两点，取中间一段（圆变弧、线变段，无需重画）">裁剪</button>
     <button class="tool" data-tool="text" type="button" title="点击画板放置文本">文本</button>
     <button class="tool" data-tool="slider" type="button" title="点击画板放置滑动条：可调范围的数值参数控件">滑动条</button>
     <button class="tool" data-tool="delete" type="button" title="点击对象删除（级联删除依赖对象）">删除</button>
@@ -139,6 +204,10 @@
           <div class="obj-props-row">
             <span class="obj-props-label">线型</span>
             <div id="obj-dashes" class="obj-seg"></div>
+          </div>
+          <div class="obj-props-row obj-props-pick hidden" id="obj-pick-row" title="这两个对象有多个交点，点一下可切换当前取的是哪一个">
+            <span class="obj-props-label">交点</span>
+            <div id="obj-picks" class="obj-seg"></div>
           </div>
           <div class="obj-props-row obj-props-range hidden" id="obj-range-row" title="定义域：x 的作图区间；值域：只画 y 落在该区间内的曲线段（留空表示不裁剪）">
             <span class="obj-props-label">范围</span>

@@ -52,6 +52,20 @@
       } else if (c.op === 'polygon' && Array.isArray(c.points)) {
         const cs = c.points.map((id) => pts.get(id)).filter(Boolean);
         if (cs.length >= 3) shapes.push({ t: 'poly', ps: cs });
+      } else if (c.op === 'arc' && pts.has(c.center) && pts.has(c.from) && pts.has(c.to)) {
+        // 圆弧按 12 段折线采样逼近（缩略图够用）：from 点定半径，默认逆时针扫到 to
+        const cc = pts.get(c.center), p1 = pts.get(c.from), p2 = pts.get(c.to);
+        const r = Math.hypot(p1[0] - cc[0], p1[1] - cc[1]);
+        if (r > 0) {
+          const a1 = Math.atan2(p1[1] - cc[1], p1[0] - cc[0]);
+          const a2 = Math.atan2(p2[1] - cc[1], p2[0] - cc[0]);
+          let sweep = a2 - a1;
+          if (c.clockwise) { if (sweep > 0) sweep -= 2 * Math.PI; }
+          else if (sweep < 0) sweep += 2 * Math.PI;
+          const ps = [];
+          for (let k = 0; k <= 12; k++) { const a = a1 + (sweep * k) / 12; ps.push([cc[0] + r * Math.cos(a), cc[1] + r * Math.sin(a)]); }
+          shapes.push({ t: 'arc', ps });
+        }
       }
     }
     if (!shapes.length) return null;
@@ -62,6 +76,7 @@
       else if (s.t === 'circle') { eat(s.p[0] - s.r, s.p[1] - s.r); eat(s.p[0] + s.r, s.p[1] + s.r); }
       else if (s.t === 'seg') { eat(s.a[0], s.a[1]); eat(s.b[0], s.b[1]); }
       else if (s.t === 'poly') s.ps.forEach((p) => eat(p[0], p[1]));
+      else if (s.t === 'arc') s.ps.forEach((p) => eat(p[0], p[1]));
     }
     const spanX = Math.max(maxX - minX, 1e-6), spanY = Math.max(maxY - minY, 1e-6);
     const scale = Math.min((THUMB_W - 2 * THUMB_PAD) / spanX, (THUMB_H - 2 * THUMB_PAD) / spanY);
@@ -74,6 +89,7 @@
       else if (s.t === 'seg') parts.push(`<line x1="${tx(s.a[0])}" y1="${ty(s.a[1])}" x2="${tx(s.b[0])}" y2="${ty(s.b[1])}" stroke="${THUMB_BLUE}" stroke-width="1.7" stroke-linecap="round"/>`);
       else if (s.t === 'circle') parts.push(`<circle cx="${tx(s.p[0])}" cy="${ty(s.p[1])}" r="${(s.r * scale).toFixed(1)}" fill="none" stroke="${THUMB_BLUE}" stroke-width="1.7"/>`);
       else if (s.t === 'poly') parts.push(`<polygon points="${s.ps.map((p) => tx(p[0]) + ',' + ty(p[1])).join(' ')}" fill="${THUMB_FILL}" fill-opacity=".85" stroke="${THUMB_BLUE}" stroke-width="1.7" stroke-linejoin="round"/>`);
+      else if (s.t === 'arc') parts.push(`<path d="M ${s.ps.map((p) => tx(p[0]) + ' ' + ty(p[1])).join(' L ')}" fill="none" stroke="${THUMB_BLUE}" stroke-width="1.7"/>`);
     }
     return parts.join('');
   }
