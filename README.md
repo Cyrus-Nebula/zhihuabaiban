@@ -117,9 +117,10 @@ LLM_API_KEY=你的key node server/local-proxy.mjs
 
 1. **建 D1 数据库**：Cloudflare 控制台 → Workers & Pages → **D1** → Create database（命名如 `zhihui_geo`，免费 5GB）。
 2. **绑到 Pages 项目**：你的 Pages 项目 → **设置 → Functions → D1 bindings** → 添加绑定，变量名填 `DB`，选择上一步的库。
-3. **建表**：在 D1 控制台的 SQL 控制台粘贴 `auth/schema.sql` 的内容执行（建 `users` + `boards` 两张表）。
-4. **设 JWT_SECRET**：Pages → 设置 → 变量和密钥 → 加一个 `JWT_SECRET`，值用 `openssl rand -hex 32` 生成（**只存 Cloudflare，不要写进代码**）。
-5. **重试部署**（环境变量与绑定需重新部署才生效）。
+3. **设 JWT_SECRET**：Pages → 设置 → 变量和密钥 → 加一个 `JWT_SECRET`，值用 `openssl rand -hex 32` 生成（**只存 Cloudflare，不要写进代码**）。
+4. **重试部署**（环境变量与绑定需重新部署才生效）。
+
+> 数据库表（`users` / `boards` / `login_throttle`）会在首次访问登录接口时**自动创建**，无需手动跑 SQL；`auth/schema.sql` 仅供查阅或手动建表参考。
 
 完成后首页右上角出现「登录」，注册即开通账号；画板页「同步到云端」、首页「云端画板」区即可使用。本地仍是工作副本，云端为备份/同步源——即便后端不可用，作图也不受影响。
 

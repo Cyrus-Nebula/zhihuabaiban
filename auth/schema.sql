@@ -4,11 +4,12 @@
 -- 建库与绑定步骤（Cloudflare Dashboard）：
 --   1) Workers & Pages -> D1 -> Create database，命名如 `zhihui_geo`（免费 5GB）
 --   2) 你的 Pages 项目 -> Settings -> Functions -> D1 bindings -> 绑定变量名 `DB` 到该库
---   3) 本地开发用 `wrangler pages dev --d1=DB`（需 wrangler.toml 的 [[d1_databases]] 配置）
---   4) 执行本文件建表（Dashboard 的 D1 控制台直接粘贴运行，或 `wrangler d1 execute`）
+--   3) 设 JWT_SECRET（Pages -> Settings -> Variables and Secrets）
+--   4) 重试部署
 --
--- 登录令牌（JWT_SECRET）不是 D1 的一部分，需在 Pages -> Settings -> Environment variables
--- 里设一个名为 JWT_SECRET 的变量（任意长随机串，如 `openssl rand -hex 32`）。
+-- 注：下表结构在首次访问登录接口时会由 auth-backend.js 的 ensureSchema() 自动创建
+--     （CREATE TABLE IF NOT EXISTS，幂等），通常无需手动执行本文件。
+--     本文件仅作建表参考，或用于本地 `wrangler pages dev --d1=DB` / `wrangler d1 execute`。
 
 -- 用户表：邮箱 + 加盐哈希密码（PBKDF2-HMAC-SHA256）
 -- token_version：改密/删号后 +1，使所有旧登录令牌立即失效（无状态 JWT 的主动吊销手段）
