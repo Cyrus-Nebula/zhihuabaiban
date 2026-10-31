@@ -162,6 +162,44 @@ export function clientIp(request) {
 }
 
 /* ---------- 业务封装 ---------- */
+
+/* 自初始化：首次访问时在绑定的 D1 上建表（幂等，仅执行一次/隔离）。
+   免去在 Cloudflare 控制台手动跑 schema.sql 的步骤——只要 D1 已绑定，表会自动创建。 */
+let _schemaReady = null;
+async function ensureSchema(env) {
+  if (!env || !env.DB) return;
+  if (_schemaReady) return _schemaReady;
+  _schemaReady = (async () => {
+    await env.DB.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id            TEXT    PRIMARY KEY,
+        email         TEXT    NOT NULL UNIQUE,
+        password_hash TEXT    NOT NULL,
+        token_version INTEGER NOT NULL DEFAULT 0,
+        created_at    INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      CREATE TABLE IF NOT EXISTS login_throttle (
+        key          TEXT    PRIMARY KEY,
+        fails        INTEGER NOT NULL DEFAULT 0,
+        first_at     INTEGER NOT NULL,
+        locked_until INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS boards (
+        id          TEXT    PRIMARY KEY,
+        user_id     TEXT    NOT NULL,
+        name        TEXT    NOT NULL DEFAULT '未命名画板',
+        mode        TEXT    NOT NULL DEFAULT '2d',
+        content     TEXT,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_boards_user ON boards(user_id, updated_at DESC);
+    `);
+  })().catch((e) => { _schemaReady = null; throw e; });
+  return _schemaReady;
+}
+
 function normalizeEmail(email) {
   if (typeof email !== 'string') return null;
   const e = email.trim().toLowerCase();
@@ -188,6 +226,7 @@ async function getUserTv(env, userId) {
 export async function resolveUser(request, env) {
   const token = readCookie(request);
   if (!token) return { authenticated: false };
+  await ensureSchema(env);
   if (!env.JWT_SECRET) return { authenticated: false, error: 'jwt_secret_missing' };
   try {
     const payload = await verifyToken(token, env.JWT_SECRET);
@@ -219,6 +258,7 @@ export async function resolveUser(request, env) {
 export async function registerUser({ email, password }, env) {
   if (!env.DB) return { status: 503, body: { error: 'db_not_bound', message: '服务端未配置数据库' }, token: null };
   if (!env.JWT_SECRET) return { status: 500, body: { error: 'jwt_secret_missing' }, token: null };
+  await ensureSchema(env);
   const e = normalizeEmail(email);
   if (!e) return { status: 400, body: { error: 'invalid_email', message: '邮箱格式不正确' }, token: null };
   const pwErr = validatePassword(password);
@@ -245,6 +285,7 @@ export async function registerUser({ email, password }, env) {
 export async function loginUser({ email, password }, env, request) {
   if (!env.DB) return { status: 503, body: { error: 'db_not_bound', message: '服务端未配置数据库' }, token: null };
   if (!env.JWT_SECRET) return { status: 500, body: { error: 'jwt_secret_missing' }, token: null };
+  await ensureSchema(env);
   const e = normalizeEmail(email);
   if (!e || typeof password !== 'string') {
     return { status: 400, body: { error: 'missing_fields', message: '请输入邮箱和密码' }, token: null };
@@ -284,6 +325,7 @@ export async function changePassword({ oldPassword, newPassword }, env, request)
   const user = await resolveUser(request, env);
   if (!user.authenticated) return { status: 401, body: { error: 'unauthenticated', message: '请先登录' }, token: null };
   if (!env.DB) return { status: 503, body: { error: 'db_not_bound' }, token: null };
+  await ensureSchema(env);
   const pwErr = validatePassword(newPassword);
   if (pwErr) return { status: 400, body: pwErr, token: null };
   if (!oldPassword || typeof oldPassword !== 'string') return { status: 400, body: { error: 'missing_fields', message: '请输入当前密码' }, token: null };
@@ -311,6 +353,7 @@ export async function deleteAccount({ password }, env, request) {
   const user = await resolveUser(request, env);
   if (!user.authenticated) return { status: 401, body: { error: 'unauthenticated', message: '请先登录' }, token: null };
   if (!env.DB) return { status: 503, body: { error: 'db_not_bound' }, token: null };
+  await ensureSchema(env);
   if (!password || typeof password !== 'string') return { status: 400, body: { error: 'missing_fields', message: '请输入密码确认' }, token: null };
   const row = await env.DB.prepare('SELECT password_hash FROM users WHERE id=?').bind(user.userId).first();
   if (!row) return { status: 401, body: { error: 'unauthenticated' }, token: null };
