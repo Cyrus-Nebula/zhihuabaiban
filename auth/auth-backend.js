@@ -170,32 +170,14 @@ async function ensureSchema(env) {
   if (!env || !env.DB) return;
   if (_schemaReady) return _schemaReady;
   _schemaReady = (async () => {
-    await env.DB.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        id            TEXT    PRIMARY KEY,
-        email         TEXT    NOT NULL UNIQUE,
-        password_hash TEXT    NOT NULL,
-        token_version INTEGER NOT NULL DEFAULT 0,
-        created_at    INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-      CREATE TABLE IF NOT EXISTS login_throttle (
-        key          TEXT    PRIMARY KEY,
-        fails        INTEGER NOT NULL DEFAULT 0,
-        first_at     INTEGER NOT NULL,
-        locked_until INTEGER
-      );
-      CREATE TABLE IF NOT EXISTS boards (
-        id          TEXT    PRIMARY KEY,
-        user_id     TEXT    NOT NULL,
-        name        TEXT    NOT NULL DEFAULT '未命名画板',
-        mode        TEXT    NOT NULL DEFAULT '2d',
-        content     TEXT,
-        created_at  INTEGER NOT NULL,
-        updated_at  INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_boards_user ON boards(user_id, updated_at DESC);
-    `);
+    const stmts = [
+      `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, token_version INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
+      `CREATE TABLE IF NOT EXISTS login_throttle (key TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, first_at INTEGER NOT NULL, locked_until INTEGER)`,
+      `CREATE TABLE IF NOT EXISTS boards (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL DEFAULT '未命名画板', mode TEXT NOT NULL DEFAULT '2d', content TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_boards_user ON boards(user_id, updated_at DESC)`,
+    ];
+    for (const s of stmts) await env.DB.prepare(s).run();
   })().catch((e) => { _schemaReady = null; throw e; });
   return _schemaReady;
 }
