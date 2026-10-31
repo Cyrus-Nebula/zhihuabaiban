@@ -7,22 +7,30 @@
 import { resolveUser, dbGetBoard, dbDeleteBoard } from '../../../auth/auth-backend.js';
 
 export async function onRequestGet(context) {
-  const user = await resolveUser(context.request, context.env);
-  if (!user.authenticated) return json({ error: 'unauthenticated' }, 401);
-  if (!context.env.DB) return json({ error: 'db_not_bound' }, 503);
-  const id = decodeURIComponent(context.params.id);
-  const board = await dbGetBoard(context.env, user.userId, id);
-  if (!board) return json({ error: 'not_found' }, 404);
-  return json(board);
+  try {
+    const user = await resolveUser(context.request, context.env);
+    if (!user.authenticated) return json({ error: 'unauthenticated' }, 401);
+    if (!context.env.DB) return json({ error: 'db_not_bound' }, 503);
+    const id = decodeURIComponent(context.params.id);
+    const board = await dbGetBoard(context.env, user.userId, id);
+    if (!board) return json({ error: 'not_found' }, 404);
+    return json(board);
+  } catch (e) {
+    return json({ error: 'internal', message: String((e && e.message) || e) }, 500);
+  }
 }
 
 export async function onRequestDelete(context) {
-  const user = await resolveUser(context.request, context.env);
-  if (!user.authenticated) return json({ error: 'unauthenticated' }, 401);
-  if (!context.env.DB) return json({ error: 'db_not_bound' }, 503);
-  const id = decodeURIComponent(context.params.id);
-  await dbDeleteBoard(context.env, user.userId, id);
-  return json({ ok: true });
+  try {
+    const user = await resolveUser(context.request, context.env);
+    if (!user.authenticated) return json({ error: 'unauthenticated' }, 401);
+    if (!context.env.DB) return json({ error: 'db_not_bound' }, 503);
+    const id = decodeURIComponent(context.params.id);
+    await dbDeleteBoard(context.env, user.userId, id);
+    return json({ ok: true });
+  } catch (e) {
+    return json({ error: 'internal', message: String((e && e.message) || e) }, 500);
+  }
 }
 
 function json(data, status = 200) {

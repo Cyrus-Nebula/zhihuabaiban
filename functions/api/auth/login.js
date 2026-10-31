@@ -5,10 +5,14 @@
 import { loginUser, cookieHeader } from '../../../auth/auth-backend.js';
 
 export async function onRequestPost(context) {
-  const body = await context.request.json().catch(() => ({}));
-  const r = await loginUser(body, context.env, context.request);
-  const headers = new Headers();
-  if (r.token) headers.set('Set-Cookie', cookieHeader(r.token));
-  if (r.status === 429 && r.retryAfterSec) headers.set('Retry-After', String(r.retryAfterSec));
-  return new Response(JSON.stringify(r.body), { status: r.status, headers });
+  try {
+    const body = await context.request.json().catch(() => ({}));
+    const r = await loginUser(body, context.env, context.request);
+    const headers = new Headers();
+    if (r.token) headers.set('Set-Cookie', cookieHeader(r.token));
+    if (r.status === 429 && r.retryAfterSec) headers.set('Retry-After', String(r.retryAfterSec));
+    return new Response(JSON.stringify(r.body), { status: r.status, headers });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'internal', message: String((e && e.message) || e) }), { status: 500 });
+  }
 }
