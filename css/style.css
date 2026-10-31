@@ -1107,3 +1107,49 @@ code {
   #docName { max-width: none; flex: 1; min-width: 0; }
   .ai-model-top { max-width: 150px; }
 }
+
+/* ============ 账号登录 / 云端画板（靛紫主题） ============ */
+#authBtn.is-user { background: var(--primary-soft, #F0EFFC); color: var(--primary, #6549D5); border-color: var(--primary-border, #D8D3F5); }
+
+/* 登录弹窗 */
+.auth-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.auth-modal.hidden { display: none; }
+.auth-backdrop { position: absolute; inset: 0; background: rgba(28, 25, 64, 0.42); backdrop-filter: blur(2px); }
+.auth-card {
+  position: relative; width: min(380px, 92vw); background: #fff; border-radius: 16px;
+  padding: 28px 26px 22px; box-shadow: 0 24px 60px rgba(60, 50, 140, 0.25);
+  border: 1px solid var(--primary-border, #D8D3F5);
+}
+.auth-x { position: absolute; top: 10px; right: 12px; width: 30px; height: 30px; border: 0; background: transparent; font-size: 22px; line-height: 1; color: #94a0c0; cursor: pointer; border-radius: 8px; }
+.auth-x:hover { background: #f1f0fb; color: var(--primary, #6549D5); }
+.auth-tabs { display: flex; gap: 6px; margin-bottom: 18px; background: #f3f2fb; padding: 4px; border-radius: 10px; }
+.auth-tab { flex: 1; border: 0; background: transparent; padding: 8px 0; border-radius: 8px; font-size: 14px; font-weight: 600; color: #6b6f86; cursor: pointer; }
+.auth-tab.active { background: #fff; color: var(--primary, #6549D5); box-shadow: 0 1px 3px rgba(60, 50, 140, 0.12); }
+.auth-field { display: block; margin-bottom: 14px; }
+.auth-field span { display: block; font-size: 13px; color: #5b607a; margin-bottom: 6px; }
+.auth-field input { width: 100%; box-sizing: border-box; padding: 11px 12px; border: 1px solid #d9dcec; border-radius: 10px; font-size: 14px; outline: none; transition: border-color .15s, box-shadow .15s; }
+.auth-field input:focus { border-color: var(--primary, #6549D5); box-shadow: 0 0 0 3px rgba(101, 73, 213, 0.14); }
+.auth-err { color: #d23f57; font-size: 13px; min-height: 18px; margin: 2px 0 10px; }
+.auth-submit { width: 100%; padding: 11px; font-size: 15px; }
+.auth-hint { margin: 14px 0 0; font-size: 12px; line-height: 1.6; color: #8b90a6; }
+
+/* 登录后下拉菜单 */
+.auth-menu { position: absolute; top: calc(100% + 8px); right: 0; min-width: 168px; background: #fff; border: 1px solid #e6e7f2; border-radius: 12px; box-shadow: 0 12px 30px rgba(60, 50, 140, 0.16); padding: 6px; z-index: 60; }
+.auth-menu.hidden { display: none; }
+.auth-menu-head { padding: 8px 10px; font-size: 12px; color: #8b90a6; border-bottom: 1px solid #f0f0f7; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auth-menu-item { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 9px 10px; border-radius: 8px; font-size: 14px; color: #3a3f57; cursor: pointer; }
+.auth-menu-item:hover { background: #f3f2fb; color: var(--primary, #6549D5); }
+
+/* 云端画板区 */
+#cloudSection .section-head { flex-wrap: wrap; gap: 10px; }
+.cloud-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.cloud-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: #fff; border: 1px solid #ebeaf4; border-radius: 12px; }
+.cloud-name { flex: 1; text-align: left; border: 0; background: transparent; font-size: 15px; font-weight: 600; color: #2b2f47; cursor: pointer; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cloud-name:hover { color: var(--primary, #6549D5); }
+.cloud-mode { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
+.cloud-mode.mode-2d { background: #E0E7FF; color: #3E44D9; }
+.cloud-mode.mode-3d { background: #FCE7F3; color: #B83280; }
+.cloud-time { font-size: 12px; color: #9aa0b8; min-width: 120px; }
+.cloud-del { white-space: nowrap; }
+.cloud-loading { padding: 18px; color: #9aa0b8; font-size: 14px; }
+

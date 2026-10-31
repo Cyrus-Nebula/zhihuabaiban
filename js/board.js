@@ -1032,7 +1032,10 @@ function scheduleSave() {
 function saveNow() {
   if (stepMode) return; // 回放中 doc.commands 是临时的半成品，禁止保存
   doc.moves = executor.moves();
-  Store.saveContent(fileId, { name: nameInput.value.trim() || '未命名画板', commands: doc.commands, moves: doc.moves });
+  const snap = { name: nameInput.value.trim() || '未命名画板', commands: doc.commands, moves: doc.moves };
+  Store.saveContent(fileId, snap);
+  // 通知登录模块：已保存本地副本，可同步到云端（content 含完整工程）
+  try { window.dispatchEvent(new CustomEvent('board:saved', { detail: { id: fileId, name: snap.name, mode: '2d', content: snap } })); } catch (_) {}
   setSaveStatus('已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
 }
 function setSaveStatus(t) { saveStatus.textContent = t; }

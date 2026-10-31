@@ -94,11 +94,32 @@ LLM_API_KEY=你的key node server/local-proxy.mjs
    | `LLM_API_KEY` | 智谱 Key | ✓ |
    | `LLM_MODEL` | `glm-4.7-flash` | 否（有默认值，前端下拉框优先级更高） |
    | `LLM_BASE_URL` | `https://open.bigmodel.cn/api/paas/v4` | 否 |
+   | `JWT_SECRET` | 任意长随机串，如 `openssl rand -hex 32` | 启用登录必填 |
+   | `DB` | D1 数据库绑定（见下） | 启用登录/云端必填 |
 
 3. 保存后 **重试部署**（环境变量不会自动应用到旧部署）
 4. `js/config.js` 保持默认（`boardAiEndpoint: '/api/ai/board'` 同域）
 
 3D 画板额外需要：`js/config.js` 填 appId + 大角控制台加域名白名单。
+
+## 账号与云端同步（自建，零外部依赖，免费）
+
+不想用第三方登录服务（Clerk/Supabase 等）也能拥有账号：**账号体系完全自建**，只用到你已经有的 Cloudflare 栈（Pages Functions + D1），不注册任何新账号、不产生额外费用。
+
+**功能**：邮箱 + 密码注册登录（密码加盐哈希存储），登录后画板可备份到云端、跨设备同步。未登录时站点照常使用，数据只存本机。
+
+**一键部署步骤**：
+
+1. **建 D1 数据库**：Cloudflare 控制台 → Workers & Pages → **D1** → Create database（命名如 `zhihui_geo`，免费 5GB）。
+2. **绑到 Pages 项目**：你的 Pages 项目 → **设置 → Functions → D1 bindings** → 添加绑定，变量名填 `DB`，选择上一步的库。
+3. **建表**：在 D1 控制台的 SQL 控制台粘贴 `auth/schema.sql` 的内容执行（建 `users` + `boards` 两张表）。
+4. **设 JWT_SECRET**：Pages → 设置 → 变量和密钥 → 加一个 `JWT_SECRET`，值用 `openssl rand -hex 32` 生成（**只存 Cloudflare，不要写进代码**）。
+5. **重试部署**（环境变量与绑定需重新部署才生效）。
+
+完成后首页右上角出现「登录」，注册即开通账号；画板页「同步到云端」、首页「云端画板」区即可使用。本地仍是工作副本，云端为备份/同步源——即便后端不可用，作图也不受影响。
+
+实现位置：`auth/auth-backend.js`（密码哈希 + JWT + D1 操作）、`functions/api/auth/*`（注册/登录/登出/探针）、`functions/api/boards/*`（画板 CRUD）、`js/auth.js`（前端弹窗与同步）。
+
 
 ## AI 命令协议
 
@@ -174,7 +195,7 @@ AI 输出 `{"message": "...", "commands": [...]}`，前端 `js/executor.js` 逐�
 - **想换模型**：AI 面板顶部的下拉框直接切（glm-4.7-flash / glm-4.6v-flash / glm-4-flash-250414 / glm-4-flash，全部免费，选择会记住）；也可以环境变量设 `LLM_MODEL` 改默认。
 - **上传图片按图复原**：下拉框切到「GLM-4.6V-Flash（视觉）」→ 点「📷 图片」选图（≤5MB）→ 可附加文字说明 → 生成。视觉模型会先看图再输出作图命令。
 - **3D 画板打不开**：appId 未配或域名没加白名单（3D 是路线A，需要对方平台）。
-- **换浏览器/清缓存文件会丢**：文件只在 localStorage，重要画板及时「导出 JSON」。
+- **换浏览器/清缓存文件会丢**：文件默认只在 localStorage；开通账号后可用「同步到云端」把画板备份到 D1，换设备登录即可取回，重要画板也建议「导出 JSON」双保险。
 - **想把画板发给别人 / 离线打开**：顶栏「导出离线 HTML」——下载到的是一个自包含单文件（约 1 MB，内嵌 JSXGraph 引擎和当前图形），拷到任何电脑上双击就能打开，图形照样可以拖拽，不依赖网络、服务器和账号。
 
 ## 开源致谢

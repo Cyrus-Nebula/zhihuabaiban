@@ -65,6 +65,23 @@ const Store = (() => {
     remove(id) {
       writeAll(readAll().filter((f) => f.id !== id));
     },
+    /** 以指定 id 写入/覆盖一条记录（用于把云端画板落到本地，保持 id 一致） */
+    upsert(f) {
+      const all = readAll();
+      const i = all.findIndex((x) => x.id === f.id);
+      const rec = {
+        id: f.id,
+        name: f.name || '未命名画板',
+        mode: f.mode === '3d' ? '3d' : '2d',
+        content: f.content || null,
+        createdAt: f.createdAt || Date.now(),
+        updatedAt: f.updatedAt || Date.now(),
+      };
+      if (i >= 0) all[i] = Object.assign(all[i], rec);
+      else all.push(rec);
+      writeAll(all);
+      return rec;
+    },
     /** 导出为 .json 工程文件 */
     exportFile(id) {
       const f = this.get(id);

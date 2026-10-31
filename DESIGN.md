@@ -53,11 +53,22 @@
 - 空状态（`.empty`）、错误态（`.error-mask`）必须面向用户给可操作建议
 - 弹层/菜单打开时 `aria-expanded` 同步；Esc 可关；点空白处可关
 
+## 账号与云端（自建，零外部依赖）
+
+> 账号体系完全自建，**不依赖 Clerk / Supabase 等任何第三方服务**。详见 `auth/auth-backend.js`、`functions/api/auth/*`、`functions/api/boards/*`、`js/auth.js`。
+
+- **登录方式**：邮箱 + 密码。密码用 `PBKDF2-HMAC-SHA256`（10 万次迭代 + 16 字节随机盐）加盐哈希，存储格式 `pbkdf2$<iters>$<salt>$<hash>`；服务端不保存明文。
+- **登录态**：登录/注册成功后服务端签发 **HS256 JWT**，写入 `HttpOnly + Secure + SameSite=Lax` 的 `auth_token` Cookie（有效期 30 天）；前端不持有令牌，仅通过 `/api/auth/me` 探测登录态。
+- **密钥**：`JWT_SECRET`（Pages → Settings → Environment variables 配置，任意长随机串，如 `openssl rand -hex 32`）。用于签发/校验 JWT，**切勿提交进仓库**。
+- **画板云端存储**：Cloudflare D1（绑定变量名 `DB`，建表见 `auth/schema.sql`）。`boards` 表以 `user_id` 做账户隔离；本地 localStorage 仍是工作副本，云端为备份/同步源（`Store.upsert` 保持 id 一致）。
+- **容错**：后端未部署 / D1 未绑定 / 未登录时，页面照常可用，仅云端相关功能不可用并给出友好提示；绝不阻断本地作图。
+- UI 令牌沿用品牌色（`--primary` 系）；登录弹窗、导航用户态、云端列表样式见 `css/style.css` 末尾「账号登录 / 云端画板」段落。
+
 ## 平台硬约束（改动前必读）
 
 - **JXGraph 标签定位修复**：`css/style.css` 中 `.board-box > div:not(.JXGtext):not(.JXGinfobox)` 规则与 `.JXG_navigation{display:none!important}` 是 1.14 标签全不可见 bug 的修复，**原样保留，禁止删除或改选择器**
 - 导航 `.site-nav` 的毛玻璃必须挂在 `::before` 伪元素上：`backdrop-filter` 直接挂在元素上会成为 `position:fixed` 子元素的包含块，导致移动端全屏菜单被限制在导航条内
-- 数据只存 localStorage，不上传服务器；不得引入账号/付费/云端依赖
+- 数据**本地优先**：默认只存 localStorage，不上传服务器；账号/云端为**可选增强**（自建，零外部付费服务），未登录时全部功能照常使用
 
 ## 提交前自测清单
 

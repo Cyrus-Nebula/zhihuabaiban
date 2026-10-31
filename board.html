@@ -46,6 +46,8 @@
     <button id="btn-export-html" class="btn" type="button" title="导出单个 HTML 文件：内嵌画板引擎与当前图形，双击即可离线打开，无需联网和账号">导出离线HTML</button>
     <button id="btn-export-json" class="btn" type="button">导出 JSON</button>
     <button id="btn-import" class="btn" type="button">导入</button>
+    <button id="btn-cloud" class="btn" type="button" title="保存到云端（需登录）">同步到云端</button>
+    <button class="btn btn-ghost" id="authBtn" type="button">登录</button>
     <input id="file-import" type="file" accept=".json,application/json" hidden />
   </header>
 
@@ -193,6 +195,7 @@
   <script src="js/config.js"></script>
   <script src="js/store.js"></script>
   <script src="js/models.js"></script>
+  <script src="js/auth.js"></script>
   <script type="module" src="js/board.js"></script>
 </body>
 </html>

@@ -41,6 +41,7 @@
       <a href="#files">我的画板</a>
       <a href="#about">关于</a>
     </nav>
+    <button class="btn btn-ghost btn-sm site-auth" id="authBtn" type="button">登录</button>
     <a class="btn btn-primary btn-sm site-cta" href="#hero">新建画板</a>
     <button class="nav-toggle" id="navToggle" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="siteLinks">
       <span class="nav-toggle-line" aria-hidden="true"></span>
@@ -142,6 +143,17 @@
     </div>
   </section>
 
+  <!-- 云端画板（登录后可见） -->
+  <section class="section" id="cloudSection" hidden>
+    <div class="section-head">
+      <h2 class="section-title">云端画板 <span class="muted">登录后可在设备间同步</span></h2>
+      <button class="btn btn-ghost btn-sm" id="cloudSyncAll" type="button">同步全部本地画板到云端</button>
+    </div>
+    <p class="banner banner-info" id="cloudNote" hidden></p>
+    <div id="cloudList" class="cloud-list"></div>
+    <div id="cloudEmpty" class="empty" hidden>还没有云端画板。登录后点上方「同步全部本地画板到云端」，或画板页会自动备份。</div>
+  </section>
+
   <!-- 关于 -->
   <section class="section" id="about">
     <h2 class="section-title">关于</h2>
@@ -165,6 +177,7 @@
   <script src="js/store.js"></script>
   <script src="js/models.js"></script>
   <script src="js/templates.js"></script>
+  <script src="js/auth.js"></script>
   <script src="js/workbench.js"></script>
   <script src="js/landing.js"></script>
 </body>
