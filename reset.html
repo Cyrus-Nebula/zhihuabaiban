@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>重置密码 · 智绘几何</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    body.landing { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #f3f2fe, #fbf2ff); padding: 24px; }
+    .reset-card { width: min(420px, 92vw); }
+    .reset-ok { padding: 10px 12px; background: #eafaf1; border: 1px solid #bfe9d0; color: #2f9e63; border-radius: 10px; font-size: 14px; }
+    .reset-token-warn { padding: 10px 12px; background: #fff4f5; border: 1px solid #f7d3d8; color: #b42334; border-radius: 10px; font-size: 13px; }
+  </style>
+</head>
+<body class="landing">
+  <div class="auth-card reset-card">
+    <a class="site-brand" href="index.html" style="margin-bottom:18px; justify-content:center">
+      <img src="favicon.svg" alt="" width="28" height="28" />
+      <span class="site-name">智绘几何</span>
+    </a>
+    <h3 class="auth-title" style="text-align:center">重置密码</h3>
+
+    <div id="tokenWarn" class="reset-token-warn hidden">链接缺少重置令牌，请使用完整的重置链接。</div>
+
+    <form id="resetForm" class="hidden">
+      <label class="auth-field">
+        <span>新密码（至少 8 位）</span>
+        <input type="password" id="pw" required minlength="8" placeholder="至少 8 位" autocomplete="new-password" />
+      </label>
+      <label class="auth-field">
+        <span>确认新密码</span>
+        <input type="password" id="pw2" required minlength="8" placeholder="再次输入" autocomplete="new-password" />
+      </label>
+      <p class="auth-err" id="err"></p>
+      <button type="submit" class="btn btn-primary auth-submit" id="submit">设置新密码</button>
+    </form>
+
+    <div id="okBox" class="hidden" style="text-align:center; margin-top:8px">
+      <div class="reset-ok">密码已重置，正在登录…</div>
+      <p class="auth-hint">若未自动跳转，<a href="index.html">点此返回首页</a>。</p>
+    </div>
+
+    <p class="auth-hint" style="text-align:center">返回 <a href="index.html">智绘几何首页</a></p>
+  </div>
+
+  <script>
+    (function () {
+      const $ = (id) => document.getElementById(id);
+      const token = new URLSearchParams(location.search).get('token');
+      if (!token) $('tokenWarn').classList.remove('hidden');
+      else $('resetForm').classList.remove('hidden');
+
+      $('resetForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const pw = $('pw').value, pw2 = $('pw2').value;
+        const err = $('err'); err.textContent = '';
+        if (pw.length < 8) { err.textContent = '密码至少 8 位'; return; }
+        if (pw !== pw2) { err.textContent = '两次输入的密码不一致'; return; }
+        const btn = $('submit'); btn.disabled = true;
+        try {
+          const r = await fetch('/api/auth/reset-password', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, newPassword: pw }),
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) { err.textContent = data.message || '重置失败，请重新申请'; btn.disabled = false; return; }
+          $('resetForm').classList.add('hidden');
+          $('okBox').classList.remove('hidden');
+          setTimeout(() => { location.href = 'index.html'; }, 1200);
+        } catch (ex) {
+          err.textContent = '网络错误，请稍后重试'; btn.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

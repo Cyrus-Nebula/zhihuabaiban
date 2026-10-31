@@ -140,9 +140,9 @@
       clearImage();
     }
   }
-  heroSend.addEventListener('click', heroAiGenerate);
+  heroSend.addEventListener('click', () => Auth.requireLogin(heroAiGenerate));
   heroInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); heroAiGenerate(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); Auth.requireLogin(heroAiGenerate); }
   });
 
   /* ---------- 导航：移动端汉堡菜单 ---------- */
@@ -228,11 +228,11 @@
     const useBtn = document.createElement('button');
     useBtn.className = 'btn btn-primary btn-sm';
     useBtn.textContent = '使用模板';
-    useBtn.addEventListener('click', () => {
+    useBtn.addEventListener('click', () => Auth.requireLogin(() => {
       const f = Store.create(t.title, '2d');
       Store.saveContent(f.id, { name: t.title, commands: t.commands, moves: [] });
       location.href = 'board.html?id=' + encodeURIComponent(f.id);
-    });
+    }));
     body.querySelector('.tpl-foot').appendChild(useBtn);
 
     card.append(thumb, body);

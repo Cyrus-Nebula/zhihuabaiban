@@ -1,6 +1,6 @@
 # 智绘几何 · 开源免费的在线几何画板
 
-强大直观的几何图形创建与编辑工具，让数学可视化变得简单。**完全免费、无需注册、代码开源**，数据只保存在你自己的浏览器里。
+强大直观的几何图形创建与编辑工具，让数学可视化变得简单。**完全免费、代码开源**；核心功能须登录后使用（登录即开通账号，邮箱 + 密码，完全自建、零外部依赖）。
 
 - **在线体验**：https://zhihuabaiban.pages.dev
 - **源代码**：https://github.com/Cyrus-Nebula/zhihuabaiban （欢迎 Star / Fork / 提 Issue）
@@ -101,6 +101,12 @@ LLM_API_KEY=你的key node server/local-proxy.mjs
    | `LLM_BASE_URL` | `https://open.bigmodel.cn/api/paas/v4` | 否 |
    | `JWT_SECRET` | 任意长随机串，如 `openssl rand -hex 32` | 启用登录必填 |
    | `DB` | D1 数据库绑定（见下） | 启用登录/云端必填 |
+   | `ADMIN_EMAILS` | 逗号分隔的管理员邮箱，如 `a@x.com,b@y.com`；这些邮箱首次登录即获最高权限 | 否（不设则无管理员） |
+   | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth 应用凭据 | 否（仅配置了才显示对应按钮） |
+   | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth 应用凭据 | 否 |
+   | `WECHAT_APPID` / `WECHAT_APPSECRET` | 微信开放平台凭据 | 否 |
+   | `QQ_APPID` / `QQ_APPSECRET` | QQ 互联凭据 | 否 |
+   | `RESEND_API_KEY` | 邮件服务密钥（用于自动发送密码重置邮件） | 否（不配则重置链接直接在接口响应返回，由用户/管理员转达） |
 
 3. 保存后 **重试部署**（环境变量不会自动应用到旧部署）
 4. `js/config.js` 保持默认（`boardAiEndpoint: '/api/ai/board'` 同域）
@@ -111,7 +117,9 @@ LLM_API_KEY=你的key node server/local-proxy.mjs
 
 不想用第三方登录服务（Clerk/Supabase 等）也能拥有账号：**账号体系完全自建**，只用到你已经有的 Cloudflare 栈（Pages Functions + D1），不注册任何新账号、不产生额外费用。
 
-**功能**：邮箱 + 密码注册登录（密码加盐哈希存储），登录后画板可备份到云端、跨设备同步。未登录时站点照常使用，数据只存本机。
+**功能**：邮箱 + 密码注册登录（密码加盐哈希存储），登录后画板可备份到云端、跨设备同步。
+
+**登录门禁**：首页与公开内容可免登录浏览；但新建/打开画板、云端同步、会员中心、激活码、第三方登录等核心功能**必须登录后使用**，未登录时点击会弹出登录框。画板页（`board.html`）对未登录用户显示全屏登录墙，登录后自动解锁。
 
 **一键部署步骤**：
 
@@ -125,6 +133,42 @@ LLM_API_KEY=你的key node server/local-proxy.mjs
 完成后首页右上角出现「登录」，注册即开通账号；画板页「同步到云端」、首页「云端画板」区即可使用。本地仍是工作副本，云端为备份/同步源——即便后端不可用，作图也不受影响。
 
 实现位置：`auth/auth-backend.js`（密码哈希 + JWT + D1 操作）、`functions/api/auth/*`（注册/登录/登出/探针）、`functions/api/boards/*`（画板 CRUD）、`js/auth.js`（前端弹窗与同步）。
+
+### 管理员（最高权限）
+
+把站长/运营邮箱放进 `ADMIN_EMAILS`（逗号分隔）即可获得**最高权限**，无需改代码、无需数据库初始化脚本：
+
+- 该邮箱首次登录（或 `ensureProfile` 时）会被自动把 `user_profiles.role` 提升为 `admin` 并落库，与 JWT 角色保持一致。
+- 登录后导航菜单出现「管理后台」入口（直达 `admin.html`）。
+- 管理后台可：① 一键**生成会员激活码**（默认 1 个、最多 50 个）；② 查看激活码列表与状态；③ 查看全部用户（邮箱 / 角色 / 会员 / 注册时间）。
+- 后端 `functions/api/admin/*` 对每个请求都用 `resolveUser` + `isAdminEmail` 双重校验，非管理员返回 `403`。
+
+### 会员制度与激活码
+
+会员功能为**长期规划**（计划 2030 启用），但激活码体系现已就绪、现在就能激活：
+
+- 管理员在后台生成激活码（`activation_codes` 表，含 `code` / 创建人 / 是否已兑换 / 兑换用户）。
+- 用户在「会员中心」(`js/auth.js` 的 `openMembership`) 输入激活码 → `POST /api/membership/redeem` → 账号升级为**长期会员**（`membership='lifetime'`，写入 JWT 与 `user_profiles`），并立即重签 Cookie 让会员态生效。
+- 会员态在前端由 `Auth.user.membership === 'lifetime'` 驱动（如导航 VIP 徽标）；后续 2030 启用会员权益时直接读取该字段即可。
+
+### 第三方登录（通用 OAuth 框架）
+
+内置通用 OAuth 2.0 流程，支持 Google / GitHub / 微信 / QQ 四家，按「有没有配凭据」决定是否显示按钮——**未配置任何 OAuth 凭据时，登录框不展示第三方按钮，界面零暴露**。
+
+- 授权跳转：`GET /api/auth/oauth/<provider>` → 生成 `state` 写入 HttpOnly Cookie 防 CSRF → 302 到服务商授权页。
+- 回调：`GET /api/auth/oauth/callback/<provider>?code=&state=` → 校验 `state` 防 CSRF → 换令牌 → 建/关联账号 → 下发本站 `auth_token` Cookie → 跳回首页（`?oauth=success`）。
+- 已启用列表：`GET /api/auth/oauth-providers` 仅返回已配 AppID/Secret 的提供商，前端据此渲染按钮，密钥永不进浏览器。
+- 首次用某 OAuth 账号登录会自动建本站账号（邮箱取自服务商返回，缺失则生成占位邮箱）；同一邮箱再次登录自动关联。
+
+### 找回密码（重置链接方案）
+
+不依赖任何邮件服务也能找回：
+
+1. 登录框点「忘记密码」→ `POST /api/auth/forgot-password {email}` → 后端生成一次性重置令牌（`password_resets` 表，30 分钟有效）并**直接在响应里返回重置链接** `reset.html?token=...`。
+2. 打开该链接填新密码 → `POST /api/auth/reset-password {token, newPassword}` → 校验后更新密码、使所有旧会话失效，并直接下发新 Cookie 完成登录。
+3. 配置 `RESEND_API_KEY` 后可改为真发邮件（接口结构不变，仅把返回链接改为投递邮件）。
+
+> 当前为「重置链接」方案：链接由调用方（用户自己或管理员）复制转达给本人，便于无邮件基础设施也能跑通；页面 `reset.html` 仅消费 `?token=`。
 
 
 ## AI 命令协议

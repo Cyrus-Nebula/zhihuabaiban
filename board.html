@@ -9,8 +9,21 @@
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body class="board-page">
+  <!-- 登录墙：未登录时覆盖整个画板页，登录后自动消失（见页脚网关脚本） -->
+  <div class="login-wall" id="loginWall">
+    <div class="login-wall-card">
+      <a class="site-brand login-wall-brand" href="index.html">
+        <img src="favicon.svg" alt="" width="28" height="28" />
+        <span class="site-name">智绘几何</span>
+      </a>
+      <h2 class="login-wall-title">请登录后使用画板</h2>
+      <p class="login-wall-sub">几何作图与云端同步需要登录账号。账号免费注册，密码以加盐哈希存储。</p>
+      <button id="wallLogin" class="btn btn-primary" type="button">登录 / 注册</button>
+    </div>
+  </div>
+
   <header class="topbar">
-    <a class="btn ghost" href="index.html">← 返回工作台</a>
+<a class="btn ghost" href="index.html">← 返回工作台</a>
     <input id="doc-name" class="doc-name" type="text" value="未命名画板" maxlength="50" />
     <span id="save-status" class="save-status">就绪</span>
     <span class="flex-spacer"></span>
@@ -265,6 +278,22 @@
   <script src="js/store.js"></script>
   <script src="js/models.js"></script>
   <script src="js/auth.js"></script>
+  <!-- 登录墙网关：订阅 Auth 状态，未登录时显示全屏遮罩，登录后自动消失 -->
+  <script>
+    (function () {
+      var wall = document.getElementById('loginWall');
+      function sync() {
+        if (!wall) return;
+        if (window.Auth && window.Auth.user) wall.classList.add('hidden');
+        else wall.classList.remove('hidden');
+      }
+      if (window.Auth) window.Auth.onChange(sync);
+      document.addEventListener('click', function (e) {
+        if (e.target && e.target.id === 'wallLogin') { e.preventDefault(); if (window.Auth) window.Auth.openLogin(); }
+      });
+      sync();
+    })();
+  </script>
   <script type="module" src="js/board.js"></script>
 </body>
 </html>

@@ -194,18 +194,18 @@
     });
   }
 
-  // ---------- 新建 / 导入 ----------
-  document.getElementById('btnNew2d').addEventListener('click', () => {
+  // ---------- 新建 / 导入（需登录）----------
+  document.getElementById('btnNew2d').addEventListener('click', () => Auth.requireLogin(() => {
     const f = Store.create('平面画板 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }), '2d');
     location.href = openUrl(f);
-  });
-  document.getElementById('btnNew3d').addEventListener('click', () => {
+  }));
+  document.getElementById('btnNew3d').addEventListener('click', () => Auth.requireLogin(() => {
     const f = Store.create('立体画板 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }), '3d');
     location.href = openUrl(f);
-  });
+  }));
 
   const fileInput = document.getElementById('fileInput');
-  document.getElementById('btnImport').addEventListener('click', () => fileInput.click());
+  document.getElementById('btnImport').addEventListener('click', () => Auth.requireLogin(() => fileInput.click()));
   fileInput.addEventListener('change', async () => {
     const file = fileInput.files[0];
     if (!file) return;

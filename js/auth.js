@@ -78,6 +78,20 @@ window.Auth = (function () {
       body: JSON.stringify({ password }),
     });
   }
+  async function forgotPassword(email) {
+    return getJSON('/api/auth/forgot-password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+    });
+  }
+  async function redeemCode(code) {
+    return getJSON('/api/membership/redeem', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+    });
+  }
+  async function membershipMe() { return getJSON('/api/membership/me'); }
+  async function getProviders() {
+    try { return await getJSON('/api/auth/oauth-providers'); } catch { return { providers: {} }; }
+  }
 
   async function listBoards() { return getJSON('/api/boards'); }
   async function deleteBoard(id) {
@@ -139,6 +153,8 @@ window.Auth = (function () {
           <p class="auth-err" id="authErr"></p>
           <button type="submit" class="btn btn-primary auth-submit" id="authSubmit">登录</button>
         </form>
+        <p class="auth-alt"><a href="#" id="authForgot">忘记密码？</a></p>
+        <div class="auth-oauth" id="oauthBox"></div>
         <p class="auth-hint">本账号仅用于把你的画板备份到云端、跨设备同步。密码以加盐哈希存储，服务端无法还原明文。</p>
       </div>`;
     document.body.appendChild(m);
@@ -155,6 +171,9 @@ window.Auth = (function () {
     );
     m.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeModal));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !m.classList.contains('hidden')) closeModal(); });
+
+    const forgotLink = $('authForgot');
+    if (forgotLink) forgotLink.addEventListener('click', (e) => { e.preventDefault(); closeModal(); openForgot(); });
 
     $('authForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -189,7 +208,7 @@ window.Auth = (function () {
       }
     });
   }
-  function openLogin() { injectModal(); $('authModal').classList.remove('hidden'); setTimeout(() => $('authEmail') && $('authEmail').focus(), 30); }
+  function openLogin() { injectModal(); $('authModal').classList.remove('hidden'); setTimeout(() => $('authEmail') && $('authEmail').focus(), 30); renderOAuth(); }
   function openSignup() {
     injectModal();
     const m = $('authModal');
@@ -197,6 +216,38 @@ window.Auth = (function () {
     m.querySelectorAll('.auth-tab').forEach((x) => x.classList.toggle('active', x.dataset.tab === 'signup'));
     $('authSubmit').textContent = '注册并登录';
     $('authPw').setAttribute('autocomplete', 'new-password');
+    renderOAuth();
+  }
+  /** 登录后才执行：已登录立即执行 cb；未登录弹登录框，登录成功后自动执行。用于「必须登录才能使用」的入口拦截 */
+  function requireLogin(cb) {
+    if (state.user) { try { cb(); } catch (e) { console.error(e); } return; }
+    openLogin();
+    const handler = (u) => {
+      if (!u) return;
+      const i = listeners.indexOf(handler);
+      if (i >= 0) listeners.splice(i, 1);
+      try { cb(); } catch (e) { console.error(e); }
+    };
+    listeners.push(handler);
+  }
+  /** 渲染已配置的第三方登录按钮（无配置则不显示） */
+  async function renderOAuth() {
+    const box = $('oauthBox');
+    if (!box) return;
+    let data;
+    try { data = await getProviders(); } catch { data = { providers: {} }; }
+    const providers = (data && data.providers) || {};
+    const keys = Object.keys(providers);
+    if (!keys.length) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = '<div class="auth-oauth-sep"><span>或使用第三方账号</span></div>';
+    keys.forEach((k) => {
+      const b = el('button', 'auth-oauth-btn', '继续使用 ' + (providers[k].label || k));
+      b.type = 'button';
+      b.dataset.provider = k;
+      b.addEventListener('click', () => { location.href = '/api/auth/oauth/' + k; });
+      box.appendChild(b);
+    });
   }
   function closeModal() { const m = $('authModal'); if (m) m.classList.add('hidden'); }
 
@@ -296,6 +347,109 @@ window.Auth = (function () {
   }
   function openDelete() { injectDeleteModal(); const m = $('delModal'); m.classList.remove('hidden'); setTimeout(() => { const i = $('delPw'); if (i) i.focus(); }, 30); }
 
+  /* ---------- 找回密码弹窗 ---------- */
+  function injectForgotModal() {
+    if ($('fpModal')) return;
+    const m = el('div', 'auth-modal hidden');
+    m.id = 'fpModal'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+    m.innerHTML = `
+      <div class="auth-backdrop" data-close></div>
+      <div class="auth-card">
+        <button class="auth-x" type="button" data-close aria-label="关闭">×</button>
+        <h3 class="auth-title">找回密码</h3>
+        <p class="auth-hint">输入注册邮箱，系统会生成一条重置链接。当前为自助方案：链接会直接显示，请自行保存并在浏览器中打开设置新密码。</p>
+        <form id="fpForm">
+          <label class="auth-field"><span>邮箱</span><input type="email" id="fpEmail" required autocomplete="username" placeholder="you@example.com" /></label>
+          <p class="auth-err" id="fpErr"></p>
+          <button type="submit" class="btn btn-primary auth-submit" id="fpSubmit">生成重置链接</button>
+        </form>
+        <div class="auth-reset-result hidden" id="fpResult">
+          <p>请复制下面的重置链接，在浏览器打开并设置新密码：</p>
+          <div class="auth-reset-url" id="fpUrl"></div>
+          <button type="button" class="btn btn-ghost btn-sm" id="fpCopy">复制链接</button>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+    m.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => m.classList.add('hidden')));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !m.classList.contains('hidden')) m.classList.add('hidden'); });
+    m.querySelector('#fpForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = $('fpEmail').value.trim();
+      const errEl = $('fpErr'); errEl.textContent = '';
+      const btn = $('fpSubmit'); btn.disabled = true;
+      try {
+        const data = await forgotPassword(email);
+        $('fpResult').classList.remove('hidden');
+        $('fpUrl').textContent = data.resetUrl || '';
+        $('fpForm').hidden = true;
+      } catch (err) {
+        errEl.textContent = err.message || '生成失败，请重试';
+      } finally { btn.disabled = false; }
+    });
+    $('fpCopy').addEventListener('click', () => {
+      const t = $('fpUrl').textContent;
+      if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => showToast('链接已复制')).catch(() => {});
+    });
+  }
+  function openForgot() { injectForgotModal(); const m = $('fpModal'); m.classList.remove('hidden'); setTimeout(() => { const i = $('fpEmail'); if (i) i.focus(); }, 30); }
+
+  /* ---------- 会员中心弹窗 ---------- */
+  function injectMembershipModal() {
+    if ($('mbModal')) return;
+    const m = el('div', 'auth-modal hidden');
+    m.id = 'mbModal'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+    m.innerHTML = `
+      <div class="auth-backdrop" data-close></div>
+      <div class="auth-card">
+        <button class="auth-x" type="button" data-close aria-label="关闭">×</button>
+        <h3 class="auth-title">会员中心</h3>
+        <div class="mb-status" id="mbStatus">加载中…</div>
+        <p class="auth-hint">会员制度将于 2030 年正式启用。现在即可凭「长期会员激活码」提前激活，激活后永久有效。</p>
+        <form id="mbForm">
+          <label class="auth-field"><span>激活码</span><input type="text" id="mbCode" placeholder="输入 12 位激活码" autocomplete="off" /></label>
+          <p class="auth-err" id="mbErr"></p>
+          <button type="submit" class="btn btn-primary auth-submit" id="mbSubmit">激活会员</button>
+        </form>
+      </div>`;
+    document.body.appendChild(m);
+    m.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => m.classList.add('hidden')));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !m.classList.contains('hidden')) m.classList.add('hidden'); });
+    m.querySelector('#mbForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = $('mbCode').value.trim();
+      const errEl = $('mbErr'); errEl.textContent = '';
+      const btn = $('mbSubmit'); btn.disabled = true;
+      try {
+        await redeemCode(code);
+        if (state.user) state.user.membership = 'lifetime';
+        renderVipBadge(); emit();
+        m.classList.add('hidden');
+        showToast('已激活为长期会员');
+      } catch (err) {
+        errEl.textContent = err.message || '激活失败，请检查激活码';
+      } finally { btn.disabled = false; }
+    });
+  }
+  function openMembership() {
+    injectMembershipModal();
+    const m = $('mbModal'); m.classList.remove('hidden');
+    renderMbStatus();
+    setTimeout(() => { const i = $('mbCode'); if (i) i.focus(); }, 30);
+  }
+  async function renderMbStatus() {
+    const s = $('mbStatus'); if (!s) return;
+    if (!state.user) { s.textContent = '请先登录'; return; }
+    if (state.user.membership === 'lifetime') { s.innerHTML = '<span class="mb-vip">您已是长期会员</span>'; return; }
+    try {
+      const info = await membershipMe();
+      if (info && info.membership === 'lifetime') {
+        s.innerHTML = '<span class="mb-vip">您已是长期会员</span>';
+        if (state.user) state.user.membership = 'lifetime';
+        renderVipBadge();
+      } else s.textContent = '当前为免费用户';
+    } catch { s.textContent = '当前为免费用户'; }
+  }
+
   /* ---------- 导航登录态 ---------- */
   let menuEl = null;
   function buildMenu() {
@@ -304,11 +458,15 @@ window.Auth = (function () {
     if (!btn) { menuEl = true; return; }
     menuEl = el('div', 'auth-menu hidden');
     const head = el('div', 'auth-menu-head');
-    head.textContent = state.user.email || '已登录';
+    head.textContent = state.user.name || state.user.email || '已登录';
     menuEl.appendChild(head);
     if ($('cloudSection')) {
       addMenuItem('我的云端画板', () => { closeMenu(); const sec = $('cloudSection'); if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     }
+    if (state.user.role === 'admin') {
+      addMenuItem('管理后台', () => { closeMenu(); location.href = 'admin.html'; });
+    }
+    addMenuItem('会员中心', () => { closeMenu(); openMembership(); });
     addMenuItem('修改密码', () => { closeMenu(); openChangePw(); });
     addMenuItem('删除账号', () => { closeMenu(); openDelete(); }, true);
     addMenuItem('退出登录', () => { closeMenu(); logout(); });
@@ -327,19 +485,37 @@ window.Auth = (function () {
     const btn = $('authBtn');
     if (!btn) return;
     if (state.user) {
-      btn.textContent = (state.user.email || '已登录').split('@')[0];
+      const disp = state.user.name || state.user.email || '已登录';
+      btn.textContent = disp.split('@')[0];
       btn.classList.add('is-user');
       btn.onclick = (e) => {
         e.stopPropagation();
         if (menuEl) menuEl.classList.toggle('hidden');
       };
+      renderVipBadge();
       buildMenu();
     } else {
       btn.textContent = '登录';
       btn.classList.remove('is-user');
       btn.onclick = openLogin;
+      removeVipBadge();
     }
   }
+  function renderVipBadge() {
+    let b = $('authVip');
+    if (state.user && state.user.membership === 'lifetime') {
+      if (!b) {
+        b = el('span', 'auth-vip'); b.id = 'authVip';
+        const btn = $('authBtn');
+        if (btn && btn.parentNode) btn.insertAdjacentElement('afterend', b);
+      }
+      b.textContent = '会员';
+      b.hidden = false;
+    } else if (b) {
+      b.hidden = true;
+    }
+  }
+  function removeVipBadge() { const b = $('authVip'); if (b) b.hidden = true; }
   document.addEventListener('click', () => closeMenu());
 
   /* ---------- 首页：云端画板区 ---------- */
@@ -450,7 +626,7 @@ window.Auth = (function () {
     onChange(() => { renderNav(); renderCloud(); });
 
     me()
-      .then((u) => { if (u && u.authenticated) state.user = { userId: u.userId, email: u.email }; })
+      .then((u) => { if (u && u.authenticated) state.user = { userId: u.userId, email: u.email, role: u.role, membership: u.membership, name: u.name }; })
       .catch(() => {})
       .finally(() => emit());
   }
@@ -464,6 +640,8 @@ window.Auth = (function () {
     onChange, login, register, logout, me,
     listBoards, deleteBoard, syncBoard, openCloudBoard, syncAllLocal,
     changePassword, deleteAccount, openChangePw, openDelete,
-    openLogin, openSignup,
+    openLogin, openSignup, requireLogin,
+    forgotPassword, redeemCode, membershipMe, getProviders,
+    openMembership, openForgot,
   };
 })();

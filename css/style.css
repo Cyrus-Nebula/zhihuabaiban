@@ -1214,3 +1214,57 @@ code {
 .auth-card .btn-danger:hover { background: #bd3349; border-color: #bd3349; }
 .auth-card .btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
 
+/* ---------- 忘记密码 / 重置结果 ---------- */
+.auth-alt { margin: 12px 0 0; text-align: center; font-size: 13px; }
+.auth-alt a { color: var(--primary, #6549D5); text-decoration: none; }
+.auth-alt a:hover { text-decoration: underline; }
+.auth-reset-result { margin-top: 14px; padding: 14px; background: #f4f3fd; border: 1px solid #e4e1f7; border-radius: 10px; font-size: 13px; line-height: 1.6; }
+.auth-reset-url { margin: 8px 0 12px; padding: 10px 12px; background: #fff; border: 1px dashed #c9c3ef; border-radius: 8px; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #3a3f57; }
+
+/* ---------- 第三方登录（OAuth） ---------- */
+.auth-oauth { margin-top: 14px; }
+.auth-oauth.hidden { display: none; }
+.auth-oauth-sep { display: flex; align-items: center; gap: 10px; color: #9aa0b8; font-size: 12px; margin: 4px 0 10px; }
+.auth-oauth-sep::before, .auth-oauth-sep::after { content: ''; flex: 1; height: 1px; background: #e6e7f2; }
+.auth-oauth-btn { display: block; width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid #d9dcec; background: #fff; border-radius: 10px; font-size: 14px; font-weight: 600; color: #3a3f57; cursor: pointer; transition: border-color .15s, background .15s; }
+.auth-oauth-btn:hover { border-color: var(--primary, #6549D5); background: #f7f6fe; }
+
+/* ---------- 会员中心 / 会员徽章 ---------- */
+.mb-status { margin: 4px 0 16px; padding: 12px 14px; background: #f7f6fe; border: 1px solid #e6e3f7; border-radius: 10px; font-size: 14px; color: #4a4f6b; }
+.mb-vip { color: #b8860b; font-weight: 700; }
+.auth-vip { display: inline-flex; align-items: center; margin-left: 8px; padding: 1px 8px; font-size: 12px; font-weight: 700; line-height: 1.6; color: #fff; background: linear-gradient(135deg, #C9A227, #E6C35C); border-radius: 999px; vertical-align: middle; }
+.auth-vip.hidden { display: none; }
+
+/* ---------- 画板页登录墙 ---------- */
+.login-wall { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: rgba(28, 25, 64, 0.55); backdrop-filter: blur(4px); }
+.login-wall.hidden { display: none; }
+.login-wall-card { width: min(380px, 90vw); padding: 32px 28px; background: #fff; border-radius: 18px; box-shadow: 0 24px 60px rgba(60, 50, 140, 0.25); text-align: center; }
+.login-wall-brand { justify-content: center; margin-bottom: 14px; }
+.login-wall-brand .site-name { font-size: 18px; font-weight: 800; color: #2b2f47; }
+.login-wall-title { margin: 6px 0 8px; font-size: 20px; font-weight: 800; color: #2b2f47; }
+.login-wall-sub { margin: 0 0 20px; font-size: 13px; line-height: 1.7; color: #6b6f86; }
+.login-wall #wallLogin { width: 100%; padding: 12px; font-size: 15px; }
+
+/* ---------- 管理后台 ---------- */
+.admin-wrap { max-width: 920px; margin: 0 auto; padding: 32px 20px 64px; }
+.admin-title { font-size: 24px; font-weight: 800; color: #2b2f47; margin: 0 0 6px; }
+.admin-sub { color: #6b6f86; font-size: 14px; margin: 0 0 24px; }
+.admin-card { background: #fff; border: 1px solid #ebeaf4; border-radius: 14px; padding: 20px; margin-bottom: 22px; box-shadow: 0 6px 18px rgba(60, 50, 140, 0.06); }
+.admin-card h3 { margin: 0 0 14px; font-size: 16px; font-weight: 700; color: #2b2f47; }
+.admin-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.admin-row input { padding: 9px 11px; border: 1px solid #d9dcec; border-radius: 9px; font-size: 14px; }
+.admin-row input[type="number"] { width: 90px; }
+.admin-note { font-size: 13px; color: #8b90a6; min-height: 18px; margin: 6px 0 0; }
+.admin-note.ok { color: #2f9e63; }
+.admin-note.err { color: #d23f57; }
+.code-chip { display: inline-block; margin: 4px 6px 4px 0; padding: 5px 10px; background: #f4f3fd; border: 1px solid #e4e1f7; border-radius: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; letter-spacing: .5px; user-select: all; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.admin-table th, .admin-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #f0f0f7; }
+.admin-table th { color: #8b90a6; font-weight: 600; background: #fafaff; }
+.admin-table tr:hover td { background: #fafaff; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.pill.admin { background: #EFE7FF; color: #6d28d9; }
+.pill.user { background: #E0E7FF; color: #3E44D9; }
+.pill.vip { background: #FFF4D6; color: #b8860b; }
+.pill.free { background: #f0f0f7; color: #6b6f86; }
+

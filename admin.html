@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理后台 · 智绘几何</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="landing">
+  <header class="site-nav">
+    <a class="site-brand" href="index.html">
+      <img src="favicon.svg" alt="" width="28" height="28" />
+      <span class="site-name">智绘几何 · 管理后台</span>
+    </a>
+    <a class="btn btn-ghost btn-sm site-auth" id="authBtn" href="index.html">返回</a>
+  </header>
+
+  <main class="admin-wrap">
+    <h1 class="admin-title">管理后台</h1>
+    <p class="admin-sub" id="adminSub">正在校验权限…</p>
+
+    <div id="gate" class="admin-card hidden">
+      <p id="gateMsg"></p>
+      <a class="btn btn-primary" href="index.html">去登录</a>
+    </div>
+
+    <section id="panel" class="hidden">
+      <!-- 生成激活码 -->
+      <div class="admin-card">
+        <h3>生成长期会员激活码</h3>
+        <div class="admin-row">
+          <label>数量 <input type="number" id="codeCount" min="1" max="50" value="5" /></label>
+          <button class="btn btn-primary" id="genBtn" type="button">生成</button>
+        </div>
+        <p class="admin-note" id="genNote"></p>
+        <div id="genResult"></div>
+      </div>
+
+      <!-- 激活码列表 -->
+      <div class="admin-card">
+        <h3>激活码列表 <button class="btn btn-ghost btn-sm" id="refreshCodes" type="button">刷新</button></h3>
+        <div id="codeList" class="admin-note">加载中…</div>
+      </div>
+
+      <!-- 用户列表 -->
+      <div class="admin-card">
+        <h3>用户列表 <button class="btn btn-ghost btn-sm" id="refreshUsers" type="button">刷新</button></h3>
+        <div style="overflow:auto">
+          <table class="admin-table" id="userTable">
+            <thead><tr><th>邮箱</th><th>角色</th><th>会员</th><th>注册时间</th></tr></thead>
+            <tbody id="userRows"><tr><td colspan="4" class="admin-note">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="js/auth.js"></script>
+  <script>
+    (function () {
+      const $ = (id) => document.getElementById(id);
+      function note(el, msg, kind) { el.textContent = msg || ''; el.className = 'admin-note' + (kind ? ' ' + kind : ''); }
+
+      async function loadMe() {
+        try {
+          const r = await fetch('/api/auth/me');
+          const u = await r.json().catch(() => ({}));
+          if (!u.authenticated) return { ok: false, reason: 'unauth' };
+          if (u.role !== 'admin') return { ok: false, reason: 'forbidden', email: u.email };
+          return { ok: true, email: u.email };
+        } catch { return { ok: false, reason: 'net' }; }
+      }
+
+      function fmtTs(ts) {
+        if (!ts) return '-';
+        const d = new Date(ts);
+        const p = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+      }
+
+      async function renderCodes() {
+        const box = $('codeList');
+        box.textContent = '加载中…';
+        try {
+          const r = await fetch('/api/admin/codes');
+          const data = await r.json();
+          if (!r.ok) { box.textContent = data.message || '加载失败'; return; }
+          const codes = data.codes || [];
+          if (!codes.length) { box.textContent = '还没有激活码。'; return; }
+          box.innerHTML = '';
+          codes.forEach((c) => {
+            const chip = document.createElement('span');
+            chip.className = 'code-chip';
+            const used = c.claimed_by ? '（已用）' : (c.active === 0 ? '（已停用）' : '');
+            chip.textContent = c.code + used;
+            box.appendChild(chip);
+          });
+        } catch (e) { box.textContent = '网络错误'; }
+      }
+
+      async function renderUsers() {
+        const tb = $('userRows');
+        tb.innerHTML = '<tr><td colspan="4" class="admin-note">加载中…</td></tr>';
+        try {
+          const r = await fetch('/api/admin/users');
+          const data = await r.json();
+          if (!r.ok) { tb.innerHTML = '<tr><td colspan="4" class="admin-note err">加载失败：' + (data.message || '') + '</td></tr>'; return; }
+          const users = data.users || [];
+          if (!users.length) { tb.innerHTML = '<tr><td colspan="4" class="admin-note">暂无用户</td></tr>'; return; }
+          tb.innerHTML = '';
+          users.forEach((u) => {
+            const tr = document.createElement('tr');
+            const rolePill = u.role === 'admin' ? '<span class="pill admin">管理员</span>' : '<span class="pill user">用户</span>';
+            const memPill = u.membership === 'lifetime' ? '<span class="pill vip">长期会员</span>' : '<span class="pill free">免费</span>';
+            tr.innerHTML = `<td>${u.email || ''}</td><td>${rolePill}</td><td>${memPill}</td><td>${fmtTs(u.created_at)}</td>`;
+            tb.appendChild(tr);
+          });
+        } catch { tb.innerHTML = '<tr><td colspan="4" class="admin-note err">网络错误</td></tr>'; }
+      }
+
+      async function genCodes() {
+        const n = Math.max(1, Math.min(50, parseInt($('codeCount').value, 10) || 1));
+        const btn = $('genBtn');
+        btn.disabled = true; note($('genNote'), '生成中…'); $('genResult').innerHTML = '';
+        try {
+          const r = await fetch('/api/admin/codes', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ count: n }),
+          });
+          const data = await r.json();
+          if (!r.ok) { note($('genNote'), data.message || '生成失败', 'err'); }
+          else {
+            note($('genNote'), '已生成 ' + (data.codes || []).length + ' 个激活码', 'ok');
+            const box = $('genResult'); box.innerHTML = '';
+            (data.codes || []).forEach((c) => {
+              const chip = document.createElement('span'); chip.className = 'code-chip'; chip.textContent = c; chip.title = '点击复制';
+              chip.addEventListener('click', () => { navigator.clipboard && navigator.clipboard.writeText(c); showToast('已复制 ' + c); });
+              box.appendChild(chip);
+            });
+            renderCodes();
+          }
+        } catch (e) { note($('genNote'), '网络错误', 'err'); }
+        finally { btn.disabled = false; }
+      }
+
+      function showToast(msg) {
+        const t = $('toast'); if (!t) return;
+        t.textContent = msg; t.classList.remove('hidden');
+        clearTimeout(showToast._t); showToast._t = setTimeout(() => t.classList.add('hidden'), 2600);
+      }
+
+      async function init() {
+        const me = await loadMe();
+        if (!me.ok) {
+          $('adminSub').textContent = '无权限访问';
+          $('gate').classList.remove('hidden');
+          if (me.reason === 'unauth') $('gateMsg').textContent = '请先登录管理员账号。';
+          else if (me.reason === 'forbidden') $('gateMsg').textContent = '当前账号（' + (me.email || '') + '）不是管理员。';
+          else $('gateMsg').textContent = '无法连接服务，请稍后重试。';
+          return;
+        }
+        $('adminSub').textContent = '管理员：' + me.email;
+        $('panel').classList.remove('hidden');
+        $('genBtn').addEventListener('click', genCodes);
+        $('refreshCodes').addEventListener('click', renderCodes);
+        $('refreshUsers').addEventListener('click', renderUsers);
+        renderCodes();
+        renderUsers();
+      }
+      init();
+    })();
+  </script>
+</body>
+</html>

@@ -176,6 +176,16 @@ async function ensureSchema(env) {
       `CREATE TABLE IF NOT EXISTS login_throttle (key TEXT PRIMARY KEY, fails INTEGER NOT NULL DEFAULT 0, first_at INTEGER NOT NULL, locked_until INTEGER)`,
       `CREATE TABLE IF NOT EXISTS boards (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL DEFAULT '未命名画板', mode TEXT NOT NULL DEFAULT '2d', content TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
       `CREATE INDEX IF NOT EXISTS idx_boards_user ON boards(user_id, updated_at DESC)`,
+      // 角色 / 会员（与 users 1:1）
+      `CREATE TABLE IF NOT EXISTS user_profiles (user_id TEXT PRIMARY KEY, role TEXT NOT NULL DEFAULT 'user', membership TEXT NOT NULL DEFAULT 'none', membership_since INTEGER, membership_expires INTEGER, display_name TEXT)`,
+      // 会员激活码（激活长期会员）
+      `CREATE TABLE IF NOT EXISTS activation_codes (code TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'lifetime', created_by TEXT, created_at INTEGER NOT NULL, claimed_by TEXT, claimed_at INTEGER, active INTEGER NOT NULL DEFAULT 1)`,
+      `CREATE INDEX IF NOT EXISTS idx_codes_claimed ON activation_codes(claimed_by)`,
+      // 找回密码令牌
+      `CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, user_id TEXT NOT NULL, email TEXT NOT NULL, expires_at INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0)`,
+      // 第三方登录身份映射
+      `CREATE TABLE IF NOT EXISTS oauth_identities (provider TEXT NOT NULL, provider_id TEXT NOT NULL, user_id TEXT NOT NULL, email TEXT, name TEXT, PRIMARY KEY (provider, provider_id))`,
+      `CREATE INDEX IF NOT EXISTS idx_oauth_user ON oauth_identities(user_id)`,
     ];
     for (const s of stmts) await env.DB.prepare(s).run();
   })().catch((e) => { _schemaReady = null; throw e; });
@@ -230,7 +240,7 @@ export async function resolveUser(request, env) {
         return { authenticated: false, error: 'token_revoked' };
       }
     }
-    return { authenticated: true, userId: payload.sub, email: payload.email || null };
+    return { authenticated: true, userId: payload.sub, email: payload.email || null, role: payload.role || 'user', membership: payload.m || 'none', name: payload.name || null, tv: typeof payload.tv === 'number' ? payload.tv : 0 };
   } catch {
     return { authenticated: false };
   }
@@ -259,7 +269,7 @@ export async function registerUser({ email, password }, env) {
         .bind(id, e, hash, Date.now()).run();
     } else throw e2;
   }
-  const token = await signToken({ sub: id, email: e, tv: 0 }, env.JWT_SECRET);
+  const token = await signToken({ sub: id, email: e, tv: 0, ...(await issueClaims(env, id, e)) }, env.JWT_SECRET);
   return { status: 200, body: { ok: true, user: { id, email: e } }, token };
 }
 
@@ -298,7 +308,7 @@ export async function loginUser({ email, password }, env, request) {
   const ok = await verifyPassword(password, row.password_hash);
   if (!ok) { await recordFail(env, e, clientIp(request)); return { status: 401, body: { error: 'invalid_credentials', message: '邮箱或密码错误' }, token: null }; }
   await resetThrottle(env, e, clientIp(request));
-  const token = await signToken({ sub: row.id, email: row.email, tv: Number(row.token_version) || 0 }, env.JWT_SECRET);
+  const token = await signToken({ sub: row.id, email: row.email, tv: Number(row.token_version) || 0, ...(await issueClaims(env, row.id, row.email)) }, env.JWT_SECRET);
   return { status: 200, body: { ok: true, user: { id: row.id, email: row.email } }, token };
 }
 
@@ -326,7 +336,7 @@ export async function changePassword({ oldPassword, newPassword }, env, request)
       await env.DB.prepare('UPDATE users SET password_hash=? WHERE id=?').bind(hash, user.userId).run();
     } else throw e2;
   }
-  const token = await signToken({ sub: user.userId, email: user.email, tv: newTv }, env.JWT_SECRET);
+  const token = await signToken({ sub: user.userId, email: user.email, tv: newTv, ...(await issueClaims(env, user.userId, user.email)) }, env.JWT_SECRET);
   return { status: 200, body: { ok: true }, token };
 }
 
@@ -343,6 +353,9 @@ export async function deleteAccount({ password }, env, request) {
     return { status: 400, body: { error: 'wrong_password', message: '密码不正确' }, token: null };
   }
   await env.DB.prepare('DELETE FROM boards WHERE user_id=?').bind(user.userId).run();
+  await env.DB.prepare('DELETE FROM oauth_identities WHERE user_id=?').bind(user.userId).run();
+  await env.DB.prepare('DELETE FROM user_profiles WHERE user_id=?').bind(user.userId).run();
+  await env.DB.prepare('UPDATE activation_codes SET claimed_by=NULL, claimed_at=NULL WHERE claimed_by=?').bind(user.userId).run();
   await env.DB.prepare('DELETE FROM users WHERE id=?').bind(user.userId).run();
   return { status: 200, body: { ok: true }, token: null };
 }
@@ -426,4 +439,265 @@ export async function dbDeleteBoard(env, userId, id) {
 function safeParse(s) {
   if (s == null) return null;
   try { return JSON.parse(s); } catch { return null; }
+}
+
+/* ---------- 角色 / 会员辅助 ---------- */
+/** 管理员判定：邮箱在 ADMIN_EMAILS（逗号分隔，大小写不敏感）中即为最高权限 */
+export function isAdminEmail(email, env) {
+  const raw = env && env.ADMIN_EMAILS;
+  if (!raw || typeof raw !== 'string') return false;
+  const set = new Set(raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
+  return !!(email && set.has(String(email).trim().toLowerCase()));
+}
+
+/** 确保用户有 profile 行；返回 {role, membership, membershipSince, membershipExpires, name}。
+ *  若邮箱属于管理员名单，自动把 role 提升为 admin 并落库（与 JWT 角色保持一致）。 */
+async function ensureProfile(env, userId, email) {
+  if (!env.DB) return { role: 'user', membership: 'none', name: email || null };
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO user_profiles (user_id, role, membership) VALUES (?, 'user', 'none')`
+  ).bind(userId).run();
+  const row = await env.DB.prepare('SELECT role, membership, membership_since, membership_expires, display_name FROM user_profiles WHERE user_id=?').bind(userId).first();
+  let role = (row && row.role) || 'user';
+  if (isAdminEmail(email, env) && role !== 'admin') {
+    role = 'admin';
+    await env.DB.prepare('UPDATE user_profiles SET role=? WHERE user_id=?').bind('admin', userId).run();
+  }
+  return {
+    role,
+    membership: (row && row.membership) || 'none',
+    membershipSince: row ? row.membership_since : null,
+    membershipExpires: row ? row.membership_expires : null,
+    name: (row && row.display_name) || email || null,
+  };
+}
+
+/** 生成 JWT 载荷里的角色/会员字段（供注册/登录/改密签发令牌时复用） */
+async function issueClaims(env, userId, email) {
+  const p = await ensureProfile(env, userId, email);
+  return { role: p.role, m: p.membership, name: p.name };
+}
+
+async function setMembership(env, userId, type) {
+  const now = Date.now();
+  const existing = await env.DB.prepare('SELECT role FROM user_profiles WHERE user_id=?').bind(userId).first();
+  if (existing) {
+    await env.DB.prepare('UPDATE user_profiles SET membership=?, membership_since=?, membership_expires=? WHERE user_id=?')
+      .bind(type, type === 'none' ? null : now, null, userId).run();
+  } else {
+    await env.DB.prepare('INSERT INTO user_profiles (user_id, role, membership, membership_since, membership_expires) VALUES (?,?,?,?,?)')
+      .bind(userId, 'user', type, type === 'none' ? null : now, null).run();
+  }
+}
+
+/* ---------- 会员激活码 ---------- */
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去除易混字符 I/O/0/1
+function genCode(len = 12) {
+  const bytes = crypto.getRandomValues(new Uint8Array(len));
+  let s = '';
+  for (let i = 0; i < len; i++) s += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+  return s;
+}
+/** 生成若干长期会员激活码（管理员用） */
+export async function createActivationCodes(env, count, createdBy) {
+  if (!env.DB) throw new Error('db_not_bound');
+  const n = Math.max(1, Math.min(50, Number(count) || 1));
+  const codes = [];
+  for (let i = 0; i < n; i++) {
+    let code = genCode(12), ok = false, tries = 0;
+    while (!ok && tries++ < 6) {
+      const dup = await env.DB.prepare('SELECT code FROM activation_codes WHERE code=?').bind(code).first();
+      if (!dup) ok = true; else code = genCode(12);
+    }
+    await env.DB.prepare('INSERT INTO activation_codes (code, type, created_by, created_at, active) VALUES (?,?,?,?,1)')
+      .bind(code, 'lifetime', createdBy || null, Date.now()).run();
+    codes.push(code);
+  }
+  return codes;
+}
+/** 列出激活码（管理员用） */
+export async function listActivationCodes(env) {
+  if (!env.DB) return [];
+  const { results } = await env.DB.prepare('SELECT code, type, created_by, created_at, claimed_by, claimed_at, active FROM activation_codes ORDER BY created_at DESC').all();
+  return results || [];
+}
+/** 兑换激活码为长期会员（需登录）。user 为 resolveUser 的结果（含 userId/email/role/name/tv）。
+ *  成功后同时签发新令牌（m='lifetime'），使会员状态立即在前端生效。 */
+export async function redeemCode(rawCode, env, user) {
+  if (!env.DB) throw new Error('db_not_bound');
+  const code = String(rawCode || '').trim().toUpperCase();
+  if (!code) return { ok: false, status: 400, body: { error: 'missing_code', message: '请输入激活码' } };
+  const row = await env.DB.prepare('SELECT * FROM activation_codes WHERE code=?').bind(code).first();
+  if (!row) return { ok: false, status: 404, body: { error: 'invalid_code', message: '激活码无效' } };
+  if (row.active === 0) return { ok: false, status: 410, body: { error: 'code_disabled', message: '该激活码已停用' } };
+  if (row.claimed_by) return { ok: false, status: 409, body: { error: 'code_used', message: '该激活码已被使用' } };
+  await env.DB.prepare('UPDATE activation_codes SET claimed_by=?, claimed_at=? WHERE code=?').bind(user.userId, Date.now(), row.code).run();
+  await setMembership(env, user.userId, 'lifetime');
+  const token = await signToken({ sub: user.userId, email: user.email, tv: typeof user.tv === 'number' ? user.tv : 0, role: user.role || 'user', m: 'lifetime', name: user.name || null }, env.JWT_SECRET);
+  return { ok: true, status: 200, body: { ok: true, membership: 'lifetime' }, token };
+}
+
+/* ---------- 用户列表（管理员用） ---------- */
+export async function listUsers(env) {
+  if (!env.DB) return [];
+  const { results } = await env.DB.prepare(
+    `SELECT u.id, u.email, u.created_at, p.role, p.membership, p.membership_since
+     FROM users u LEFT JOIN user_profiles p ON u.id=p.user_id
+     ORDER BY u.created_at DESC`
+  ).all();
+  return results || [];
+}
+
+/* ---------- 找回密码（重置链接方案，无需邮件服务） ---------- */
+const RESET_TTL_MS = 30 * 60 * 1000; // 30 分钟
+export async function forgotPassword({ email }, env, origin) {
+  if (!env.DB) return { status: 503, body: { error: 'db_not_bound', message: '服务端未配置数据库' } };
+  const e = normalizeEmail(email);
+  if (!e) return { status: 400, body: { error: 'invalid_email', message: '邮箱格式不正确' } };
+  const row = await env.DB.prepare('SELECT id, email FROM users WHERE email=?').bind(e).first();
+  if (!row) return { status: 404, body: { error: 'email_not_found', message: '该邮箱未注册' } };
+  const token = genCode(20) + Date.now().toString(36) + genCode(8);
+  await env.DB.prepare('INSERT INTO password_resets (token, user_id, email, expires_at, used) VALUES (?,?,?,?,0)')
+    .bind(token, row.id, e, Date.now() + RESET_TTL_MS).run();
+  const base = (origin || env.SITE_URL || 'https://nebula-zhihua.pages.dev').replace(/\/$/, '');
+  const url = base + '/reset.html?token=' + encodeURIComponent(token);
+  return { status: 200, body: { ok: true, resetUrl: url } };
+}
+export async function resetPassword({ token, newPassword }, env) {
+  if (!env.DB) return { status: 503, body: { error: 'db_not_bound' } };
+  if (!token) return { status: 400, body: { error: 'missing_token', message: '缺少重置令牌' } };
+  const pwErr = validatePassword(newPassword);
+  if (pwErr) return { status: 400, body: pwErr };
+  const row = await env.DB.prepare('SELECT * FROM password_resets WHERE token=?').bind(token).first();
+  if (!row) return { status: 404, body: { error: 'invalid_token', message: '令牌无效或已过期' } };
+  if (row.used) return { status: 410, body: { error: 'token_used', message: '该链接已使用过，请重新申请' } };
+  if (row.expires_at < Date.now()) return { status: 410, body: { error: 'token_expired', message: '链接已过期（30 分钟），请重新申请' } };
+  const hash = await hashPassword(newPassword);
+  // 重置密码即视为凭据泄露：令牌版本 +1，使所有旧会话失效
+  let tvRow = null;
+  try { tvRow = await env.DB.prepare('SELECT token_version FROM users WHERE id=?').bind(row.user_id).first(); } catch { tvRow = null; }
+  const newTv = (tvRow ? Number(tvRow.token_version) || 0 : 0) + 1;
+  try {
+    await env.DB.prepare('UPDATE users SET password_hash=?, token_version=? WHERE id=?').bind(hash, newTv, row.user_id).run();
+  } catch (e2) {
+    if (String(e2 && e2.message || e2).includes('token_version')) {
+      await env.DB.prepare('UPDATE users SET password_hash=? WHERE id=?').bind(hash, row.user_id).run();
+    } else throw e2;
+  }
+  await env.DB.prepare('UPDATE password_resets SET used=1 WHERE token=?').bind(token).run();
+  const u = await env.DB.prepare('SELECT id, email FROM users WHERE id=?').bind(row.user_id).first();
+  const profile = await ensureProfile(env, u.id, u.email);
+  const jwt = await signToken({ sub: u.id, email: u.email, tv: newTv, role: profile.role, m: profile.membership, name: profile.name }, env.JWT_SECRET);
+  return { status: 200, body: { ok: true }, token: jwt };
+}
+
+/* ---------- 第三方登录（通用 OAuth2，支持 Google / GitHub / 微信 / QQ） ---------- */
+const OAUTH = {
+  google: {
+    label: 'Google', auth: 'https://accounts.google.com/o/oauth2/v2/auth',
+    token: 'https://oauth2.googleapis.com/token', userinfo: 'https://www.googleapis.com/oauth2/v2/userinfo',
+    scope: 'openid email profile', envId: 'OAUTH_GOOGLE_ID', envSecret: 'OAUTH_GOOGLE_SECRET',
+    bearer: true,
+  },
+  github: {
+    label: 'GitHub', auth: 'https://github.com/login/oauth/authorize',
+    token: 'https://github.com/login/oauth/access_token', userinfo: 'https://api.github.com/user',
+    scope: 'read:user user:email', envId: 'OAUTH_GITHUB_ID', envSecret: 'OAUTH_GITHUB_SECRET',
+    accept: 'application/json', github: true,
+  },
+  wechat: {
+    label: '微信', auth: 'https://open.weixin.qq.com/connect/qrconnect',
+    token: 'https://api.weixin.qq.com/sns/oauth2/access_token', userinfo: 'https://api.weixin.qq.com/sns/userinfo',
+    scope: 'snsapi_login', envId: 'OAUTH_WECHAT_ID', envSecret: 'OAUTH_WECHAT_SECRET', wechat: true,
+  },
+  qq: {
+    label: 'QQ', auth: 'https://graph.qq.com/oauth2.0/authorize',
+    token: 'https://graph.qq.com/oauth2.0/token', userinfo: 'https://graph.qq.com/user/get_user_info',
+    scope: 'get_user_info', envId: 'OAUTH_QQ_ID', envSecret: 'OAUTH_QQ_SECRET', qq: true,
+  },
+};
+/** 返回当前已配置（有 AppID/Secret）的第三方登录提供商 */
+export function oauthEnabled(env) {
+  const out = {};
+  for (const [k, c] of Object.entries(OAUTH)) {
+    if (env && env[c.envId] && env[c.envSecret]) out[k] = { label: c.label };
+  }
+  return out;
+}
+function redirectUri(provider, base) {
+  return base.replace(/\/$/, '') + '/api/auth/oauth/callback/' + provider;
+}
+/** 生成授权跳转 URL（state 由调用方存入 Cookie 防 CSRF） */
+export function oauthAuthorizeUrl(provider, env, base, state) {
+  const c = OAUTH[provider];
+  if (!c || !env[c.envId] || !env[c.envSecret]) return null;
+  const p = new URLSearchParams({ client_id: env[c.envId], redirect_uri: redirectUri(provider, base), response_type: 'code', scope: c.scope, state });
+  if (c.wechat) { p.set('appid', env[c.envId]); }
+  return c.auth + '?' + p.toString();
+}
+function oauthFallbackEmail(provider, pid) { return 'oauth_' + provider + '_' + pid + '@local'; }
+
+/** 处理回调：用 code 换令牌 → 取用户信息 → 找到/创建用户 → 签发本站 JWT。返回 {status, body, token} */
+export async function oauthCallback(provider, code, env, base) {
+  const c = OAUTH[provider];
+  if (!c) return { status: 400, body: { error: 'unknown_provider', message: '不支持的登录方式' } };
+  if (!env.DB) return { status: 503, body: { error: 'db_not_bound' } };
+  if (!env.JWT_SECRET) return { status: 500, body: { error: 'jwt_secret_missing' } };
+  const redirect = redirectUri(provider, base);
+  let accessToken, pid, email = null, name = null;
+
+  if (c.wechat) {
+    const j = await (await fetch(`https://api.weixin.qq.com/sns/oauth2/access_token?appid=${env[c.envId]}&secret=${env[c.envSecret]}&code=${code}&grant_type=authorization_code`)).json();
+    if (j.errcode) return { status: 401, body: { error: 'oauth_failed', message: '微信授权失败：' + j.errmsg } };
+    accessToken = j.access_token; pid = j.openid;
+    const ui = await (await fetch(`${c.userinfo}?access_token=${accessToken}&openid=${pid}`)).json();
+    email = oauthFallbackEmail(provider, pid); name = ui.nickname;
+  } else if (c.qq) {
+    const j = await (await fetch(`https://graph.qq.com/oauth2.0/token?grant_type=authorization_code&client_id=${env[c.envId]}&client_secret=${env[c.envSecret]}&code=${code}&redirect_uri=${encodeURIComponent(redirect)}&fmt=json`)).json();
+    if (!j.access_token) return { status: 401, body: { error: 'oauth_failed', message: 'QQ 授权失败' } };
+    accessToken = j.access_token;
+    const me = await (await fetch(`https://graph.qq.com/oauth2.0/me?access_token=${accessToken}&fmt=json`)).json();
+    pid = me.openid;
+    const ui = await (await fetch(`${c.userinfo}?access_token=${accessToken}&oauth_consumer_key=${env[c.envId]}&openid=${pid}`)).json();
+    email = oauthFallbackEmail(provider, pid); name = ui.nickname;
+  } else {
+    const body = new URLSearchParams({ client_id: env[c.envId], client_secret: env[c.envSecret], code, redirect_uri: redirect, grant_type: 'authorization_code' });
+    const headers = c.accept ? { Accept: c.accept } : { 'Content-Type': 'application/x-www-form-urlencoded' };
+    const r = await fetch(c.token, { method: 'POST', headers, body });
+    const j = c.accept ? await r.json() : Object.fromEntries(new URLSearchParams(await r.text()));
+    if (!j.access_token) return { status: 401, body: { error: 'oauth_failed', message: '授权令牌获取失败' } };
+    accessToken = j.access_token;
+    if (c.github) {
+      const u = await (await fetch(c.userinfo, { headers: { Authorization: 'token ' + accessToken, 'User-Agent': 'zhihui' } })).json();
+      name = u.name || u.login; pid = String(u.id);
+      const em = await (await fetch('https://api.github.com/user/emails', { headers: { Authorization: 'token ' + accessToken, 'User-Agent': 'zhihui' } })).json();
+      const primary = Array.isArray(em) && em.find((x) => x.primary && x.verified);
+      email = primary ? primary.email : (u.email || null);
+    } else { // google
+      const j2 = await (await fetch(c.userinfo, { headers: { Authorization: 'Bearer ' + accessToken } })).json();
+      email = j2.email; name = j2.name; pid = j2.id || j2.sub;
+    }
+  }
+
+  // 找到或创建用户
+  let userId = null;
+  const ident = await env.DB.prepare('SELECT user_id FROM oauth_identities WHERE provider=? AND provider_id=?').bind(provider, pid).first();
+  if (ident) userId = ident.user_id;
+  else if (email && !email.startsWith('oauth_')) {
+    const u = await env.DB.prepare('SELECT id FROM users WHERE email=?').bind(normalizeEmail(email) || email).first();
+    if (u) userId = u.id;
+  }
+  const userEmail = email && !email.startsWith('oauth_') ? (normalizeEmail(email) || email) : oauthFallbackEmail(provider, pid);
+  if (!userId) {
+    const id = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    await env.DB.prepare('INSERT INTO users (id, email, password_hash, token_version, created_at) VALUES (?,?,?,?,?)')
+      .bind(id, userEmail, null, 0, Date.now()).run();
+    userId = id;
+  }
+  await env.DB.prepare('INSERT OR REPLACE INTO oauth_identities (provider, provider_id, user_id, email, name) VALUES (?,?,?,?,?)')
+    .bind(provider, pid, userId, email, name).run();
+  const profile = await ensureProfile(env, userId, userEmail);
+  const u = await env.DB.prepare('SELECT email FROM users WHERE id=?').bind(userId).first();
+  const jwt = await signToken({ sub: userId, email: u.email, tv: 0, role: profile.role, m: profile.membership, name: profile.name }, env.JWT_SECRET);
+  return { status: 200, body: { ok: true, user: { id: userId, email: u.email, name: profile.name } }, token: jwt };
 }

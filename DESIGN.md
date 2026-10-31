@@ -64,14 +64,39 @@
 - **账号自管理**（已登录下拉菜单）：`修改密码`（验旧密 → 改哈希 → 令牌版本 +1 → 重签 Cookie，本设备保持登录）、`删除账号`（验密 → 删该用户全部画板与账号 → 清 Cookie 登出）。因无邮件服务，改密是找回访问的唯一自助途径。
 - **密钥**：`JWT_SECRET`（Pages → Settings → Environment variables 配置，任意长随机串，如 `openssl rand -hex 32`）。用于签发/校验 JWT，**切勿提交进仓库**。
 - **画板云端存储**：Cloudflare D1（绑定变量名 `DB`，建表见 `auth/schema.sql`）。`boards` 表以 `user_id` 做账户隔离；本地 localStorage 仍是工作副本，云端为备份/同步源（`Store.upsert` 保持 id 一致）。
-- **容错**：后端未部署 / D1 未绑定 / 未登录时，页面照常可用，仅云端相关功能不可用并给出友好提示；绝不阻断本地作图。
-- UI 令牌沿用品牌色（`--primary` 系）；登录弹窗、导航用户态、云端列表样式见 `css/style.css` 末尾「账号登录 / 云端画板」段落。
+- **容错**：后端未部署 / D1 未绑定时，登录相关功能不可用并给出友好提示；登录态探测失败按未登录处理。
+- **登录门禁**：首页与公开内容可免登录浏览；新建/打开画板、云端同步、会员中心、激活码、第三方登录等核心功能**须登录后使用**。前端拦截由 `js/auth.js` 的 `Auth.requireLogin(cb)`（未登录先弹登录框、登录成功再执行回调）实现；画板页 `board.html` 对未登录用户显示全屏 `.login-wall` 覆盖层，订阅 `Auth.onChange` 在登录后自动隐藏。
+- UI 令牌沿用品牌色（`--primary` 系）；登录弹窗、导航用户态、云端列表、会员中心、OAuth 按钮、登录墙、管理后台样式见 `css/style.css` 末尾「账号登录 / 云端画板」段落。
+
+### 会员与激活码
+
+- 激活码由管理员在后台生成（`activation_codes` 表），字段含 `code` / `created_by` / `redeemed` / `redeemed_by` / `redeemed_at`。
+- 用户在「会员中心」(`js/auth.js` 的 `openMembership`) 输入激活码 → `POST /api/membership/redeem` → 账号 `membership` 置为 `'lifetime'`（同时写 JWT 与 `user_profiles`），并立即重签 Cookie 使会员态生效。
+- 前端会员态由 `Auth.user.membership === 'lifetime'` 驱动（导航 VIP 徽标等）；会员权益作为长期规划（计划 2030 启用），届时直接读取该字段即可。
+
+### 管理员权限
+
+- 管理员邮箱清单由 `ADMIN_EMAILS`（逗号分隔）环境变量指定；判定函数 `isAdminEmail(env, email)` 读取该变量。
+- 邮箱命中清单的用户在 `ensureProfile` 时自动把 `user_profiles.role` 提升为 `'admin'` 并落库，与 JWT 角色一致。
+- 管理后台 `admin.html` 调用 `/api/auth/me` 校验 `role==='admin'`，非管理员显示拦截页；面板含生成/列出激活码、列出全部用户（邮箱/角色/会员/注册时间）。
+- 后端 `functions/api/admin/*` 对每个请求用 `resolveUser` + `isAdminEmail` 双重校验，非管理员返回 `403`。
+
+### 第三方登录（OAuth）
+
+- 通用 OAuth 2.0 框架，支持 Google / GitHub / 微信 / QQ。`oauthEnabled(env)` 只返回已配 AppID/Secret 的提供商，前端据此渲染按钮——**未配置任何凭据时不显示第三方按钮**，密钥不进浏览器。
+- 授权跳转 `functions/api/auth/oauth/[provider].js` 生成 `state` 写入 HttpOnly Cookie 防 CSRF，再 302 到服务商页；回调 `[provider].js` 校验 `state` 后换令牌、建/关联账号、下发本站 Cookie。
+- `oauth_identities` 表存第三方身份与本站用户的绑定。
+
+### 找回密码
+
+- 「重置链接」方案：不依赖邮件服务。`forgotPassword` 生成一次性令牌（`password_resets` 表，默认 10 分钟有效）并**直接在响应返回重置链接** `reset.html?token=...`；`reset.html` 读 `?token=` 提交新密码到 `reset-password` 接口，校验后改密 + 使旧会话失效 + 直接下发新 Cookie。
+- 配置 `RESEND_API_KEY` 后可改为真发邮件，接口结构不变。
 
 ## 平台硬约束（改动前必读）
 
 - **JXGraph 标签定位修复**：`css/style.css` 中 `.board-box > div:not(.JXGtext):not(.JXGinfobox)` 规则与 `.JXG_navigation{display:none!important}` 是 1.14 标签全不可见 bug 的修复，**原样保留，禁止删除或改选择器**
 - 导航 `.site-nav` 的毛玻璃必须挂在 `::before` 伪元素上：`backdrop-filter` 直接挂在元素上会成为 `position:fixed` 子元素的包含块，导致移动端全屏菜单被限制在导航条内
-- 数据**本地优先**：默认只存 localStorage，不上传服务器；账号/云端为**可选增强**（自建，零外部付费服务），未登录时全部功能照常使用
+- 数据**本地优先**：默认只存 localStorage，不上传服务器；账号/云端为**可选增强**（自建，零外部付费服务）。**登录门禁**：首页与公开内容可免登录浏览，新建/打开画板、云端同步、会员中心、激活码、第三方登录等核心功能须登录后使用（前端 `Auth.requireLogin` 拦截 + 画板页全屏登录墙）。
 
 ## 提交前自测清单
 
