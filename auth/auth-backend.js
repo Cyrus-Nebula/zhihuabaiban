@@ -442,10 +442,18 @@ function safeParse(s) {
 }
 
 /* ---------- 角色 / 会员辅助 ---------- */
-/** 管理员判定：邮箱在 ADMIN_EMAILS（逗号分隔，大小写不敏感）中即为最高权限 */
+/**
+ * 内置默认管理员邮箱：当 Cloudflare Pages 未配置 ADMIN_EMAILS 环境变量时生效。
+ * 用这些邮箱注册后「首次登录」即自动获得最高权限（role=admin）。
+ * 如需改用其他/多个管理员，到 Cloudflare Pages 环境变量配置 ADMIN_EMAILS（逗号分隔）即可覆盖本兜底。
+ */
+const DEFAULT_ADMIN_EMAILS = '3616927242@qq.com';
+
+/** 管理员判定：邮箱在 ADMIN_EMAILS（逗号分隔，大小写不敏感）中即为最高权限；未配置则回退 DEFAULT_ADMIN_EMAILS */
 export function isAdminEmail(email, env) {
-  const raw = env && env.ADMIN_EMAILS;
-  if (!raw || typeof raw !== 'string') return false;
+  const raw = (env && env.ADMIN_EMAILS && String(env.ADMIN_EMAILS).trim())
+    ? String(env.ADMIN_EMAILS)
+    : DEFAULT_ADMIN_EMAILS;
   const set = new Set(raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
   return !!(email && set.has(String(email).trim().toLowerCase()));
 }
