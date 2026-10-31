@@ -2,7 +2,7 @@
  * 第三方登录 · 回调：GET /api/auth/oauth/callback/<provider>?code=...&state=...
  * 校验 state 防 CSRF → 换取令牌并登录 → 下发本站 Cookie → 跳回首页。
  */
-import { oauthCallback, cookieHeader } from '../../../../auth/auth-backend.js';
+import { oauthCallback, cookieHeader } from '../../../../../auth/auth-backend.js';
 
 function redirect(loc) {
   return new Response(null, { status: 302, headers: { Location: loc } });
