@@ -1204,3 +1204,13 @@ code {
 .cloud-del { white-space: nowrap; }
 .cloud-loading { padding: 18px; color: #9aa0b8; font-size: 14px; }
 
+/* ---------- 账号二级弹窗（改密 / 删号） ---------- */
+.auth-title { margin: 4px 0 16px; font-size: 18px; font-weight: 700; color: #2b2f47; }
+.auth-warn { margin: 0 0 16px; padding: 12px 14px; background: #fff4f5; border: 1px solid #f7d3d8; border-radius: 10px; color: #b42334; font-size: 13px; line-height: 1.6; }
+.auth-menu-item.danger { color: #d23f57; }
+.auth-menu-item.danger:hover { background: #fdeef0; color: #d23f57; }
+/* 删号提交按钮：实心红，区别于幽灵样式的全局 .btn-danger */
+.auth-card .btn-danger { background: #d23f57; border-color: #d23f57; color: #fff; }
+.auth-card .btn-danger:hover { background: #bd3349; border-color: #bd3349; }
+.auth-card .btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
+

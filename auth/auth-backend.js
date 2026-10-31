@@ -14,12 +14,19 @@
  * 安全说明：
  *   - 密码哈希迭代 100000 次 PBKDF2-SHA256，盐 16 字节随机，存储格式
  *     `pbkdf2$<iters>$<saltB64>$<hashB64>`
- *   - JWT 用 HS256（HMAC-SHA256），载荷仅含 sub(userId) 与 email，有效期 30 天
- *   - Cookie 设 HttpOnly + Secure + SameSite=Lax，防 XSS 读取与 CSRF 自动携带受限
+ *   - JWT 用 HS256（HMAC-SHA256），载荷仅含 sub(userId)、email 与 tv(令牌版本)，有效期 30 天
+ *   - Cookie 设 HttpOnly + Secure + SameSite=Lax，防 XSS 读取与跨站自动携带（同源 fetch 仍带，跨站 POST 不带→天然防 CSRF）
+ *   - 令牌版本（users.token_version）：改密/删号后 +1，所有旧会话立即失效
+ *   - 登录限流：login_throttle 表按「邮箱 + 访问 IP」双桶计数，失败 5 次锁定 30 分钟
  */
 
 export const COOKIE_NAME = 'auth_token';
 const TOKEN_TTL_SEC = 60 * 60 * 24 * 30; // 30 天
+
+/* ---------- 限流参数 ---------- */
+const MAX_FAILS = 5;          // 窗口内最多失败次数
+const WINDOW_MS = 15 * 60 * 1000; // 计数窗口 15 分钟
+const LOCK_MS = 30 * 60 * 1000;   // 触发锁定后的冷却时间 30 分钟
 
 /* ---------- base64url 工具 ---------- */
 function b64url(buf) {
@@ -84,6 +91,15 @@ export async function verifyPassword(password, stored) {
   return timingSafeEqual(got, expectHash);
 }
 
+/* ---------- 密码强度校验 ---------- */
+function validatePassword(pw) {
+  if (typeof pw !== 'string') return { error: 'weak_password', message: '请输入密码' };
+  if (pw.length < 8) return { error: 'weak_password', message: '密码至少 8 位' };
+  if (pw.length > 200) return { error: 'weak_password', message: '密码过长（不超过 200 位）' };
+  if (pw.trim().length === 0) return { error: 'weak_password', message: '密码不能为空白' };
+  return null;
+}
+
 /* ---------- JWT（HS256） ---------- */
 async function hmacSign(data, secret) {
   const enc = new TextEncoder();
@@ -136,6 +152,14 @@ function readCookie(request) {
   const m = c.match(/(?:^|;\s*)auth_token=([^;]+)/);
   return m ? m[1] : null;
 }
+/** 取客户端 IP（Cloudflare 提供 cf-connecting-ip；本地/代理回退到 x-forwarded-for） */
+export function clientIp(request) {
+  const cf = request.headers.get('cf-connecting-ip');
+  if (cf) return cf;
+  const xff = request.headers.get('x-forwarded-for');
+  if (xff) return xff.split(',')[0].trim();
+  return 'unknown';
+}
 
 /* ---------- 业务封装 ---------- */
 function normalizeEmail(email) {
@@ -149,13 +173,31 @@ function genUserId() {
   return 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-/** 读取当前登录用户（从 Cookie 解 JWT）。未登录/配置缺失/令牌失效均返回 authenticated:false */
+/** 读取用户当前令牌版本；列不存在/无记录时默认 0（兼容存量库） */
+async function getUserTv(env, userId) {
+  if (!env.DB) return 0;
+  try {
+    const row = await env.DB.prepare('SELECT token_version FROM users WHERE id=?').bind(userId).first();
+    return row ? Number(row.token_version) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 读取当前登录用户（从 Cookie 解 JWT，并校验令牌版本）。未登录/配置缺失/失效/被吊销均返回 authenticated:false */
 export async function resolveUser(request, env) {
   const token = readCookie(request);
   if (!token) return { authenticated: false };
   if (!env.JWT_SECRET) return { authenticated: false, error: 'jwt_secret_missing' };
   try {
     const payload = await verifyToken(token, env.JWT_SECRET);
+    // 令牌版本校验：改密/删号后旧令牌立即失效
+    if (env.DB && typeof payload.tv === 'number') {
+      const row = await env.DB.prepare('SELECT token_version FROM users WHERE id=?')
+        .bind(payload.sub).first().catch(() => null);
+      if (!row) return { authenticated: false, error: 'token_revoked' };
+      if (Number(row.token_version) !== payload.tv) return { authenticated: false, error: 'token_revoked' };
+    }
     return { authenticated: true, userId: payload.sub, email: payload.email || null };
   } catch {
     return { authenticated: false };
@@ -168,33 +210,121 @@ export async function registerUser({ email, password }, env) {
   if (!env.JWT_SECRET) return { status: 500, body: { error: 'jwt_secret_missing' }, token: null };
   const e = normalizeEmail(email);
   if (!e) return { status: 400, body: { error: 'invalid_email', message: '邮箱格式不正确' }, token: null };
-  if (typeof password !== 'string' || password.length < 8) {
-    return { status: 400, body: { error: 'weak_password', message: '密码至少 8 位' }, token: null };
-  }
+  const pwErr = validatePassword(password);
+  if (pwErr) return { status: 400, body: pwErr, token: null };
   const existing = await env.DB.prepare('SELECT id FROM users WHERE email=?').bind(e).first();
   if (existing) return { status: 409, body: { error: 'email_taken', message: '该邮箱已注册，请直接登录' }, token: null };
   const id = genUserId();
   const hash = await hashPassword(password);
-  await env.DB.prepare('INSERT INTO users (id, email, password_hash, created_at) VALUES (?,?,?,?)')
-    .bind(id, e, hash, Date.now()).run();
-  const token = await signToken({ sub: id, email: e }, env.JWT_SECRET);
+  await env.DB.prepare('INSERT INTO users (id, email, password_hash, token_version, created_at) VALUES (?,?,?,?,?)')
+    .bind(id, e, hash, 0, Date.now()).run();
+  const token = await signToken({ sub: id, email: e, tv: 0 }, env.JWT_SECRET);
   return { status: 200, body: { ok: true, user: { id, email: e } }, token };
 }
 
-/** 登录：校验 → 取用户 → 验密码 → 签 JWT。返回 {status, body, token} */
-export async function loginUser({ email, password }, env) {
+/** 登录：限流检查 → 校验 → 取用户 → 验密码 → 签 JWT。返回 {status, body, token, retryAfterSec?} */
+export async function loginUser({ email, password }, env, request) {
   if (!env.DB) return { status: 503, body: { error: 'db_not_bound', message: '服务端未配置数据库' }, token: null };
   if (!env.JWT_SECRET) return { status: 500, body: { error: 'jwt_secret_missing' }, token: null };
   const e = normalizeEmail(email);
   if (!e || typeof password !== 'string') {
     return { status: 400, body: { error: 'missing_fields', message: '请输入邮箱和密码' }, token: null };
   }
-  const row = await env.DB.prepare('SELECT id, email, password_hash FROM users WHERE email=?').bind(e).first();
-  if (!row) return { status: 401, body: { error: 'invalid_credentials', message: '邮箱或密码错误' }, token: null };
+  // 限流：邮箱桶 + IP 桶任一被锁则拒绝
+  if (env.DB) {
+    const th = await checkThrottle(env, e, clientIp(request));
+    if (th.locked) {
+      return {
+        status: 429,
+        retryAfterSec: th.retryAfterSec,
+        body: { error: 'too_many_attempts', message: `尝试次数过多，请 ${th.retryAfterSec} 秒后再试`, retryAfterSec: th.retryAfterSec },
+        token: null,
+      };
+    }
+  }
+  const row = await env.DB.prepare('SELECT id, email, password_hash, token_version FROM users WHERE email=?').bind(e).first();
+  if (!row) { await recordFail(env, e, clientIp(request)); return { status: 401, body: { error: 'invalid_credentials', message: '邮箱或密码错误' }, token: null }; }
   const ok = await verifyPassword(password, row.password_hash);
-  if (!ok) return { status: 401, body: { error: 'invalid_credentials', message: '邮箱或密码错误' }, token: null };
-  const token = await signToken({ sub: row.id, email: row.email }, env.JWT_SECRET);
+  if (!ok) { await recordFail(env, e, clientIp(request)); return { status: 401, body: { error: 'invalid_credentials', message: '邮箱或密码错误' }, token: null }; }
+  await resetThrottle(env, e, clientIp(request));
+  const token = await signToken({ sub: row.id, email: row.email, tv: Number(row.token_version) || 0 }, env.JWT_SECRET);
   return { status: 200, body: { ok: true, user: { id: row.id, email: row.email } }, token };
+}
+
+/** 修改密码（需登录）：验旧密 → 改哈希 → token_version+1 → 重签令牌（当前会话保持登录） */
+export async function changePassword({ oldPassword, newPassword }, env, request) {
+  const user = await resolveUser(request, env);
+  if (!user.authenticated) return { status: 401, body: { error: 'unauthenticated', message: '请先登录' }, token: null };
+  if (!env.DB) return { status: 503, body: { error: 'db_not_bound' }, token: null };
+  const pwErr = validatePassword(newPassword);
+  if (pwErr) return { status: 400, body: pwErr, token: null };
+  if (!oldPassword || typeof oldPassword !== 'string') return { status: 400, body: { error: 'missing_fields', message: '请输入当前密码' }, token: null };
+  const row = await env.DB.prepare('SELECT password_hash, token_version FROM users WHERE id=?').bind(user.userId).first();
+  if (!row) return { status: 401, body: { error: 'unauthenticated' }, token: null };
+  if (!(await verifyPassword(oldPassword, row.password_hash))) {
+    return { status: 400, body: { error: 'wrong_old_password', message: '当前密码不正确' }, token: null };
+  }
+  const hash = await hashPassword(newPassword);
+  const newTv = (Number(row.token_version) || 0) + 1;
+  await env.DB.prepare('UPDATE users SET password_hash=?, token_version=? WHERE id=?').bind(hash, newTv, user.userId).run();
+  const token = await signToken({ sub: user.userId, email: user.email, tv: newTv }, env.JWT_SECRET);
+  return { status: 200, body: { ok: true }, token };
+}
+
+/** 删除账号（需登录）：验密 → 删该用户全部画板与用户本身 → 清 Cookie 登出 */
+export async function deleteAccount({ password }, env, request) {
+  const user = await resolveUser(request, env);
+  if (!user.authenticated) return { status: 401, body: { error: 'unauthenticated', message: '请先登录' }, token: null };
+  if (!env.DB) return { status: 503, body: { error: 'db_not_bound' }, token: null };
+  if (!password || typeof password !== 'string') return { status: 400, body: { error: 'missing_fields', message: '请输入密码确认' }, token: null };
+  const row = await env.DB.prepare('SELECT password_hash FROM users WHERE id=?').bind(user.userId).first();
+  if (!row) return { status: 401, body: { error: 'unauthenticated' }, token: null };
+  if (!(await verifyPassword(password, row.password_hash))) {
+    return { status: 400, body: { error: 'wrong_password', message: '密码不正确' }, token: null };
+  }
+  await env.DB.prepare('DELETE FROM boards WHERE user_id=?').bind(user.userId).run();
+  await env.DB.prepare('DELETE FROM users WHERE id=?').bind(user.userId).run();
+  return { status: 200, body: { ok: true }, token: null };
+}
+
+/* ---------- 登录限流（D1 双桶：邮箱 + IP） ---------- */
+export async function checkThrottle(env, email, ip) {
+  if (!env.DB) return { locked: false };
+  const now = Date.now();
+  const keys = ['ip:' + ip];
+  if (email) keys.push(email);
+  for (const key of keys) {
+    const row = await env.DB.prepare('SELECT * FROM login_throttle WHERE key=?').bind(key).first();
+    if (row && row.locked_until && row.locked_until > now) {
+      return { locked: true, retryAfterSec: Math.ceil((row.locked_until - now) / 1000), key };
+    }
+  }
+  return { locked: false };
+}
+async function recordFail(env, email, ip) {
+  if (!env.DB) return;
+  const now = Date.now();
+  const keys = ['ip:' + ip];
+  if (email) keys.push(email);
+  for (const key of keys) {
+    const row = await env.DB.prepare('SELECT * FROM login_throttle WHERE key=?').bind(key).first();
+    const fails = (row ? row.fails : 0) + 1;
+    const firstAt = row ? row.first_at : now;
+    const lockedUntil = fails >= MAX_FAILS ? now + LOCK_MS : row ? row.locked_until : null;
+    await env.DB.prepare(
+      `INSERT INTO login_throttle (key, fails, first_at, locked_until)
+       VALUES (?,?,?,?)
+       ON CONFLICT(key) DO UPDATE SET fails=excluded.fails, first_at=excluded.first_at, locked_until=excluded.locked_until`
+    ).bind(key, fails, firstAt, lockedUntil).run();
+  }
+}
+async function resetThrottle(env, email, ip) {
+  if (!env.DB) return;
+  const keys = ['ip:' + ip];
+  if (email) keys.push(email);
+  for (const key of keys) {
+    await env.DB.prepare('DELETE FROM login_throttle WHERE key=?').bind(key).run();
+  }
 }
 
 /* ---------- 画板（D1，按 user_id 隔离） ---------- */

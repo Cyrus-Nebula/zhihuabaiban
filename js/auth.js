@@ -32,6 +32,7 @@ window.Auth = (function () {
     if (!r.ok) {
       const err = new Error(data.message || data.error || ('HTTP ' + r.status));
       err.code = data.error;
+      if (data.retryAfterSec != null) err.retryAfterSec = data.retryAfterSec;
       throw err;
     }
     return data;
@@ -62,6 +63,20 @@ window.Auth = (function () {
     if (menuEl && menuEl.parentNode) menuEl.parentNode.removeChild(menuEl);
     menuEl = null;
     emit();
+  }
+  async function changePassword(oldPassword, newPassword) {
+    return getJSON('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPassword, newPassword }),
+    });
+  }
+  async function deleteAccount(password) {
+    return getJSON('/api/auth/delete-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
   }
 
   async function listBoards() { return getJSON('/api/boards'); }
@@ -149,15 +164,28 @@ window.Auth = (function () {
       errEl.textContent = '';
       const btn = $('authSubmit');
       btn.disabled = true;
+      let caught = null;
       try {
         const data = tab === 'login' ? await login(email, pw) : await register(email, pw);
         state.user = data.user || { email };
         emit();
         closeModal();
       } catch (err) {
+        caught = err;
         errEl.textContent = err.message || '操作失败，请重试';
       } finally {
-        btn.disabled = false;
+        if (caught && caught.code === 'too_many_attempts' && caught.retryAfterSec) {
+          let left = caught.retryAfterSec;
+          const tick = () => {
+            btn.textContent = left + ' 秒后可重试';
+            if (left <= 0) { btn.disabled = false; btn.textContent = tab === 'login' ? '登录' : '注册并登录'; return; }
+            left--;
+            setTimeout(tick, 1000);
+          };
+          tick();
+        } else {
+          btn.disabled = false;
+        }
       }
     });
   }
@@ -172,6 +200,102 @@ window.Auth = (function () {
   }
   function closeModal() { const m = $('authModal'); if (m) m.classList.add('hidden'); }
 
+  /* ---------- 修改密码弹窗 ---------- */
+  function injectChangePwModal() {
+    if ($('cpModal')) return;
+    const m = el('div', 'auth-modal hidden');
+    m.id = 'cpModal';
+    m.setAttribute('role', 'dialog');
+    m.setAttribute('aria-modal', 'true');
+    m.innerHTML = `
+      <div class="auth-backdrop" data-close></div>
+      <div class="auth-card">
+        <button class="auth-x" type="button" data-close aria-label="关闭">×</button>
+        <h3 class="auth-title">修改密码</h3>
+        <form id="cpForm">
+          <label class="auth-field"><span>当前密码</span><input type="password" id="cpOld" required autocomplete="current-password" /></label>
+          <label class="auth-field"><span>新密码（至少 8 位）</span><input type="password" id="cpNew" required minlength="8" autocomplete="new-password" /></label>
+          <label class="auth-field"><span>确认新密码</span><input type="password" id="cpNew2" required minlength="8" autocomplete="new-password" /></label>
+          <p class="auth-err" id="cpErr"></p>
+          <button type="submit" class="btn btn-primary auth-submit" id="cpSubmit">确认修改</button>
+        </form>
+        <p class="auth-hint">修改后本设备保持登录，其他设备的登录会自动失效。</p>
+      </div>`;
+    document.body.appendChild(m);
+    m.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => m.classList.add('hidden')));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !m.classList.contains('hidden')) m.classList.add('hidden'); });
+    m.querySelector('#cpForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const oldP = $('cpOld').value;
+      const newP = $('cpNew').value;
+      const newP2 = $('cpNew2').value;
+      const errEl = $('cpErr');
+      errEl.textContent = '';
+      if (newP !== newP2) { errEl.textContent = '两次输入的新密码不一致'; return; }
+      if (newP.length < 8) { errEl.textContent = '新密码至少 8 位'; return; }
+      const btn = $('cpSubmit');
+      btn.disabled = true;
+      try {
+        await changePassword(oldP, newP);
+        m.classList.add('hidden');
+        $('cpForm').reset();
+        showToast('密码已修改，已重新登录');
+      } catch (err) {
+        errEl.textContent = err.message || '修改失败，请重试';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+  function openChangePw() { injectChangePwModal(); const m = $('cpModal'); m.classList.remove('hidden'); setTimeout(() => { const i = $('cpOld'); if (i) i.focus(); }, 30); }
+
+  /* ---------- 删除账号弹窗 ---------- */
+  function injectDeleteModal() {
+    if ($('delModal')) return;
+    const m = el('div', 'auth-modal hidden');
+    m.id = 'delModal';
+    m.setAttribute('role', 'dialog');
+    m.setAttribute('aria-modal', 'true');
+    m.innerHTML = `
+      <div class="auth-backdrop" data-close></div>
+      <div class="auth-card">
+        <button class="auth-x" type="button" data-close aria-label="关闭">×</button>
+        <h3 class="auth-title">删除账号</h3>
+        <p class="auth-warn">此操作不可恢复：账号及其全部云端画板将被永久删除，本地浏览器中的画板不受影响。</p>
+        <form id="delForm">
+          <label class="auth-field"><span>输入密码确认</span><input type="password" id="delPw" required autocomplete="current-password" /></label>
+          <p class="auth-err" id="delErr"></p>
+          <button type="submit" class="btn auth-submit btn-danger" id="delSubmit">永久删除账号</button>
+        </form>
+      </div>`;
+    document.body.appendChild(m);
+    m.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => m.classList.add('hidden')));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !m.classList.contains('hidden')) m.classList.add('hidden'); });
+    m.querySelector('#delForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const pw = $('delPw').value;
+      const errEl = $('delErr');
+      errEl.textContent = '';
+      const btn = $('delSubmit');
+      btn.disabled = true;
+      try {
+        await deleteAccount(pw);
+        m.classList.add('hidden');
+        $('delForm').reset();
+        state.user = null;
+        if (menuEl && menuEl.parentNode) menuEl.parentNode.removeChild(menuEl);
+        menuEl = null;
+        emit();
+        showToast('账号已删除');
+      } catch (err) {
+        errEl.textContent = err.message || '删除失败，请重试';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+  function openDelete() { injectDeleteModal(); const m = $('delModal'); m.classList.remove('hidden'); setTimeout(() => { const i = $('delPw'); if (i) i.focus(); }, 30); }
+
   /* ---------- 导航登录态 ---------- */
   let menuEl = null;
   function buildMenu() {
@@ -179,23 +303,24 @@ window.Auth = (function () {
     const btn = $('authBtn');
     if (!btn) { menuEl = true; return; }
     menuEl = el('div', 'auth-menu hidden');
-    menuEl.innerHTML = `
-      <div class="auth-menu-head">${esc(state.user.email || '已登录')}</div>
-      <button type="button" class="auth-menu-item" data-act="logout">退出登录</button>`;
+    const head = el('div', 'auth-menu-head');
+    head.textContent = state.user.email || '已登录';
+    menuEl.appendChild(head);
     if ($('cloudSection')) {
-      const cloud = el('button', 'auth-menu-item');
-      cloud.type = 'button';
-      cloud.dataset.act = 'cloud';
-      cloud.textContent = '我的云端画板';
-      cloud.addEventListener('click', () => {
-        closeMenu();
-        const sec = $('cloudSection');
-        if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-      menuEl.insertBefore(cloud, menuEl.querySelector('[data-act="logout"]'));
+      addMenuItem('我的云端画板', () => { closeMenu(); const sec = $('cloudSection'); if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     }
+    addMenuItem('修改密码', () => { closeMenu(); openChangePw(); });
+    addMenuItem('删除账号', () => { closeMenu(); openDelete(); }, true);
+    addMenuItem('退出登录', () => { closeMenu(); logout(); });
     btn.insertAdjacentElement('afterend', menuEl);
-    menuEl.querySelector('[data-act="logout"]').addEventListener('click', () => { closeMenu(); logout(); });
+
+    function addMenuItem(label, onClick, danger) {
+      const b = el('button', 'auth-menu-item' + (danger ? ' danger' : ''));
+      b.type = 'button';
+      b.textContent = label;
+      b.addEventListener('click', onClick);
+      menuEl.appendChild(b);
+    }
   }
   function closeMenu() { if (menuEl && menuEl.classList) menuEl.classList.add('hidden'); }
   function renderNav() {
@@ -338,6 +463,7 @@ window.Auth = (function () {
     get ready() { return state.ready; },
     onChange, login, register, logout, me,
     listBoards, deleteBoard, syncBoard, openCloudBoard, syncAllLocal,
+    changePassword, deleteAccount, openChangePw, openDelete,
     openLogin, openSignup,
   };
 })();

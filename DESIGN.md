@@ -57,8 +57,11 @@
 
 > 账号体系完全自建，**不依赖 Clerk / Supabase 等任何第三方服务**。详见 `auth/auth-backend.js`、`functions/api/auth/*`、`functions/api/boards/*`、`js/auth.js`。
 
-- **登录方式**：邮箱 + 密码。密码用 `PBKDF2-HMAC-SHA256`（10 万次迭代 + 16 字节随机盐）加盐哈希，存储格式 `pbkdf2$<iters>$<salt>$<hash>`；服务端不保存明文。
+- **登录方式**：邮箱 + 密码。密码用 `PBKDF2-HMAC-SHA256`（10 万次迭代 + 16 字节随机盐）加盐哈希，存储格式 `pbkdf2$<iters>$<salt>$<hash>`；服务端不保存明文；密码长度限定 8–200 位。
 - **登录态**：登录/注册成功后服务端签发 **HS256 JWT**，写入 `HttpOnly + Secure + SameSite=Lax` 的 `auth_token` Cookie（有效期 30 天）；前端不持有令牌，仅通过 `/api/auth/me` 探测登录态。
+- **令牌版本（主动吊销）**：`users.token_version` 随改密/删号自增；`resolveUser` 校验 JWT 内 `tv` 与库内一致，不一致即视为失效 → 改密/删号后所有旧会话立即掉线（无状态 JWT 的集中吊销手段）。
+- **防爆破限流**：`login_throttle` 表按「邮箱 + 访问 IP」双桶计数（仅对真实存在的邮箱计邮箱桶，避免对未注册邮箱做锁死 DoS）；连续失败 5 次锁定 30 分钟，触发时登录返回 `429 + Retry-After`，前端按钮进入倒计时。
+- **账号自管理**（已登录下拉菜单）：`修改密码`（验旧密 → 改哈希 → 令牌版本 +1 → 重签 Cookie，本设备保持登录）、`删除账号`（验密 → 删该用户全部画板与账号 → 清 Cookie 登出）。因无邮件服务，改密是找回访问的唯一自助途径。
 - **密钥**：`JWT_SECRET`（Pages → Settings → Environment variables 配置，任意长随机串，如 `openssl rand -hex 32`）。用于签发/校验 JWT，**切勿提交进仓库**。
 - **画板云端存储**：Cloudflare D1（绑定变量名 `DB`，建表见 `auth/schema.sql`）。`boards` 表以 `user_id` 做账户隔离；本地 localStorage 仍是工作副本，云端为备份/同步源（`Store.upsert` 保持 id 一致）。
 - **容错**：后端未部署 / D1 未绑定 / 未登录时，页面照常可用，仅云端相关功能不可用并给出友好提示；绝不阻断本地作图。
