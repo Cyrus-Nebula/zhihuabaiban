@@ -53,44 +53,40 @@
 - 空状态（`.empty`）、错误态（`.error-mask`）必须面向用户给可操作建议
 - 弹层/菜单打开时 `aria-expanded` 同步；Esc 可关；点空白处可关
 
-## 账号与云端（自建，零外部依赖）
+## 账号与云端（Supabase 托管）
 
-> 账号体系完全自建，**不依赖 Clerk / Supabase 等任何第三方服务**。详见 `auth/auth-backend.js`、`functions/api/auth/*`、`functions/api/boards/*`、`js/auth.js`。
+> 账号体系由 **Supabase** 托管（Auth + Postgres + RLS），与 Cloudflare 解耦。详见 `js/supabase-config.js`、`js/auth.js`、`supabase/setup.sql`。
 
-- **登录方式**：邮箱 + 密码。密码用 `PBKDF2-HMAC-SHA256`（10 万次迭代 + 16 字节随机盐）加盐哈希，存储格式 `pbkdf2$<iters>$<salt>$<hash>`；服务端不保存明文；密码长度限定 8–200 位。
-- **登录态**：登录/注册成功后服务端签发 **HS256 JWT**，写入 `HttpOnly + Secure + SameSite=Lax` 的 `auth_token` Cookie（有效期 30 天）；前端不持有令牌，仅通过 `/api/auth/me` 探测登录态。
-- **令牌版本（主动吊销）**：`users.token_version` 随改密/删号自增；`resolveUser` 校验 JWT 内 `tv` 与库内一致，不一致即视为失效 → 改密/删号后所有旧会话立即掉线（无状态 JWT 的集中吊销手段）。
-- **防爆破限流**：`login_throttle` 表按「邮箱 + 访问 IP」双桶计数（仅对真实存在的邮箱计邮箱桶，避免对未注册邮箱做锁死 DoS）；连续失败 5 次锁定 30 分钟，触发时登录返回 `429 + Retry-After`，前端按钮进入倒计时。
-- **账号自管理**（已登录下拉菜单）：`修改密码`（验旧密 → 改哈希 → 令牌版本 +1 → 重签 Cookie，本设备保持登录）、`删除账号`（验密 → 删该用户全部画板与账号 → 清 Cookie 登出）。因无邮件服务，改密是找回访问的唯一自助途径。
-- **密钥**：`JWT_SECRET`（Pages → Settings → Environment variables 配置，任意长随机串，如 `openssl rand -hex 32`）。用于签发/校验 JWT，**切勿提交进仓库**。
-- **画板云端存储**：Cloudflare D1（绑定变量名 `DB`，建表见 `auth/schema.sql`）。`boards` 表以 `user_id` 做账户隔离；本地 localStorage 仍是工作副本，云端为备份/同步源（`Store.upsert` 保持 id 一致）。
-- **容错**：后端未部署 / D1 未绑定时，登录相关功能不可用并给出友好提示；登录态探测失败按未登录处理。
+- **登录方式**：邮箱 + 密码，由 Supabase Auth 托管密码哈希与会话；可选开启 Google / GitHub 第三方登录（`signInWithOAuth`）。
+- **登录态**：Supabase 签发会话（access + refresh token），前端 `supabase-js` 自动管理并持久化到 localStorage；`onAuthStateChange` 同步给前端 `Auth`，`Auth.me()` 读取当前 `profiles` 行（角色 / 会员）。
+- **权限模型**：表级由 RLS 兜底——`boards` 仅本人可读写；`activation_codes` 客户端完全不可直读。高权限操作走数据库 `SECURITY DEFINER` 存储过程（`redeem_activation_code` / `admin_*` / `delete_self_account`），每个管理员过程内首行 `if not public.is_admin() then raise exception 'forbidden'` 守卫。
+- **管理员判定**：`admin_emails()` 白名单（默认含 `3616927242@qq.com`）；`handle_new_user` 触发器在注册时按名单把 `profiles.role` 置为 `admin`。也可用 `set_admin('邮箱')` 提存量账号。
+- **账号自管理**（已登录下拉菜单）：`修改密码`（`updateUser`）、`删除账号`（调用 `delete_self_account` → 级联删 `profiles` / `boards`），改密即所有旧会话失效。
+- **密钥边界**：`SUPABASE_URL` + anon key 写进前端 `js/supabase-config.js`（可公开，靠 RLS 兜底）；`service_role` 仅存 Supabase 侧、**不进仓库、不进 Cloudflare 环境变量**。会员/管理算法在数据库存储过程里，仓库保持 public 也不暴露。
+- **画板云端存储**：Supabase Postgres `boards` 表，以 `user_id` 做账户隔离；本地 localStorage 仍是工作副本，云端为备份/同步源。
+- **容错**：Supabase 未建表 / 网络不可达时，登录相关功能不可用并给出友好提示；登录态探测失败按未登录处理。
 - **登录门禁**：首页与公开内容可免登录浏览；新建/打开画板、云端同步、会员中心、激活码、第三方登录等核心功能**须登录后使用**。前端拦截由 `js/auth.js` 的 `Auth.requireLogin(cb)`（未登录先弹登录框、登录成功再执行回调）实现；画板页 `board.html` 对未登录用户显示全屏 `.login-wall` 覆盖层，订阅 `Auth.onChange` 在登录后自动隐藏。
 - UI 令牌沿用品牌色（`--primary` 系）；登录弹窗、导航用户态、云端列表、会员中心、OAuth 按钮、登录墙、管理后台样式见 `css/style.css` 末尾「账号登录 / 云端画板」段落。
 
 ### 会员与激活码
 
-- 激活码由管理员在后台生成（`activation_codes` 表），字段含 `code` / `created_by` / `redeemed` / `redeemed_by` / `redeemed_at`。
-- 用户在「会员中心」(`js/auth.js` 的 `openMembership`) 输入激活码 → `POST /api/membership/redeem` → 账号 `membership` 置为 `'lifetime'`（同时写 JWT 与 `user_profiles`），并立即重签 Cookie 使会员态生效。
+- 激活码由管理员在后台生成（`activation_codes` 表），由 `admin_create_codes(n)` 存储过程批量生成随机码（去除易混字符 I/O/0/1），字段含 `code` / 类型 / 创建人 / 是否已兑换 / 兑换用户。
+- 用户在「会员中心」(`js/auth.js` 的 `openMembership`) 输入激活码 → `rpc('redeem_activation_code', {p_code})` → 账号 `membership` 置为 `'lifetime'`，会员态立即在前端生效。兑换校验（有效性 / 是否已用 / 是否已停用）全在 `redeem_activation_code` 存储过程内完成。
 - 前端会员态由 `Auth.user.membership === 'lifetime'` 驱动（导航 VIP 徽标等）；会员权益作为长期规划（计划 2030 启用），届时直接读取该字段即可。
 
 ### 管理员权限
 
-- 管理员邮箱清单由 `ADMIN_EMAILS`（逗号分隔）环境变量指定；判定函数 `isAdminEmail(env, email)` 读取该变量。
-- 邮箱命中清单的用户在 `ensureProfile` 时自动把 `user_profiles.role` 提升为 `'admin'` 并落库，与 JWT 角色一致。
-- 管理后台 `admin.html` 调用 `/api/auth/me` 校验 `role==='admin'`，非管理员显示拦截页；面板含生成/列出激活码、列出全部用户（邮箱/角色/会员/注册时间）。
-- 后端 `functions/api/admin/*` 对每个请求用 `resolveUser` + `isAdminEmail` 双重校验，非管理员返回 `403`。
+- 管理员由 `supabase/setup.sql` 的 `admin_emails()` 白名单决定（或 `set_admin('邮箱')` 提存量账号），非环境变量。
+- 新用户注册时 `handle_new_user` 触发器按名单自动把 `profiles.role` 提升为 `'admin'` 并落库。
+- 管理后台 `admin.html` 调用 `Auth.me()` 校验 `role==='admin'`，非管理员显示拦截页；面板经 `Auth.admin*` 接口调用 `admin_*` 存储过程：生成/列出激活码、列出全部用户（邮箱/角色/会员/注册时间）。
 
-### 第三方登录（OAuth）
+### 第三方登录（Supabase Auth Providers）
 
-- 通用 OAuth 2.0 框架，支持 Google / GitHub / 微信 / QQ。`oauthEnabled(env)` 只返回已配 AppID/Secret 的提供商，前端据此渲染按钮——**未配置任何凭据时不显示第三方按钮**，密钥不进浏览器。
-- 授权跳转 `functions/api/auth/oauth/[provider].js` 生成 `state` 写入 HttpOnly Cookie 防 CSRF，再 302 到服务商页；回调 `[provider].js` 校验 `state` 后换令牌、建/关联账号、下发本站 Cookie。
-- `oauth_identities` 表存第三方身份与本站用户的绑定。
+- 走 Supabase 原生 Provider，本期支持 **Google / GitHub**（微信 / QQ 暂未接入）。`oauthEnabled` 由 Supabase 侧是否已启用该 Provider 决定，前端据此渲染按钮——**未启用任何第三方时不显示第三方按钮**，密钥不进浏览器。
 
 ### 找回密码
 
-- 「重置链接」方案：不依赖邮件服务。`forgotPassword` 生成一次性令牌（`password_resets` 表，默认 10 分钟有效）并**直接在响应返回重置链接** `reset.html?token=...`；`reset.html` 读 `?token=` 提交新密码到 `reset-password` 接口，校验后改密 + 使旧会话失效 + 直接下发新 Cookie。
-- 配置 `RESEND_API_KEY` 后可改为真发邮件，接口结构不变。
+- Supabase Recovery 流程：`resetPasswordForEmail(email)` 由 Supabase 向用户邮箱发带 `token_hash` 的重置链接（指向 `reset.html`）；页面用 `token_hash` + `type=recovery` 兑换临时会话后 `updateUser({ password })` 设新密码，改密即旧会话失效。
 
 ## 平台硬约束（改动前必读）
 

@@ -1,8 +1,8 @@
 # 智绘几何 · 开源免费的在线几何画板
 
-强大直观的几何图形创建与编辑工具，让数学可视化变得简单。**完全免费、代码开源**；核心功能须登录后使用（登录即开通账号，邮箱 + 密码，完全自建、零外部依赖）。
+强大直观的几何图形创建与编辑工具，让数学可视化变得简单。**完全免费、代码开源**；核心功能须登录后使用（登录即开通账号，邮箱 + 密码；账号体系由 Supabase 托管，零自建后端）。
 
-- **在线体验**：https://zhihuabaiban.pages.dev
+- **在线体验**：https://geora.de5.net
 - **源代码**：https://github.com/Cyrus-Nebula/zhihuabaiban （欢迎 Star / Fork / 提 Issue）
 
 ## 功能特性
@@ -91,84 +91,81 @@ LLM_API_KEY=你的key node server/local-proxy.mjs
 
 仓库连着 GitHub，推代码即自动部署：
 
-1. 代码 push 到 GitHub（Cloudflare Pages 项目已连接该仓库）
-2. Pages 项目 → **设置 → 变量和密钥** → 添加：
+1. 代码 push 到 `main`（Cloudflare Pages 项目生产分支已连该仓库）
+2. Pages 项目 → **设置 → 变量和密钥** → 只需添加 AI 相关变量（账号体系由 Supabase 托管，密钥已内置前端，无需在此配置）：
 
    | 变量 | 值 | 必填 |
    |---|---|---|
    | `LLM_API_KEY` | 智谱 Key | ✓ |
    | `LLM_MODEL` | `glm-4.7-flash` | 否（有默认值，前端下拉框优先级更高） |
    | `LLM_BASE_URL` | `https://open.bigmodel.cn/api/paas/v4` | 否 |
-   | `JWT_SECRET` | 任意长随机串，如 `openssl rand -hex 32` | 启用登录必填 |
-   | `DB` | D1 数据库绑定（见下） | 启用登录/云端必填 |
-   | `ADMIN_EMAILS` | 逗号分隔的管理员邮箱，如 `a@x.com,b@y.com`；这些邮箱首次登录即获最高权限 | 否（不设则无管理员） |
-   | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth 应用凭据 | 否（仅配置了才显示对应按钮） |
-   | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub OAuth 应用凭据 | 否 |
-   | `WECHAT_APPID` / `WECHAT_APPSECRET` | 微信开放平台凭据 | 否 |
-   | `QQ_APPID` / `QQ_APPSECRET` | QQ 互联凭据 | 否 |
-   | `RESEND_API_KEY` | 邮件服务密钥（用于自动发送密码重置邮件） | 否（不配则重置链接直接在接口响应返回，由用户/管理员转达） |
+
+   > 账号 / 登录 / 会员 / 管理后台所需的 Supabase 连接（`SUPABASE_URL` + anon key）已写进前端 `js/supabase-config.js`，管理员邮箱白名单在 `supabase/setup.sql` 的 `admin_emails()` 里维护——都不进 Cloudflare 环境变量、不进公开仓库的生产密钥。`service_role` 仅存在于 Supabase 侧。
 
 3. 保存后 **重试部署**（环境变量不会自动应用到旧部署）
 4. `js/config.js` 保持默认（`boardAiEndpoint: '/api/ai/board'` 同域）
 
 3D 画板额外需要：`js/config.js` 填 appId + 大角控制台加域名白名单。
 
-## 账号与云端同步（自建，零外部依赖，免费）
+### 账号后端（Supabase）的一次性准备
 
-不想用第三方登录服务（Clerk/Supabase 等）也能拥有账号：**账号体系完全自建**，只用到你已经有的 Cloudflare 栈（Pages Functions + D1），不注册任何新账号、不产生额外费用。
+账号体系改用 **Supabase Auth + Postgres + RLS**，与 Cloudflare 解耦，详细步骤见 [`supabase/README.md`](supabase/README.md)：
 
-**功能**：邮箱 + 密码注册登录（密码加盐哈希存储），登录后画板可备份到云端、跨设备同步。
+1. Supabase 项目（本项目用 `gdurwjynamvzhsacpsna`）→ SQL Editor → 粘贴 `supabase/setup.sql` 全量 → Run（建表 + RLS + 存储过程 + 新用户触发器，可重复运行）
+2. Authentication → Providers 开启需要的第三方登录（本期仅 Google / GitHub）
+3. 管理员邮箱加入 `admin_emails()`（或注册后执行 `select public.set_admin('你的邮箱')`）
+
+## 账号与云端同步（Supabase 托管）
+
+账号体系由 **Supabase** 托管（Auth + Postgres + RLS），与 Cloudflare 解耦——前端用 `supabase-js` 直连，敏感操作走数据库 `SECURITY DEFINER` 存储过程，不依赖 Cloudflare Functions 自建后端，也不暴露任何会员/管理逻辑的生产密钥。
+
+**功能**：邮箱 + 密码注册登录（Supabase 托管密码哈希与会话），登录后画板可备份到云端、跨设备同步；可选开启 Google / GitHub 第三方登录。
 
 **登录门禁**：首页与公开内容可免登录浏览；但新建/打开画板、云端同步、会员中心、激活码、第三方登录等核心功能**必须登录后使用**，未登录时点击会弹出登录框。画板页（`board.html`）对未登录用户显示全屏登录墙，登录后自动解锁。
 
-**一键部署步骤**：
-
-1. **建 D1 数据库**：Cloudflare 控制台 → Workers & Pages → **D1** → Create database（命名如 `zhihui_geo`，免费 5GB）。
-2. **绑到 Pages 项目**：你的 Pages 项目 → **设置 → Functions → D1 bindings** → 添加绑定，变量名填 `DB`，选择上一步的库。
-3. **设 JWT_SECRET**：Pages → 设置 → 变量和密钥 → 加一个 `JWT_SECRET`，值用 `openssl rand -hex 32` 生成（**只存 Cloudflare，不要写进代码**）。
-4. **重试部署**（环境变量与绑定需重新部署才生效）。
-
-> 数据库表（`users` / `boards` / `login_throttle`）会在首次访问登录接口时**自动创建**，无需手动跑 SQL；`auth/schema.sql` 仅供查阅或手动建表参考。
+**后端准备（一次性）**：在 Supabase 控制台跑 `supabase/setup.sql`（建表 + RLS + 存储过程 + 新用户触发器），并开启需要的 OAuth Provider，详见 [`supabase/README.md`](supabase/README.md)。无需在 Cloudflare 配任何账号相关密钥——`SUPABASE_URL` 与 anon key 已内置前端 `js/supabase-config.js`，管理员邮箱白名单在 `admin_emails()` 里维护。
 
 完成后首页右上角出现「登录」，注册即开通账号；画板页「同步到云端」、首页「云端画板」区即可使用。本地仍是工作副本，云端为备份/同步源——即便后端不可用，作图也不受影响。
 
-实现位置：`auth/auth-backend.js`（密码哈希 + JWT + D1 操作）、`functions/api/auth/*`（注册/登录/登出/探针）、`functions/api/boards/*`（画板 CRUD）、`js/auth.js`（前端弹窗与同步）。
+> 隐私：会员/管理员的高权限逻辑（激活码兑换、管理员发码/查用户、自助删号）落在 Supabase 数据库存储过程里，不在 GitHub 仓库中，因此仓库保持 public 也不会泄露会员算法。
+
+实现位置：`js/supabase-config.js`（连接配置）、`js/auth.js`（前端弹窗 / 同步 / `Auth.admin*` 接口）、`supabase/setup.sql`（表 + RLS + 存储过程）。
 
 ### 管理员（最高权限）
 
-把站长/运营邮箱放进 `ADMIN_EMAILS`（逗号分隔）即可获得**最高权限**，无需改代码、无需数据库初始化脚本：
+管理员由 Supabase 侧决定，不需要在 Cloudflare 配任何变量：
 
-- 该邮箱首次登录（或 `ensureProfile` 时）会被自动把 `user_profiles.role` 提升为 `admin` 并落库，与 JWT 角色保持一致。
+- 管理员邮箱写进 `supabase/setup.sql` 的 `admin_emails()` 白名单（默认含 `3616927242@qq.com`）。新用户注册时 `handle_new_user` 触发器会按此名单自动把 `profiles.role` 提升为 `admin`，无需改代码。
+- 也可在 SQL Editor 执行 `select public.set_admin('你的邮箱')` 把存量账号提为管理员。
 - 登录后导航菜单出现「管理后台」入口（直达 `admin.html`）。
-- 管理后台可：① 一键**生成会员激活码**（默认 1 个、最多 50 个）；② 查看激活码列表与状态；③ 查看全部用户（邮箱 / 角色 / 会员 / 注册时间）。
-- 后端 `functions/api/admin/*` 对每个请求都用 `resolveUser` + `isAdminEmail` 双重校验，非管理员返回 `403`。
+- 管理后台调用数据库存储过程（均带 `if not public.is_admin() then raise exception 'forbidden' end if;` 守卫）：① 一键**生成会员激活码**（默认 1 个、最多 50 个）；② 查看激活码列表与状态；③ 查看全部用户（邮箱 / 角色 / 会员 / 注册时间）。
 
 ### 会员制度与激活码
 
 会员功能为**长期规划**（计划 2030 启用），但激活码体系现已就绪、现在就能激活：
 
-- 管理员在后台生成激活码（`activation_codes` 表，含 `code` / 创建人 / 是否已兑换 / 兑换用户）。
-- 用户在「会员中心」(`js/auth.js` 的 `openMembership`) 输入激活码 → `POST /api/membership/redeem` → 账号升级为**长期会员**（`membership='lifetime'`，写入 JWT 与 `user_profiles`），并立即重签 Cookie 让会员态生效。
+- 管理员在后台生成激活码：`activation_codes` 表（含 `code` / 类型 / 创建人 / 是否已兑换 / 兑换用户），由 `admin_create_codes` 存储过程批量生成（随机码，去除易混字符 I/O/0/1）。
+- 用户在「会员中心」(`js/auth.js` 的 `openMembership`) 输入激活码 → 前端调用 `rpc('redeem_activation_code', {p_code})` → 账号升级为**长期会员**（`membership='lifetime'`，写 `profiles`），会员态立即在前端生效。
 - 会员态在前端由 `Auth.user.membership === 'lifetime'` 驱动（如导航 VIP 徽标）；后续 2030 启用会员权益时直接读取该字段即可。
+- 兑换逻辑在数据库 `redeem_activation_code` 存储过程内完成（校验码有效性 / 是否已用 / 是否已停用），前端永不直接碰 `activation_codes` 表（RLS 默认拒绝客户端直读）。
 
-### 第三方登录（通用 OAuth 框架）
+### 第三方登录（Supabase Auth Providers）
 
-内置通用 OAuth 2.0 流程，支持 Google / GitHub / 微信 / QQ 四家，按「有没有配凭据」决定是否显示按钮——**未配置任何 OAuth 凭据时，登录框不展示第三方按钮，界面零暴露**。
+本期账号由 Supabase Auth 托管，第三方登录走 **Supabase 原生 Provider**，支持 **Google / GitHub**（微信 / QQ 暂未接入，不影响邮箱密码登录）。是否显示按钮由 Supabase 侧是否已启用该 Provider 决定——**未启用任何第三方时，登录框只展示邮箱密码，界面零暴露**。
 
-- 授权跳转：`GET /api/auth/oauth/<provider>` → 生成 `state` 写入 HttpOnly Cookie 防 CSRF → 302 到服务商授权页。
-- 回调：`GET /api/auth/oauth/callback/<provider>?code=&state=` → 校验 `state` 防 CSRF → 换令牌 → 建/关联账号 → 下发本站 `auth_token` Cookie → 跳回首页（`?oauth=success`）。
-- 已启用列表：`GET /api/auth/oauth-providers` 仅返回已配 AppID/Secret 的提供商，前端据此渲染按钮，密钥永不进浏览器。
-- 首次用某 OAuth 账号登录会自动建本站账号（邮箱取自服务商返回，缺失则生成占位邮箱）；同一邮箱再次登录自动关联。
+- 在 Supabase 控制台 **Authentication → Providers** 开启 Google / GitHub，回调统一为 `https://<项目>.supabase.co/auth/v1/callback`。
+- 前端用 `supabase.auth.signInWithOAuth({ provider })` 发起；`onAuthStateChange` 自动把 Supabase 会话同步给前端 `Auth`。
+- 首次用某 OAuth 账号登录会自动在建本站 `profiles`；同一邮箱再次登录自动关联。
 
-### 找回密码（重置链接方案）
+### 找回密码（Supabase Recovery 流程）
 
-不依赖任何邮件服务也能找回：
+走 Supabase 标准密码重置，邮件由 Supabase 发出（免费额度有限，生产建议配置自定义 SMTP）：
 
-1. 登录框点「忘记密码」→ `POST /api/auth/forgot-password {email}` → 后端生成一次性重置令牌（`password_resets` 表，30 分钟有效）并**直接在响应里返回重置链接** `reset.html?token=...`。
-2. 打开该链接填新密码 → `POST /api/auth/reset-password {token, newPassword}` → 校验后更新密码、使所有旧会话失效，并直接下发新 Cookie 完成登录。
-3. 配置 `RESEND_API_KEY` 后可改为真发邮件（接口结构不变，仅把返回链接改为投递邮件）。
+1. 登录框点「忘记密码」→ 前端调用 `supabase.auth.resetPasswordForEmail(email)` → Supabase 向该邮箱发送带 `token_hash` 的重置链接（指向本站 `reset.html`）。
+2. 用户打开邮件链接进入 `reset.html`，页面用 URL 里的 `token_hash` + `type=recovery` 兑换临时会话（`verifyOtp`）→ 校验通过后可设新密码（`updateUser({ password })`）。
+3. 改密即对所有旧会话失效，无需自建令牌表。
 
-> 当前为「重置链接」方案：链接由调用方（用户自己或管理员）复制转达给本人，便于无邮件基础设施也能跑通；页面 `reset.html` 仅消费 `?token=`。
+> 注册验证邮件同理：Supabase 默认开启「Confirm sign-ups」，注册后会发验证邮件；想注册即登录可在 Authentication → Providers 关闭该开关。
 
 
 ## AI 命令协议
@@ -248,7 +245,7 @@ AI 输出 `{"message": "...", "commands": [...]}`，前端 `js/executor.js` 逐�
 - **想换模型**：AI 面板顶部的下拉框直接切（glm-4.7-flash / glm-4.6v-flash / glm-4-flash-250414 / glm-4-flash，全部免费，选择会记住）；也可以环境变量设 `LLM_MODEL` 改默认。
 - **上传图片按图复原**：下拉框切到「GLM-4.6V-Flash（视觉）」→ 点「📷 图片」选图（≤5MB）→ 可附加文字说明 → 生成。视觉模型会先看图再输出作图命令。
 - **3D 画板打不开**：appId 未配或域名没加白名单（3D 是路线A，需要对方平台）。
-- **换浏览器/清缓存文件会丢**：文件默认只在 localStorage；开通账号后可用「同步到云端」把画板备份到 D1，换设备登录即可取回，重要画板也建议「导出 JSON」双保险。
+- **换浏览器/清缓存文件会丢**：文件默认只在 localStorage；开通账号后可用「同步到云端」把画板备份到 Supabase，换设备登录即可取回，重要画板也建议「导出 JSON」双保险。
 - **想把画板发给别人 / 离线打开**：顶栏「导出离线 HTML」——下载到的是一个自包含单文件（约 1 MB，内嵌 JSXGraph 引擎和当前图形），拷到任何电脑上双击就能打开，图形照样可以拖拽，不依赖网络、服务器和账号。
 - **想把画板嵌进自己的网页 / 课件 / 笔记**：顶栏「嵌入」——选 `iframe`（通用，配合同目录下那份自包含 HTML）或 `JS 内嵌`（数据内联 + 本地运行时 `js/embed.js` 原页挂载），生成带宽高设置的可粘贴代码，复制即可；运行时只需三个静态文件：`js/embed.js`、`js/executor.js`、`vendor/`（含 `jsxgraphcore.js` 与 `jsxgraph.css`），没有 CDN、没有账号、没有 SDK Key。
 
