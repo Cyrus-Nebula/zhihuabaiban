@@ -1,16 +1,21 @@
 /**
- * 智绘几何 · 账号与云端同步（经典脚本，挂在 window.Auth；在 store.js 之后加载）
+ * 智绘几何 · 账号与云端同步（Supabase 版，挂在 window.Auth；在 store.js 之后加载）
  *
  * 能力：
- *   - /api/auth/* 的注册/登录/登出/当前用户态
+ *   - 注册 / 登录 / 登出 / 当前用户态（supabase.auth）
  *   - 登录弹窗（邮箱 + 密码，登录/注册双 Tab）
- *   - 导航栏登录态（未登录显示「登录」，已登录显示邮箱 + 下拉菜单）
+ *   - 导航栏登录态（未登录显示「登录」，已登录显示头像 + 下拉菜单）
  *   - 云端画板：列表 / 打开 / 删除 / 同步（首页「云端画板」区 + 画板页自动同步）
+ *   - 会员激活码兑换、管理员操作（走 Supabase 存储过程，见 supabase/setup.sql）
  *
- * 设计：所有网络请求都做了容错——后端未部署/数据库未绑定时，页面照常可用
+ * 设计：所有网络请求都做了容错——Supabase 未配置/建表未完成时，页面照常可用
  * （仅云端相关功能不可用，并给出友好提示），绝不阻断本地作图。
  */
 window.Auth = (function () {
+  // ---- Supabase 客户端（CDN 版本 >=2，已在 HTML 中引入）----
+  const { createClient } = window.supabase;
+  const supabase = createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
   const state = { user: null, ready: false };
   const listeners = [];
 
@@ -26,87 +31,147 @@ window.Auth = (function () {
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
     );
   }
-  async function getJSON(url, opts) {
-    const r = await fetch(url, opts);
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const err = new Error(data.message || data.error || ('HTTP ' + r.status));
-      err.code = data.error;
-      if (data.retryAfterSec != null) err.retryAfterSec = data.retryAfterSec;
-      throw err;
-    }
-    return data;
+  function errText(code) {
+    return ({
+      unauthenticated: '请先登录',
+      invalid_code: '激活码无效',
+      code_disabled: '该激活码已被停用',
+      code_used: '该激活码已被使用',
+      missing_code: '请输入激活码',
+    })[code] || '兑换失败';
+  }
+
+  /* ---------- 用户态加载 ---------- */
+  async function loadUser() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data: p } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    return {
+      userId: user.id,
+      email: user.email || (p && p.email),
+      name: (p && p.display_name) || (user.email ? user.email.split('@')[0] : ''),
+      role: (p && p.role) || 'user',
+      membership: (p && p.membership) || 'none',
+    };
   }
 
   /* ---------- 对外 API ---------- */
   function onChange(cb) { listeners.push(cb); }
   function emit() { state.ready = true; listeners.forEach((cb) => cb(state.user)); }
 
-  async function me() { return getJSON('/api/auth/me'); }
+  async function me() {
+    const u = await loadUser();
+    return u ? { authenticated: true, ...u } : { authenticated: false };
+  }
   async function login(email, password) {
-    return getJSON('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { const e = new Error(error.message || '登录失败'); e.code = 'login_failed'; throw e; }
+    const user = await loadUser();
+    return { user };
   }
   async function register(email, password) {
-    return getJSON('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) { const e = new Error(error.message || '注册失败'); e.code = 'register_failed'; throw e; }
+    if (!data.session) {
+      const e = new Error('注册成功，请查收验证邮件后登录');
+      e.code = 'email_confirm_required';
+      throw e;
+    }
+    const user = await loadUser();
+    return { user };
   }
   async function logout() {
-    try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_) {}
+    try { await supabase.auth.signOut(); } catch (_) {}
     state.user = null;
     if (menuEl && menuEl.parentNode) menuEl.parentNode.removeChild(menuEl);
     menuEl = null;
     emit();
   }
   async function changePassword(oldPassword, newPassword) {
-    return getJSON('/api/auth/change-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ oldPassword, newPassword }),
-    });
+    const cur = state.user && state.user.email;
+    if (cur) {
+      const { error: ve } = await supabase.auth.signInWithPassword({ email: cur, password: oldPassword });
+      if (ve) { const e = new Error('当前密码错误'); e.code = 'bad_old'; throw e; }
+    }
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) { const e = new Error(error.message || '修改失败'); e.code = 'update_failed'; throw e; }
   }
   async function deleteAccount(password) {
-    return getJSON('/api/auth/delete-account', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
-    });
+    const cur = state.user && state.user.email;
+    if (cur) {
+      const { error: ve } = await supabase.auth.signInWithPassword({ email: cur, password });
+      if (ve) { const e = new Error('密码错误'); e.code = 'bad_password'; throw e; }
+    }
+    const { error } = await supabase.rpc('delete_self_account');
+    if (error) { const e = new Error(error.message || '删除失败'); e.code = 'delete_failed'; throw e; }
+    state.user = null;
   }
   async function forgotPassword(email) {
-    return getJSON('/api/auth/forgot-password', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: location.origin + '/reset.html',
     });
+    if (error) { const e = new Error(error.message || '生成失败'); e.code = 'reset_failed'; throw e; }
+    return { ok: true };
   }
   async function redeemCode(code) {
-    return getJSON('/api/membership/redeem', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
-    });
+    const { data, error } = await supabase.rpc('redeem_activation_code', { p_code: code });
+    if (error) { const e = new Error(error.message || '兑换失败'); e.code = 'redeem_failed'; throw e; }
+    if (data && data.ok === false) { const e = new Error(errText(data.error)); e.code = data.error; throw e; }
+    return data || { ok: true };
   }
-  async function membershipMe() { return getJSON('/api/membership/me'); }
+  async function membershipMe() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { membership: 'none' };
+    const { data } = await supabase.from('profiles').select('membership').eq('id', user.id).maybeSingle();
+    return { membership: (data && data.membership) || 'none' };
+  }
   async function getProviders() {
-    try { return await getJSON('/api/auth/oauth-providers'); } catch { return { providers: {} }; }
+    try {
+      const res = await fetch(window.SUPABASE_URL + '/auth/v1/settings?apikey=' + window.SUPABASE_ANON_KEY);
+      const j = await res.json();
+      const ext = (j && j.external) || {};
+      const map = { google: 'Google', github: 'GitHub' };
+      const providers = {};
+      Object.keys(map).forEach((k) => { if (ext[k]) providers[k] = { label: map[k] }; });
+      return { providers };
+    } catch (_) {
+      return { providers: {} };
+    }
   }
 
-  async function listBoards() { return getJSON('/api/boards'); }
+  async function listBoards() {
+    const { data, error } = await supabase.from('boards').select('*').order('updated_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data || []).map((b) => ({
+      id: b.id, name: b.name, mode: b.mode, updatedAt: (b.updated_at || 0) * 1000,
+    }));
+  }
   async function deleteBoard(id) {
-    return getJSON('/api/boards/' + encodeURIComponent(id), { method: 'DELETE' });
+    const { error } = await supabase.from('boards').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   }
   async function syncBoard(board) {
-    return getJSON('/api/boards', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(board),
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('未登录');
+    const now = Math.floor(Date.now() / 1000);
+    const { error } = await supabase.from('boards').upsert({
+      id: board.id,
+      user_id: user.id,
+      name: board.name || '未命名画板',
+      mode: board.mode || '2d',
+      content: board.content,
+      created_at: now,
+      updated_at: now,
     });
+    if (error) throw new Error(error.message);
+    return { ok: true };
   }
   /** 打开云端画板：拉取内容 → 落到本地（保持同一 id）→ 跳转画板页 */
   async function openCloudBoard(id) {
-    const data = await getJSON('/api/boards/' + encodeURIComponent(id));
+    const { data, error } = await supabase.from('boards').select('*').eq('id', id).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error('画板不存在');
     Store.upsert({ id: data.id, name: data.name, mode: data.mode, content: data.content });
     location.href = 'board.html?id=' + encodeURIComponent(data.id);
   }
@@ -193,8 +258,8 @@ window.Auth = (function () {
         caught = err;
         errEl.textContent = err.message || '操作失败，请重试';
       } finally {
-        if (caught && caught.code === 'too_many_attempts' && caught.retryAfterSec) {
-          let left = caught.retryAfterSec;
+        if (caught && caught.code === 'too_many_attempts') {
+          let left = 30;
           const tick = () => {
             btn.textContent = left + ' 秒后可重试';
             if (left <= 0) { btn.disabled = false; btn.textContent = tab === 'login' ? '登录' : '注册并登录'; return; }
@@ -245,7 +310,13 @@ window.Auth = (function () {
       const b = el('button', 'auth-oauth-btn', '继续使用 ' + (providers[k].label || k));
       b.type = 'button';
       b.dataset.provider = k;
-      b.addEventListener('click', () => { location.href = '/api/auth/oauth/' + k; });
+      b.addEventListener('click', async () => {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: k,
+          options: { redirectTo: location.origin + '/' },
+        });
+        if (error) showToast('第三方登录失败：' + error.message);
+      });
       box.appendChild(b);
     });
   }
@@ -333,7 +404,6 @@ window.Auth = (function () {
         await deleteAccount(pw);
         m.classList.add('hidden');
         $('delForm').reset();
-        state.user = null;
         if (menuEl && menuEl.parentNode) menuEl.parentNode.removeChild(menuEl);
         menuEl = null;
         emit();
@@ -357,16 +427,14 @@ window.Auth = (function () {
       <div class="auth-card">
         <button class="auth-x" type="button" data-close aria-label="关闭">×</button>
         <h3 class="auth-title">找回密码</h3>
-        <p class="auth-hint">输入注册邮箱，系统会生成一条重置链接。当前为自助方案：链接会直接显示，请自行保存并在浏览器中打开设置新密码。</p>
+        <p class="auth-hint">输入注册邮箱，系统会向该邮箱发送一封重置邮件。请在邮件中打开重置链接，并设置新密码。</p>
         <form id="fpForm">
           <label class="auth-field"><span>邮箱</span><input type="email" id="fpEmail" required autocomplete="username" placeholder="you@example.com" /></label>
           <p class="auth-err" id="fpErr"></p>
-          <button type="submit" class="btn btn-primary auth-submit" id="fpSubmit">生成重置链接</button>
+          <button type="submit" class="btn btn-primary auth-submit" id="fpSubmit">发送重置邮件</button>
         </form>
         <div class="auth-reset-result hidden" id="fpResult">
-          <p>请复制下面的重置链接，在浏览器打开并设置新密码：</p>
-          <div class="auth-reset-url" id="fpUrl"></div>
-          <button type="button" class="btn btn-ghost btn-sm" id="fpCopy">复制链接</button>
+          <p>重置邮件已发送，请查收 <strong id="fpEmailShown"></strong> 的收件箱，点击邮件中的链接设置新密码。</p>
         </div>
       </div>`;
     document.body.appendChild(m);
@@ -378,17 +446,13 @@ window.Auth = (function () {
       const errEl = $('fpErr'); errEl.textContent = '';
       const btn = $('fpSubmit'); btn.disabled = true;
       try {
-        const data = await forgotPassword(email);
+        await forgotPassword(email);
         $('fpResult').classList.remove('hidden');
-        $('fpUrl').textContent = data.resetUrl || '';
+        $('fpEmailShown').textContent = email;
         $('fpForm').hidden = true;
       } catch (err) {
-        errEl.textContent = err.message || '生成失败，请重试';
+        errEl.textContent = err.message || '发送失败，请重试';
       } finally { btn.disabled = false; }
-    });
-    $('fpCopy').addEventListener('click', () => {
-      const t = $('fpUrl').textContent;
-      if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => showToast('链接已复制')).catch(() => {});
     });
   }
   function openForgot() { injectForgotModal(); const m = $('fpModal'); m.classList.remove('hidden'); setTimeout(() => { const i = $('fpEmail'); if (i) i.focus(); }, 30); }
@@ -612,11 +676,35 @@ window.Auth = (function () {
     toastTimer = setTimeout(() => t.classList.add('hidden'), 2600);
   }
 
+  /* ---------- 管理员 API（走 Supabase 存储过程） ---------- */
+  async function adminListCodes() { return rpcAdmin('admin_list_codes'); }
+  async function adminCreateCodes(n) { return rpcAdmin('admin_create_codes', { n }); }
+  async function adminDisableCode(code) { return rpcAdmin('admin_disable_code', { p_code: code }); }
+  async function adminListUsers() { return rpcAdmin('admin_list_users'); }
+  async function adminSetMembership(userId, type) { return rpcAdmin('admin_set_membership', { p_user: userId, p_type: type }); }
+  async function rpcAdmin(fn, params) {
+    const { data, error } = await supabase.rpc(fn, params || {});
+    if (error) { const e = new Error(error.message || '操作失败'); e.code = error.code; throw e; }
+    return data;
+  }
+
   /* ---------- 初始化 ---------- */
-  function init() {
+  async function init() {
     injectModal();
     renderNav();
     bindBoardSync();
+
+    // 处理 OAuth 回调（URL 里带 code/token 时，建立 session）
+    try { await supabase.auth.getSessionFromUrl(); } catch (_) {}
+    // 监听登录态变化（OAuth 回调、token 刷新等）
+    supabase.auth.onAuthStateChange(() => {
+      loadUser().then((u) => { state.user = u; emit(); });
+    });
+
+    // 初始加载当前用户
+    try { state.user = await loadUser(); } catch (_) { state.user = null; }
+    emit();
+
     if ($('cloudSyncAll')) {
       $('cloudSyncAll').addEventListener('click', async () => {
         const btn = $('cloudSyncAll');
@@ -629,11 +717,6 @@ window.Auth = (function () {
       });
     }
     onChange(() => { renderNav(); renderCloud(); });
-
-    me()
-      .then((u) => { if (u && u.authenticated) state.user = { userId: u.userId, email: u.email, role: u.role, membership: u.membership, name: u.name }; })
-      .catch(() => {})
-      .finally(() => emit());
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
@@ -648,5 +731,6 @@ window.Auth = (function () {
     openLogin, openSignup, requireLogin,
     forgotPassword, redeemCode, membershipMe, getProviders,
     openMembership, openForgot,
+    adminListCodes, adminCreateCodes, adminDisableCode, adminListUsers, adminSetMembership,
   };
 })();

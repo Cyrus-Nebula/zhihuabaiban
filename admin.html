@@ -57,6 +57,8 @@
   </main>
 
   <div id="toast" class="toast hidden"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
   <script src="js/auth.js"></script>
   <script>
     (function () {
@@ -65,8 +67,7 @@
 
       async function loadMe() {
         try {
-          const r = await fetch('/api/auth/me');
-          const u = await r.json().catch(() => ({}));
+          const u = await Auth.me();
           if (!u.authenticated) return { ok: false, reason: 'unauth' };
           if (u.role !== 'admin') return { ok: false, reason: 'forbidden', email: u.email };
           return { ok: true, email: u.email };
@@ -84,31 +85,25 @@
         const box = $('codeList');
         box.textContent = '加载中…';
         try {
-          const r = await fetch('/api/admin/codes');
-          const data = await r.json();
-          if (!r.ok) { box.textContent = data.message || '加载失败'; return; }
-          const codes = data.codes || [];
-          if (!codes.length) { box.textContent = '还没有激活码。'; return; }
+          const codes = await Auth.adminListCodes();
+          if (!codes || !codes.length) { box.textContent = '还没有激活码。'; return; }
           box.innerHTML = '';
           codes.forEach((c) => {
             const chip = document.createElement('span');
             chip.className = 'code-chip';
-            const used = c.claimed_by ? '（已用）' : (c.active === 0 ? '（已停用）' : '');
+            const used = c.claimed_by ? '（已用）' : (c.active === false ? '（已停用）' : '');
             chip.textContent = c.code + used;
             box.appendChild(chip);
           });
-        } catch (e) { box.textContent = '网络错误'; }
+        } catch (e) { box.textContent = '加载失败：' + (e && e.message ? e.message : '网络错误'); }
       }
 
       async function renderUsers() {
         const tb = $('userRows');
         tb.innerHTML = '<tr><td colspan="4" class="admin-note">加载中…</td></tr>';
         try {
-          const r = await fetch('/api/admin/users');
-          const data = await r.json();
-          if (!r.ok) { tb.innerHTML = '<tr><td colspan="4" class="admin-note err">加载失败：' + (data.message || '') + '</td></tr>'; return; }
-          const users = data.users || [];
-          if (!users.length) { tb.innerHTML = '<tr><td colspan="4" class="admin-note">暂无用户</td></tr>'; return; }
+          const users = await Auth.adminListUsers();
+          if (!users || !users.length) { tb.innerHTML = '<tr><td colspan="4" class="admin-note">暂无用户</td></tr>'; return; }
           tb.innerHTML = '';
           users.forEach((u) => {
             const tr = document.createElement('tr');
@@ -117,7 +112,7 @@
             tr.innerHTML = `<td>${u.email || ''}</td><td>${rolePill}</td><td>${memPill}</td><td>${fmtTs(u.created_at)}</td>`;
             tb.appendChild(tr);
           });
-        } catch { tb.innerHTML = '<tr><td colspan="4" class="admin-note err">网络错误</td></tr>'; }
+        } catch { tb.innerHTML = '<tr><td colspan="4" class="admin-note err">加载失败</td></tr>'; }
       }
 
       async function genCodes() {
@@ -125,23 +120,16 @@
         const btn = $('genBtn');
         btn.disabled = true; note($('genNote'), '生成中…'); $('genResult').innerHTML = '';
         try {
-          const r = await fetch('/api/admin/codes', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ count: n }),
+          const codes = await Auth.adminCreateCodes(n);
+          note($('genNote'), '已生成 ' + (codes || []).length + ' 个激活码', 'ok');
+          const box = $('genResult'); box.innerHTML = '';
+          (codes || []).forEach((c) => {
+            const chip = document.createElement('span'); chip.className = 'code-chip'; chip.textContent = c; chip.title = '点击复制';
+            chip.addEventListener('click', () => { navigator.clipboard && navigator.clipboard.writeText(c); showToast('已复制 ' + c); });
+            box.appendChild(chip);
           });
-          const data = await r.json();
-          if (!r.ok) { note($('genNote'), data.message || '生成失败', 'err'); }
-          else {
-            note($('genNote'), '已生成 ' + (data.codes || []).length + ' 个激活码', 'ok');
-            const box = $('genResult'); box.innerHTML = '';
-            (data.codes || []).forEach((c) => {
-              const chip = document.createElement('span'); chip.className = 'code-chip'; chip.textContent = c; chip.title = '点击复制';
-              chip.addEventListener('click', () => { navigator.clipboard && navigator.clipboard.writeText(c); showToast('已复制 ' + c); });
-              box.appendChild(chip);
-            });
-            renderCodes();
-          }
-        } catch (e) { note($('genNote'), '网络错误', 'err'); }
+          renderCodes();
+        } catch (e) { note($('genNote'), '生成失败：' + (e && e.message ? e.message : '网络错误'), 'err'); }
         finally { btn.disabled = false; }
       }
 
