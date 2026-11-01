@@ -486,7 +486,12 @@ window.Auth = (function () {
     if (!btn) return;
     if (state.user) {
       const disp = state.user.name || state.user.email || '已登录';
-      btn.textContent = disp.split('@')[0];
+      const label = disp.split('@')[0];
+      // 头像圆点 + 名字的胶囊样式（比裸邮箱块更紧凑、更像主流站点的账号入口）
+      btn.innerHTML = '<span class="avatar-dot" aria-hidden="true"></span><span class="auth-name"></span>';
+      btn.querySelector('.avatar-dot').textContent = (label[0] || '用').toUpperCase();
+      btn.querySelector('.auth-name').textContent = label;
+      btn.title = disp;
       btn.classList.add('is-user');
       btn.onclick = (e) => {
         e.stopPropagation();

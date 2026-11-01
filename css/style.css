@@ -1268,3 +1268,44 @@ code {
 .pill.vip { background: #FFF4D6; color: #b8860b; }
 .pill.free { background: #f0f0f7; color: #6b6f86; }
 
+
+/* ---------- 顶栏账号锚点 / 头像（首页 + 画板页通用） ---------- */
+.auth-anchor { position: relative; display: inline-flex; align-items: center; flex: none; }
+.avatar-dot {
+  width: 24px; height: 24px; border-radius: 50%; flex: none;
+  background: linear-gradient(135deg, #3E44D9, #9444DA);
+  color: #fff; font-size: 12px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.auth-anchor .btn.is-user {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 3px 12px 3px 3px; border-radius: 999px;
+  border-color: var(--border); background: #fff;
+  max-width: 180px;
+}
+.auth-anchor .btn.is-user:hover { border-color: var(--primary); }
+.auth-anchor .btn.is-user .auth-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.auth-anchor .auth-vip { position: absolute; top: -7px; right: -4px; z-index: 1; }
+
+/* ---------- 画板顶栏「导出 / 导入」下拉 ---------- */
+.export-menu { width: 240px; padding: 6px 8px 10px; max-height: calc(100vh - 90px); overflow: auto; }
+.export-menu-title {
+  font-size: 11px; font-weight: 700; color: #8b90a6; letter-spacing: .5px;
+  padding: 10px 8px 4px; text-transform: uppercase;
+}
+.export-menu-item {
+  display: flex; width: 100%; align-items: baseline; justify-content: space-between; gap: 8px;
+  border: 0; background: transparent; padding: 8px 10px; border-radius: 8px;
+  font-size: 13px; color: #3a3f57; cursor: pointer; text-align: left; font-family: inherit;
+  transition: background var(--dur-micro) var(--ease), color var(--dur-micro) var(--ease);
+}
+.export-menu-item:hover { background: #f3f2fb; color: var(--primary, #6549D5); }
+.export-menu-item:active { transform: scale(.98); }
+
+/* 顶栏分组间距：把「视图类(设置/动画) | 文件类(同步/保存/导出) | 分享类(嵌入/LaTeX) | 账号」隔开 */
+.board-page .topbar .settings-wrap { flex: none; }
+.board-page .topbar > .auth-anchor { margin-left: 2px; }
+@media (max-width: 900px) {
+  .export-menu { right: 0; }
+  .auth-anchor .btn.is-user { max-width: 120px; }
+}

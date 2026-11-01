@@ -203,6 +203,12 @@
     const f = Store.create('立体画板 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }), '3d');
     location.href = openUrl(f);
   }));
+  // 顶栏「＋ 新建画板」：真按钮，点击直接建平面画板（原为锚点链接只滚动页面）
+  const navNew = document.getElementById('navNewBoard');
+  if (navNew) navNew.addEventListener('click', () => Auth.requireLogin(() => {
+    const f = Store.create('平面画板 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }), '2d');
+    location.href = openUrl(f);
+  }));
 
   const fileInput = document.getElementById('fileInput');
   document.getElementById('btnImport').addEventListener('click', () => Auth.requireLogin(() => fileInput.click()));
