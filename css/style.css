@@ -791,6 +791,17 @@ code {
 }
 .nav-toggle + .site-cta { margin-left: 0; }
 
+/* 窄屏顶栏：禁止品牌名竖排折行，整体收紧间距保证一行放得下 */
+@media (max-width: 640px) {
+  .site-nav { gap: 7px; }
+  .site-brand { gap: 6px; }
+  .site-logo { width: 25px; height: 25px; }
+  .site-name { font-size: 16px; white-space: nowrap; flex: none; }
+  .site-cta { padding: 7px 11px; font-size: 13px; }
+  .auth-anchor .btn.is-user { max-width: 108px; padding: 3px 10px 3px 3px; }
+  .auth-anchor .btn.is-user .auth-name { font-size: 12px; }
+}
+
 /* 首屏 */
 .hero {
   position: relative;
