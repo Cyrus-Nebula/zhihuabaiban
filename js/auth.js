@@ -416,7 +416,7 @@ window.Auth = (function () {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !m.classList.contains('hidden')) m.classList.add('hidden'); });
     m.querySelector('#mbForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const code = $('mbCode').value.trim();
+      const code = $('mbCode').value.trim().toUpperCase().replace(/\s+/g, '');
       const errEl = $('mbErr'); errEl.textContent = '';
       const btn = $('mbSubmit'); btn.disabled = true;
       try {

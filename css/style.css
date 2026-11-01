@@ -1163,7 +1163,7 @@ code {
 #authBtn.is-user { background: var(--primary-soft, #F0EFFC); color: var(--primary, #6549D5); border-color: var(--primary-border, #D8D3F5); }
 
 /* 登录弹窗 */
-.auth-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.auth-modal { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; }
 .auth-modal.hidden { display: none; }
 .auth-backdrop { position: absolute; inset: 0; background: rgba(28, 25, 64, 0.42); backdrop-filter: blur(2px); }
 .auth-card {
@@ -1236,8 +1236,8 @@ code {
 .auth-vip.hidden { display: none; }
 
 /* ---------- 画板页登录墙 ---------- */
-.login-wall { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: rgba(28, 25, 64, 0.55); backdrop-filter: blur(4px); }
-.login-wall.hidden { display: none; }
+.login-wall { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: rgba(28, 25, 64, 0.55); backdrop-filter: blur(4px); opacity: 1; visibility: visible; transition: opacity .28s var(--ease), visibility .28s var(--ease); }
+.login-wall.hidden { opacity: 0; visibility: hidden; pointer-events: none; display: flex; }
 .login-wall-card { width: min(380px, 90vw); padding: 32px 28px; background: #fff; border-radius: 18px; box-shadow: 0 24px 60px rgba(60, 50, 140, 0.25); text-align: center; }
 .login-wall-brand { justify-content: center; margin-bottom: 14px; }
 .login-wall-brand .site-name { font-size: 18px; font-weight: 800; color: #2b2f47; }
