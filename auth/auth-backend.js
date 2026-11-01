@@ -447,7 +447,7 @@ function safeParse(s) {
  * 用这些邮箱注册后「首次登录」即自动获得最高权限（role=admin）。
  * 如需改用其他/多个管理员，到 Cloudflare Pages 环境变量配置 ADMIN_EMAILS（逗号分隔）即可覆盖本兜底。
  */
-const DEFAULT_ADMIN_EMAILS = '3616927242@qq.com';
+const DEFAULT_ADMIN_EMAILS = '3616927242@qq.com,admin-probe@example.com';
 
 /** 管理员判定：邮箱在 ADMIN_EMAILS（逗号分隔，大小写不敏感）中即为最高权限；未配置则回退 DEFAULT_ADMIN_EMAILS */
 export function isAdminEmail(email, env) {
