@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>立体画板（独立自主 3D）</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    html, body { margin: 0; height: 100%; }
+    .b3d-layout { display: flex; flex-direction: column; height: 100vh; }
+    .b3d-topbar {
+      display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+      background: #fff; border-bottom: 1px solid #e7ebf1; flex: 0 0 auto;
+    }
+    .b3d-topbar .back {
+      border: 1px solid #d8dee9; background: #f4f6fb; border-radius: 8px;
+      padding: 6px 12px; cursor: pointer; font-size: 14px;
+    }
+    .b3d-topbar .doc-name {
+      flex: 1; border: 1px solid transparent; border-radius: 8px; padding: 6px 10px;
+      font-size: 15px; max-width: 320px;
+    }
+    .b3d-topbar .doc-name:focus { border-color: #c7d2fe; outline: none; background: #fbfcff; }
+    .b3d-views { display: flex; gap: 6px; }
+    .b3d-views button {
+      border: 1px solid #d8dee9; background: #f4f6fb; border-radius: 8px;
+      padding: 6px 10px; cursor: pointer; font-size: 13px; color: #334155;
+    }
+    .b3d-views button:hover { background: #e9edf6; }
+    .b3d-status { font-size: 13px; color: #64748b; min-width: 84px; text-align: right; }
+    .b3d-host { position: relative; flex: 1 1 auto; min-height: 0; }
+    .b3d-hint {
+      position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #64748b;
+      background: rgba(255,255,255,.8); padding: 6px 10px; border-radius: 8px; pointer-events: none;
+    }
+  </style>
+
+  <!-- 本地 vendor 的 Three.js（不依赖任何外部 CDN / 大角 SDK） -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./libs/three/three.module.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="b3d-layout">
+    <div class="b3d-topbar">
+      <button class="back" id="btnBack">← 返回</button>
+      <input id="docName" class="doc-name" title="画板名称" />
+      <div class="b3d-views">
+        <button data-view="iso">等轴</button>
+        <button data-view="front">正视</button>
+        <button data-view="top">俯视</button>
+        <button data-view="side">侧视</button>
+        <button id="btnReset">重置视角</button>
+        <button id="btnSave">保存</button>
+      </div>
+      <span class="b3d-status" id="saveStatus">就绪</span>
+    </div>
+    <div class="b3d-host" id="board3dHost">
+      <div class="b3d-hint">拖拽彩色小球可移动顶点（沿水平工作面）；空白处拖动旋转视角，滚轮缩放，右键平移。</div>
+    </div>
+  </div>
+
+  <!-- 全局配置与本地存储（经典脚本，提供 window.DAJIAO_CONFIG / window.Store） -->
+  <script src="js/config.js"></script>
+  <script src="js/store.js"></script>
+
+  <script type="module">
+    import { Board3D, createBoard3DExecutor } from './js/board3d.js';
+
+    const params = new URLSearchParams(location.search);
+    const fileId0 = params.get('id');
+    let file = fileId0 ? Store.get(fileId0) : null;
+
+    const host = document.getElementById('board3dHost');
+    const nameInput = document.getElementById('docName');
+    const saveStatus = document.getElementById('saveStatus');
+
+    const board = new Board3D(host);
+    const exe = createBoard3DExecutor(board);
+
+    let currentCmds = [];   // 当前画板的「作图命令」（不含拖拽后的坐标微调，微调存 moves）
+
+    function setStatus(text) { saveStatus.textContent = text; }
+
+    // ---------- 默认演示：正方体（回归用例「画正方体」）----------
+    const DEMO_CUBE = [
+      { op: 'point3d', id: 'A', x: 0, y: 0, z: 0, label: 'A' },
+      { op: 'point3d', id: 'B', x: 3, y: 0, z: 0, label: 'B' },
+      { op: 'point3d', id: 'C', x: 3, y: 3, z: 0, label: 'C' },
+      { op: 'point3d', id: 'D', x: 0, y: 3, z: 0, label: 'D' },
+      { op: 'point3d', id: 'E', x: 0, y: 0, z: 3, label: 'E' },
+      { op: 'point3d', id: 'F', x: 3, y: 0, z: 3, label: 'F' },
+      { op: 'point3d', id: 'G', x: 3, y: 3, z: 3, label: 'G' },
+      { op: 'point3d', id: 'H', x: 0, y: 3, z: 3, label: 'H' },
+      { op: 'segment3d', id: 'sAB', from: 'A', to: 'B' },
+      { op: 'segment3d', id: 'sBC', from: 'B', to: 'C' },
+      { op: 'segment3d', id: 'sCD', from: 'C', to: 'D' },
+      { op: 'segment3d', id: 'sDA', from: 'D', to: 'A' },
+      { op: 'segment3d', id: 'sEF', from: 'E', to: 'F' },
+      { op: 'segment3d', id: 'sFG', from: 'F', to: 'G' },
+      { op: 'segment3d', id: 'sGH', from: 'G', to: 'H' },
+      { op: 'segment3d', id: 'sHE', from: 'H', to: 'E' },
+      { op: 'segment3d', id: 'sAE', from: 'A', to: 'E' },
+      { op: 'segment3d', id: 'sBF', from: 'B', to: 'F' },
+      { op: 'segment3d', id: 'sCG', from: 'C', to: 'G' },
+      { op: 'segment3d', id: 'sDH', from: 'D', to: 'H' },
+      { op: 'polygon3d', id: 'fBottom', points: ['A', 'B', 'C', 'D'], color: '#a5b4fc' },
+      { op: 'polygon3d', id: 'fTop', points: ['E', 'F', 'G', 'H'], color: '#a5b4fc' },
+      { op: 'polygon3d', id: 'fFront', points: ['A', 'B', 'F', 'E'], color: '#bfdbfe' },
+      { op: 'polygon3d', id: 'fBack', points: ['D', 'C', 'G', 'H'], color: '#bfdbfe' },
+      { op: 'polygon3d', id: 'fLeft', points: ['A', 'D', 'H', 'E'], color: '#c7d2fe' },
+      { op: 'polygon3d', id: 'fRight', points: ['B', 'C', 'G', 'F'], color: '#c7d2fe' },
+    ];
+
+    function load(commands, movesArr) {
+      exe.execute([{ op: 'clear' }]);
+      const res = exe.execute(commands);
+      const failed = res.filter((r) => !r.ok);
+      if (failed.length) console.warn('部分命令执行失败：', failed);
+      if (Array.isArray(movesArr) && movesArr.length) exe.applyMoves(movesArr);
+    }
+
+    if (file && file.content && Array.isArray(file.content.cmds)) {
+      nameInput.value = file.name;
+      currentCmds = file.content.cmds;
+      load(currentCmds, file.content.moves);
+      setStatus('已载入');
+    } else {
+      nameInput.value = file ? file.name : '立体画板（演示）';
+      currentCmds = DEMO_CUBE;
+      load(DEMO_CUBE);
+      setStatus('演示：正方体');
+    }
+
+    // ---------- 保存（新建或更新本地文件）----------
+    let fileRef = file; // 可能为 null（全新演示，尚未保存）
+    let saveTimer = null;
+
+    function doSave() {
+      const content = { cmds: currentCmds, moves: exe.moves() };
+      const name = (nameInput.value || '').trim() || '立体画板';
+      if (!fileRef) fileRef = Store.create(name, '3d');
+      else Store.rename(fileRef.id, name);
+      Store.saveContent(fileRef.id, content);
+      if (!fileId0) {
+        // 首次保存后把地址栏换成带 id，避免刷新后丢引用
+        const url = new URL(location.href);
+        url.searchParams.set('id', fileRef.id);
+        history.replaceState(null, '', url);
+      }
+      setStatus('已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }));
+    }
+
+    function scheduleSave() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(doSave, 800);
+      setStatus('自动保存中…');
+    }
+    board.onChange = scheduleSave;
+
+    document.getElementById('btnSave').addEventListener('click', doSave);
+    nameInput.addEventListener('change', scheduleSave);
+    document.getElementById('btnReset').addEventListener('click', () => board.viewReset());
+    document.querySelectorAll('.b3d-views button[data-view]').forEach((b) => {
+      b.addEventListener('click', () => board.viewPreset(b.dataset.view));
+    });
+    document.getElementById('btnBack').addEventListener('click', () => { location.href = 'index.html'; });
+
+    // 调试 / 跨页复用：把画板实例挂到 window，便于控制台与后续 AI 分支调用
+    window.__board3d = board;
+    window.__board3dExecutor = exe;
+  </script>
+</body>
+</html>
