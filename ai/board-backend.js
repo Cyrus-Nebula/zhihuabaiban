@@ -20,7 +20,7 @@
  *   LLM_MODEL     默认 glm-4.7-flash
  */
 
-import { BOARD_SYSTEM_PROMPT } from './board-prompt.js';
+import { BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, isBoard3DIntent } from './board-prompt.js';
 import { DEFAULT_MODEL, resolveModel, supportsVision } from './models.js';
 
 const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
@@ -145,11 +145,25 @@ function salvageMessage(s) {
   try { return JSON.parse('"' + m[1] + '"'); } catch (_) { return m[1]; }
 }
 
-// 点类命令坐标不全的一律丢弃（AI 截断最常见的残缺就是最后一个点缺 x/y）
+// 点类命令坐标不全的一律丢弃（AI 截断最常见的残缺就是最后一个点缺 x/y/z）
 function commandUsable(c) {
   if (!c || typeof c !== 'object' || typeof c.op !== 'string') return false;
   if ((c.op === 'point' || c.op === 'glider') && !(typeof c.x === 'number' && typeof c.y === 'number')) return false;
+  // 3D 点必须 x/y/z 都是数字
+  if (c.op === 'point3d' && !(typeof c.x === 'number' && typeof c.y === 'number' && typeof c.z === 'number')) return false;
   return true;
+}
+
+/**
+ * 选择系统提示词：显式声明 mode:'3d' 或文本命中 3D 意图 → 走 3D 命令协议，
+ * 否则沿用 2D（JSXGraph）主干。供 handleBoardAi 调用，也便于单测。
+ */
+export function selectSystemPrompt(message, modeHint) {
+  const want3d = modeHint === '3d' || isBoard3DIntent(message);
+  return {
+    mode: want3d ? '3d' : '2d',
+    prompt: want3d ? BOARD3D_SYSTEM_PROMPT : BOARD_SYSTEM_PROMPT,
+  };
 }
 
 // 提取 message + commands，按容错等级逐层降级：
@@ -243,7 +257,8 @@ export async function handleBoardAi(request, env) {
     // 非视觉模型：忽略图片（前端也会隐藏上传按钮，这里兜底）
   }
 
-  const messages = [{ role: 'system', content: BOARD_SYSTEM_PROMPT }];
+  const sys = selectSystemPrompt(message, payload.mode);
+  const messages = [{ role: 'system', content: sys.prompt }];
   if (Array.isArray(payload.history)) {
     for (const h of payload.history.slice(-10)) {
       if (h && (h.role === 'user' || h.role === 'assistant') && h.content) {
@@ -327,7 +342,7 @@ export async function handleBoardAi(request, env) {
     console.error('AI 回复解析失败，原文前 300 字：', content.slice(0, 300));
     return json({ ok: false, error: 'AI 这次没有按格式作答，请重试或换一种描述' }, 200);
   }
-  return json({ ok: true, message: result.message, commands: result.commands }, 200);
+  return json({ ok: true, mode: sys.mode, message: result.message, commands: result.commands }, 200);
 }
 
 function json(obj, status) {

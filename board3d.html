@@ -34,6 +34,17 @@
       position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #64748b;
       background: rgba(255,255,255,.8); padding: 6px 10px; border-radius: 8px; pointer-events: none;
     }
+    /* AI 面板（3D 分支：直接调后端 3D 命令协议，不经过 2D 执行器） */
+    .b3d-ai { flex: 0 0 auto; border-top: 1px solid #e7ebf1; background: #fff; display: flex; flex-direction: column; }
+    .b3d-ai-log { max-height: 160px; overflow-y: auto; padding: 8px 14px; font-size: 13px; line-height: 1.5; }
+    .b3d-ai-log .ai-msg { margin: 2px 0; white-space: pre-wrap; }
+    .b3d-ai-log .ai-msg.user { color: #1d4ed8; }
+    .b3d-ai-log .ai-msg.ai { color: #334155; }
+    .b3d-ai-log .ai-msg.err { color: #dc2626; }
+    .b3d-ai-bar { display: flex; gap: 8px; padding: 8px 14px; }
+    .b3d-ai-bar input { flex: 1; border: 1px solid #d8dee9; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+    .b3d-ai-bar button { border: 1px solid #c7d2fe; background: #eef2ff; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 14px; color: #3730a3; }
+    .b3d-ai-bar button:disabled { opacity: .6; cursor: default; }
   </style>
 
   <!-- 本地 vendor 的 Three.js（不依赖任何外部 CDN / 大角 SDK） -->
@@ -62,6 +73,13 @@
     </div>
     <div class="b3d-host" id="board3dHost">
       <div class="b3d-hint">拖拽彩色小球可移动顶点（沿水平工作面）；空白处拖动旋转视角，滚轮缩放，右键平移。</div>
+    </div>
+    <div class="b3d-ai">
+      <div class="b3d-ai-log" id="aiLog"></div>
+      <div class="b3d-ai-bar">
+        <input id="aiInput" placeholder="用中文描述立体几何，例如：画一个棱长为 3 的正方体" />
+        <button id="aiSend">生成</button>
+      </div>
     </div>
   </div>
 
@@ -170,6 +188,73 @@
       b.addEventListener('click', () => board.viewPreset(b.dataset.view));
     });
     document.getElementById('btnBack').addEventListener('click', () => { location.href = 'index.html'; });
+
+    // ---------- 3D 分支 AI 面板（直接走后端 3D 命令协议，不经过 2D 执行器）----------
+    const aiInput = document.getElementById('aiInput');
+    const aiLog = document.getElementById('aiLog');
+    const aiSendBtn = document.getElementById('aiSend');
+    const aiHistory = [];
+
+    function appendLog(role, text) {
+      const div = document.createElement('div');
+      div.className = 'ai-msg ' + role;
+      div.textContent = text;
+      aiLog.appendChild(div);
+      aiLog.scrollTop = aiLog.scrollHeight;
+    }
+
+    async function aiSend3d() {
+      const text = aiInput.value.trim();
+      if (!text) return;
+      appendLog('user', text);
+      aiHistory.push({ role: 'user', content: text });
+      aiInput.value = '';
+      aiSendBtn.disabled = true;
+      aiSendBtn.textContent = '生成中…';
+      try {
+        const res = await fetch((window.CFG && window.CFG.boardAiEndpoint) || '/api/ai/board', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            mode: '3d',            // 显式声明 3D，确保后端切到 BOARD3D_SYSTEM_PROMPT
+            context: exe.describe(),
+            history: aiHistory.slice(-10),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + res.status));
+        if (Array.isArray(data.commands) && data.commands.length) {
+          let okCount = 0;
+          const errs = [];
+          for (const cmd of data.commands) {
+            const r = exe.execute([cmd]);
+            if (r[0] && r[0].ok) {
+              if (cmd.op === 'clear') currentCmds = [];
+              else currentCmds.push(cmd);
+              okCount++;
+            } else if (r[0]) {
+              errs.push((cmd.op || '?') + '(' + r[0].error + ')');
+            }
+          }
+          if (errs.length) appendLog('ai', '已执行 ' + okCount + ' 条，' + errs.length + ' 条失败：' + errs.join('；'));
+          setStatus('AI 已作图 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }));
+        }
+        if (data.message) {
+          appendLog('ai', data.message);
+          aiHistory.push({ role: 'assistant', content: data.message });
+        }
+      } catch (e) {
+        appendLog('err', '⚠️ ' + e.message);
+      } finally {
+        aiSendBtn.disabled = false;
+        aiSendBtn.textContent = '生成';
+      }
+    }
+    aiSendBtn.addEventListener('click', aiSend3d);
+    aiInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend3d(); }
+    });
 
     // 调试 / 跨页复用：把画板实例挂到 window，便于控制台与后续 AI 分支调用
     window.__board3d = board;
