@@ -27,6 +27,12 @@
  *   angle     {id,points:[A,B,C]}              角（B为顶点）
  *   label     {target,text}                    设置/修改标签
  *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?}  样式
+ *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
+ *
+ * TODO(下一步·不在本轮): 1) 在 functions/api/ai/board.js + ai/board-backend.js 接入"执行命令→把 measure 的
+ *     value 回传给 LLM"的 read-back 闭环，实现"测量→与预期不符则自动修正"（对标大角几何 MCP 式改图）；
+ *   2) 协议新增几何变换 op（reflect/rotate/translate），原生支持"几何变换"作图（当前靠坐标数值化手算兜底）；
+ *   3) 协议新增 animate 命令，配合现有 slider 做参数自动播放（当前靠前端「▶ 动画」按钮兜底）。
  *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
@@ -257,6 +263,44 @@ export function createExecutor(board) {
     } catch (_) { /* 个别元素类型没有标签，忽略 */ }
   }
 
+  /** 三点夹角（度），B 为顶点；用于 measure kind=angle 自检 */
+  function angleDeg(A, B, C) {
+    const ux = A.X() - B.X(), uy = A.Y() - B.Y();
+    const vx = C.X() - B.X(), vy = C.Y() - B.Y();
+    const dot = ux * vx + uy * vy;
+    const la = Math.hypot(ux, uy), lb = Math.hypot(vx, vy);
+    if (la < 1e-9 || lb < 1e-9) return NaN;
+    let c = dot / (la * lb);
+    c = Math.max(-1, Math.min(1, c));
+    return Math.acos(c) * 180 / Math.PI;
+  }
+
+  /** 在 x 处求表达式（JSXGraph 语法）的数值；优先用 JessieCode 编译，失败回退到受限算术求值 */
+  function evalExprAt(expr, x) {
+    const s = String(expr || '');
+    if (board.jc && typeof board.jc.snippet === 'function') {
+      try {
+        const fn = board.jc.snippet(s, true, 'x', false);
+        const v = Number(fn(Number(x)));
+        if (Number.isFinite(v)) return v;
+      } catch (_) { /* 回退 */ }
+    }
+    try {
+      const js = s.replace(/\^/g, '**')
+        .replace(/\bpi\b/gi, '(' + Math.PI + ')')
+        .replace(/\be\b/gi, '(' + Math.E + ')');
+      return Number(Function('x', 'return (' + js + ');')(Number(x)));
+    } catch (_) { return NaN; }
+  }
+
+  /** 画一个临时测量读数文本（灰色小字，带 ✓；不进注册表/文档，verify 用） */
+  function measureReadout(text, pos) {
+    return board.create('text', [pos[0], pos[1], text], {
+      name: '', withLabel: false, display: 'internal',
+      fontSize: 11, color: '#555', strokeColor: '#555',
+    });
+  }
+
   function build(cmd) {
     const opt = { name: cmd.id || '' };
     switch (cmd.op) {
@@ -421,6 +465,36 @@ export function createExecutor(board) {
         el.setAttribute(a);
         return null;
       }
+      case 'measure': {
+        // 测量/验证命令（AI 自检回读，对标大角几何 MCP 式读画板状态）。
+        // kind: 'distance'(|AB|) | 'angle'(∠ABC 度，中点是顶点) | 'evaluate'(代数式/函数在 x 处的值)。
+        // 画板上生成一个灰色 ✓ 临时读数（不进注册表/文档），并把数值经 execute 结果回传，
+        // 供未来后端 read-back 闭环做自动修正。kind 不合法则报错由外层捕获。
+        const kind = String(cmd.kind || 'distance').toLowerCase();
+        if (kind === 'distance') {
+          const a = resolve(cmd.of && cmd.of[0]);
+          const b = resolve(cmd.of && cmd.of[1]);
+          const value = Math.hypot(b.X() - a.X(), b.Y() - a.Y());
+          const el = measureReadout('✓ 距离 = ' + value.toFixed(2), [(a.X() + b.X()) / 2 + 0.4, (a.Y() + b.Y()) / 2 + 0.4]);
+          return { __measure: true, el, value };
+        }
+        if (kind === 'angle') {
+          const A = resolve(cmd.of && cmd.of[0]);
+          const B = resolve(cmd.of && cmd.of[1]);
+          const C = resolve(cmd.of && cmd.of[2]);
+          const value = angleDeg(A, B, C);
+          const el = measureReadout('✓ ∠ = ' + (Number.isFinite(value) ? value.toFixed(1) + '°' : '?'), [B.X() + 0.4, B.Y() + 0.4]);
+          return { __measure: true, el, value };
+        }
+        if (kind === 'evaluate') {
+          const value = evalExprAt(cmd.expr, cmd.x);
+          const at = cmd.x != null ? ' @ x=' + cmd.x : '';
+          const el = measureReadout('✓ ' + (cmd.label || String(cmd.expr)) + at + ' = ' + (Number.isFinite(value) ? value.toFixed(3) : '?'),
+            Array.isArray(cmd.at) ? cmd.at : [Number(cmd.x) || 0, (Number.isFinite(value) ? value : 0) + 0.6]);
+          return { __measure: true, el, value };
+        }
+        throw new Error('measure.kind 只能是 distance / angle / evaluate');
+      }
       default:
         throw new Error('未知命令 op: ' + cmd.op);
     }
@@ -454,9 +528,15 @@ export function createExecutor(board) {
     for (const cmd of Array.isArray(commands) ? commands : []) {
       if (!cmd || typeof cmd !== 'object') continue;
       try {
-        if (cmd.op === 'clear') { clearAll(); out.push({ ok: true, op: 'clear' }); continue; }
-        const el = build(cmd);
-        if (cmd.id) {
+      if (cmd.op === 'clear') { clearAll(); out.push({ ok: true, op: 'clear' }); continue; }
+      const built = build(cmd);
+      // 测量命令：build 已在画板生成临时读数文本（副作用），数值经 value 回传；不进注册表/文档
+      if (cmd.op === 'measure') {
+        out.push({ ok: true, op: 'measure', id: cmd.id || null, value: built && built.__measure ? built.value : NaN });
+        continue;
+      }
+      const el = built;
+      if (cmd.id) {
           if (registry.has(cmd.id)) throw new Error(`id「${cmd.id}」重复定义`);
           if (el) registry.set(cmd.id, el);
           // 坐标被别的对象驱动的点是依赖点，不能再当成可拖拽的自由点保存坐标

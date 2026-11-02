@@ -397,6 +397,7 @@ function runCommands(cmds) {
   const r = executor.execute(list);
   list.forEach((cmd, i) => {
     if (!(r[i] && r[i].ok)) return;
+    if (cmd.op === 'measure') return; // 测量/验证是临时读数，不进文档与画板历史
     if (cmd.op === 'clear') doc.commands = [];
     doc.commands.push(cmd);
   });
