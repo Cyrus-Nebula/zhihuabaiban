@@ -8,7 +8,8 @@
  *
  * TODO(下一步): 1) board-backend.js 接入 read-back 闭环——执行命令后把 measure 的 value
  *   回传给 LLM，实现"测量→与预期不符则自动修正"（对标大角几何 MCP 式读画板状态后改图）；
- *   2) 协议补几何变换 op（reflect/rotate/translate），原生支持"几何变换"作图；
+ *   2) [本轮已完成] 协议补几何变换 op（reflect/rotate/translate）：原生支持"几何变换"作图，
+ *      见下方命令协议与例4；js/executor.js 同步加了 transform 分支与 REF_FIELDS 依赖。
  *   3) 协议补 animate 命令做参数自动播放。
  */
 
@@ -58,6 +59,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - angle      {"op":"angle","id":"ang","points":["A","B","C"]}        角（B 是顶点，画出角标记）
 - label      {"op":"label","target":"A","text":"A"}                  设置/修改标签
 - style      {"op":"style","target":"tri","color":"#3E44D9","strokeWidth":2,"dash":0,"fill":true,"hidden":false}  样式
+- transform  {"op":"transform","id":"tri2","of":"tri","type":"translate","by":[3,1]} | {"op":"transform","id":"tri3","of":"tri","type":"rotate","angle":90,"center":"O"} | {"op":"transform","id":"triS","of":"tri","type":"reflect","axis":"lBC"}  几何变换（把 of 指向的已有元素整份复制并按 type 平移/旋转/反射：translate 用 by:[dx,dy]；rotate 用 angle(度) 与 center(点id或[x,y]，省缺原点)；reflect 用 axis(直线/线段id) 关于该线对称，或省略 axis 用 center 做中心对称）。支持 point/segment/line/polygon/circle，新副本以 id 命名。
 - measure    {"op":"measure","kind":"distance","of":["A","B"]} | {"op":"measure","kind":"angle","of":["A","B","C"]} | {"op":"measure","kind":"evaluate","expr":"x^2","x":2}  测量/自检（回读数值，画板上给临时灰色读数，不污染画板）
 - 画板自带坐标轴：引用 x 轴用 id "xaxis"、y 轴用 "yaxis"（如求函数与 x 轴靠左的交点：{"op":"intersect","id":"P1","of":["f1","xaxis"],"select":"left"}），不要自己画坐标轴。
 - 提醒：两圆相交、直线与圆相交、函数与直线相交往往有 2 个交点，只写一条 intersect 只画得出一个点，需要两个点就写两条并给出不同 select。
@@ -129,18 +131,26 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 {"op":"point","id":"V","x":2,"y":3}
 {"op":"measure","kind":"evaluate","expr":"3-(x-2)^2","x":2}   // 自检：x=2 时值应=3，等于 V.y
 
-== 例4：几何变换（平移，坐标数值化手算） ==
+== 例4：几何变换（用原生 transform op，不要再手算坐标） ==
 用户："画一个三角形，再把它向右平移 3、向上平移 1。"
-思路：先建原三角形（坐标自己定且已知）→ 新顶点 = 原坐标 + (3,1)，逐点数值化输出。
+思路：先建原三角形 → 直接对整份 tri 发一条 transform（type=translate，by:[3,1]），副本命名 tri2，执行器会自动算好新坐标落点。
 {"op":"point","id":"A","x":0,"y":0}
 {"op":"point","id":"B","x":2,"y":0}
 {"op":"point","id":"C","x":1,"y":2}
 {"op":"polygon","id":"tri","points":["A","B","C"]}
-{"op":"point","id":"A2","x":3,"y":1}
-{"op":"point","id":"B2","x":5,"y":1}
-{"op":"point","id":"C2","x":4,"y":3}
-{"op":"polygon","id":"tri2","points":["A2","B2","C2"]}
-注意：本协议暂无原生 transform（reflect/rotate/translate）命令。若要对"画板上已存在、但未给出坐标"的图形做变换，先确认能拿到坐标（新建图形可手算；已有图形若画板未提供坐标，需请用户补充或用 slider 参数化后平移），再按上面方式数值化输出。
+{"op":"transform","id":"tri2","of":"tri","type":"translate","by":[3,1]}
+
+== 例4b：绕原点逆时针旋转 90° ==
+用户："把上面的三角形绕原点逆时针旋转 90°。"
+思路：transform type=rotate，angle 是角度(度)，center 可省（省缺原点）或给点 id / [x,y]。
+{"op":"transform","id":"tri3","of":"tri","type":"rotate","angle":90,"center":[0,0]}
+
+== 例4c：关于直线对称（反射） ==
+用户："作三角形关于直线 BC 的对称图形。"
+思路：先建直线 lBC → transform type=reflect，axis 填 lBC（直线/线段 id），执行器按轴对称算出副本。
+{"op":"line","id":"lBC","through":["B","C"]}
+{"op":"transform","id":"triS","of":"tri","type":"reflect","axis":"lBC"}
+注意：transform 的 of 必须是前面已建好的元素 id（point/segment/line/ray/polygon/circle 皆可），新副本以 id 命名；旋转/中心对称的 center 可写点 id 或 [x,y]（省缺原点），反射对称用 axis 指定直线/线段 id。副本为静态落点（不随源拖拽实时联动，但保存/重画会按命令重建）——这正是"几何变换"作图的原生支持，比逐点手算坐标更稳、更不易错。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

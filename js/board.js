@@ -316,8 +316,9 @@ nameInput.value = doc.name;
 const REF_FIELDS = {
   segment: ['from', 'to'], ray: ['from', 'to'], line: ['through'],
   circle: ['center', 'through', 'radius'], polygon: ['points'], midpoint: ['of'],
-  intersect: ['of'], glider: ['on'], perpendicular: ['of', 'through'],
+  intersect: ['of'], glider: ['on'],   perpendicular: ['of', 'through'],
   parallel: ['of', 'through'], angle: ['points'], arc: ['center', 'from', 'to'],
+  transform: ['of'], // 几何变换副本依赖源元素，删源则连副本一起删
   // 点坐标可以是滑动条 id（动态联动），删滑动条时要连带删掉依赖它的点
   point: ['x', 'y'],
 };

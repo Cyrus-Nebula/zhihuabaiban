@@ -46,7 +46,9 @@
 | 14 | 三角形 BC 边上的高 | `point`×3 → `polygon` → `line` lBC through:[B,C] → `perpendicular` h of:lBC through:A → `intersect` H of:[h,lBC] → `segment` AH → `style` h hidden:true → `measure` angle A,H,B | ✅ | 垂线是全直线，需隐藏并连成线段；measure 自检 ∠AHB≈90° |
 | 15 | ∠ABC 的角平分线 | `point` B,A,C → `segment` sBA,sBC → `glider` P on:sBA, Q on:sBC → `midpoint` M of:[P,Q] → `line` bis through:[B,M] | ✅ | 协议无原生角平分线 op，用等距点+中点法；P/Q 用 glider 保证在边上 |
 | 16 | 二次函数顶点式（顶点(2,3)开口向下） | `function` expr:"3-(x-2)^2" → `point` V(2,3) → `measure` evaluate expr:"3-(x-2)^2" x:2 | ✅ | 写成 "3-(x-2)^2" 避免负号/幂歧义；measure 核对 x=2→3 |
-| 17 | 几何变换：向右平移 3 上移 1 | 原 `point`/`polygon` → 新顶点 = 原坐标+(3,1) 数值化 → 新 `polygon` | ✅ | 协议暂无 transform op，靠坐标数值化手算；已有图形若无坐标需先确认 |
+| 17 | 几何变换：向右平移 3 上移 1 | 原 `point`/`polygon` tri → `transform` id:tri2 of:tri type:translate by:[3,1] | ✅ | 本轮起有原生 transform op，不再手算坐标；of 必须已存在 |
+| 21 | 几何变换：绕原点逆时针旋转 90° | `transform` id:tri3 of:tri type:rotate angle:90 center:[0,0]（center 省缺即原点） | ✅ | 角度用度；center 可写点 id 或 [x,y] |
+| 22 | 几何变换：关于直线 BC 对称 | 先 `line` lBC through:[B,C] → `transform` id:triS of:tri type:reflect axis:lBC | ✅ | 轴对称用 axis（直线/线段 id）；中心对称则用 center |
 
 ## 测量 / 自检（verify 层）
 
@@ -57,7 +59,7 @@
 | 20 | 量函数在 x=2 处的值 | `measure` kind:evaluate expr:"x^2" x:2 | ✅ | 数值经 execute 结果回传（待后端 read-back 闭环消费） |
 
 ## 协议扩展 TODO（不在本轮，供下一步）
-- `reflect` / `rotate` / `translate`：原生几何变换 op（当前靠坐标数值化手算兜底，见用例 17）。
+- [本轮已完成] `reflect` / `rotate` / `translate`：原生几何变换 op（见用例 17/21/22 与 `js/executor.js` 的 transform 分支）。
 - `animate`：配合现有 slider 的参数自动播放命令（当前靠前端「▶ 动画」按钮兜底）。
 - read-back 闭环：在 `functions/api/ai/board.js` + `ai/board-backend.js` 把 `measure` 的 `value` 回传给 LLM，实现"测量→与预期不符则自动修正"，对标大角几何 MCP 式读画板状态后改图。
 

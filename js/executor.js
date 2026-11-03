@@ -28,10 +28,13 @@
  *   label     {target,text}                    设置/修改标签
  *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?}  样式
  *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
+ *   transform {id,of,type,by?|angle?|center?|axis?}  几何变换：把 of 元素平移/旋转/反射成一份新副本（以 id 命名），
+ *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?)；支持 point/segment/line/ray/polygon/circle
  *
  * TODO(下一步·不在本轮): 1) 在 functions/api/ai/board.js + ai/board-backend.js 接入"执行命令→把 measure 的
  *     value 回传给 LLM"的 read-back 闭环，实现"测量→与预期不符则自动修正"（对标大角几何 MCP 式改图）；
- *   2) 协议新增几何变换 op（reflect/rotate/translate），原生支持"几何变换"作图（当前靠坐标数值化手算兜底）；
+ *   2) [本轮已完成] 协议新增几何变换 op（reflect/rotate/translate），原生支持"几何变换"作图，
+ *      例：{"op":"transform","id":"tri2","of":"tri","type":"rotate","angle":90,"center":"O"}；
  *   3) 协议新增 animate 命令，配合现有 slider 做参数自动播放（当前靠前端「▶ 动画」按钮兜底）。
  *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
@@ -301,6 +304,54 @@ export function createExecutor(board) {
     });
   }
 
+  /** 点 (x,y) 关于过 p1、p2 两点的直线的对称点坐标 */
+  function reflectAcrossLine(x, y, p1, p2) {
+    const x1 = p1[0], y1 = p1[1], x2 = p2[0], y2 = p2[1];
+    const dx = x2 - x1, dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12) return [x, y]; // 两点重合退化：当关于该点对称处理
+    const t = ((x - x1) * dx + (y - y1) * dy) / len2;
+    const px = x1 + t * dx, py = y1 + t * dy; // 在直线上的投影
+    return [2 * px - x, 2 * py - y];
+  }
+
+  /** 解析几何变换命令，返回映射函数 (x,y) => [x', y']（translate / rotate / reflect） */
+  function transformFn(cmd, resolve) {
+    const type = String(cmd.type || '').toLowerCase();
+    // center 既可以是点 id，也可以是 [x,y] 坐标（省缺原点）
+    const centerOf = (c) => {
+      if (c == null) return [0, 0];
+      if (Array.isArray(c) && c.length >= 2) return [Number(c[0]) || 0, Number(c[1]) || 0];
+      const el = resolve(c); // 点 id：取其实时坐标
+      return [el.X(), el.Y()];
+    };
+    if (type === 'translate') {
+      const by = Array.isArray(cmd.by) ? cmd.by : (Array.isArray(cmd.vector) ? cmd.vector : [0, 0]);
+      const dx = Number(by[0]) || 0, dy = Number(by[1]) || 0;
+      return (x, y) => [x + dx, y + dy];
+    }
+    if (type === 'rotate') {
+      const th = (Number(cmd.angle) || 0) * Math.PI / 180;
+      const [cx, cy] = centerOf(cmd.center);
+      const cos = Math.cos(th), sin = Math.sin(th);
+      return (x, y) => {
+        const rx = x - cx, ry = y - cy;
+        return [cx + (rx * cos - ry * sin), cy + (rx * sin + ry * cos)];
+      };
+    }
+    if (type === 'reflect') {
+      if (cmd.axis != null) {
+        const ax = resolve(cmd.axis); // 直线/线段 id：取它的两个端点定轴
+        const p1 = [ax.point1.X(), ax.point1.Y()];
+        const p2 = [ax.point2.X(), ax.point2.Y()];
+        return (x, y) => reflectAcrossLine(x, y, p1, p2);
+      }
+      const [cx, cy] = centerOf(cmd.center); // 关于点中心对称（省缺原点）
+      return (x, y) => [2 * cx - x, 2 * cy - y];
+    }
+    throw new Error('transform.type 只能是 translate / rotate / reflect');
+  }
+
   function build(cmd) {
     const opt = { name: cmd.id || '' };
     switch (cmd.op) {
@@ -494,6 +545,47 @@ export function createExecutor(board) {
           return { __measure: true, el, value };
         }
         throw new Error('measure.kind 只能是 distance / angle / evaluate');
+      }
+      case 'transform': {
+        // 几何变换 op（本轮新增，对标"几何变换"作图）：把源元素按 type 做平移/旋转/反射，
+        // 生成一份以 cmd.id 命名的新副本。此前只能靠"坐标数值化手算"兜底（易错），现由执行器
+        // 在运行期读取源元素坐标后计算并落点——AI 只需声明"对谁做哪种变换"，无需手算坐标。
+        //   translate: {type:'translate', by:[dx,dy]}                               平移向量
+        //   rotate:    {type:'rotate', angle:角度(度), center:'O'|[x,y]（省缺绕原点）}  旋转
+        //   reflect:   {type:'reflect', axis:'l1'（直线/线段 id，关于该线对称）}
+        //                       | {center:'O'|[x,y]（关于该点中心对称，省缺原点）}
+        // 支持 point / segment / line / ray / polygon / circle；副本为静态落点（不随源拖拽实时
+        // 联动），但回放/保存时按命令重建，行为稳定。type 非法时抛错由外层捕获。
+        const src = resolve(cmd.of);
+        if (!src) throw new Error('transform.of 引用的元素不存在');
+        const f = transformFn(cmd, resolve);
+        const et = src.elType;
+        if (et === 'point') {
+          const [nx, ny] = f(src.X(), src.Y());
+          const pt = board.create('point', [nx, ny], { ...POINT_STYLE, ...opt });
+          applyLabel(pt, cmd.label);
+          return pt;
+        }
+        if (et === 'circle') {
+          const [cx, cy] = f(src.center.X(), src.center.Y());
+          const r = typeof src.Radius === 'function' ? src.Radius() : 1;
+          return board.create('circle', [[cx, cy], r], opt);
+        }
+        if (et === 'polygon') {
+          const coords = (src.vertices || []).map((v) => { const [x, y] = f(v.X(), v.Y()); return [x, y]; });
+          if (coords.length < 2) throw new Error('多边形顶点数不足，无法变换');
+          return board.create('polygon', coords, opt);
+        }
+        if (['segment', 'arrow', 'line', 'axis', 'ray'].includes(et)) {
+          const p1 = src.point1, p2 = src.point2;
+          if (!p1 || !p2) throw new Error('该对象无可用的两个端点，无法变换');
+          const [x1, y1] = f(p1.X(), p1.Y());
+          const [x2, y2] = f(p2.X(), p2.Y());
+          if (et === 'line' || et === 'axis') return board.create('line', [[x1, y1], [x2, y2]], opt);
+          if (et === 'ray') return board.create('line', [[x1, y1], [x2, y2]], { ...opt, straightFirst: false, straightLast: true });
+          return board.create('segment', [[x1, y1], [x2, y2]], opt);
+        }
+        throw new Error('transform 暂不支持 elType=' + et + '（目前支持 point/segment/line/polygon/circle）');
       }
       default:
         throw new Error('未知命令 op: ' + cmd.op);
