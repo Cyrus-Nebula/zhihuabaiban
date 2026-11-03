@@ -1,0 +1,126 @@
+/**
+ * 独立自主 3D 画板 —— 无头逻辑回归（不依赖 WebGL / 浏览器）。
+ *
+ * 目标：在沙箱无 GPU 环境下，用「假 board」驱动真实的 createBoard3DExecutor，
+ * 验证 3D 命令协议（正方体 / 四棱锥等）的：
+ *   - 正常命令集全部执行成功（用例 1 / 2）
+ *   - 依赖缺失（引用未定义 id）被安全捕获为 ok:false
+ *   - id 重复定义被捕获
+ *   - moves()/applyMoves() 坐标往返一致（持久化）
+ *
+ * 运行：node tests/board3d_regress.mjs
+ * 注意：js/board3d.js 顶层会 import three；本测试仅用于加载模块，
+ *       所有空间计算由假 board 记录，不触碰真实渲染。node_modules/three 已被 .gitignore 排除。
+ */
+
+import { createBoard3DExecutor } from '../js/board3d.js';
+import { DEMO_CUBE, DEMO_PYRAMID } from '../js/board3d-demos.js';
+
+let passed = 0;
+let failed = 0;
+function assert(cond, msg) {
+  if (cond) { passed++; console.log('  ✓ ' + msg); }
+  else { failed++; console.error('  ✗ ' + msg); }
+}
+
+/** 只记录调用、不渲染的假 board —— 仅用于跑通执行器协议逻辑 */
+class FakeBoard {
+  constructor() {
+    this.entries = new Map();
+    this.points = new Map();
+  }
+  _reg(id, entry) { this.entries.set(id, entry); return entry; }
+  createPoint3D(id, x, y, z, opts = {}) {
+    if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
+    this.points.set(id, { x, y, z, set(a, b, c) { this.x = a; this.y = b; this.z = c; } });
+    return this._reg(id, { obj: { position: { x, y, z }, add() {} }, type: 'point3d', deps: [], update: null });
+  }
+  createSegment3D(id, a, b, o = {}) { return this._reg(id, { type: 'segment3d', deps: [a, b], update: null }); }
+  createLine3D(id, a, b, o = {}) { return this._reg(id, { type: 'line3d', deps: [a, b], update: null }); }
+  createPolygon3D(id, ps, o = {}) { return this._reg(id, { type: 'polygon3d', deps: [...ps], update: null }); }
+  createSphere3D(id, c, r, o = {}) { return this._reg(id, { type: 'sphere3d', deps: [c], update: null }); }
+  createCircle3D(id, c, r, n, o = {}) { return this._reg(id, { type: 'circle3d', deps: [c], update: null }); }
+  createCylinder3D(id, b, t, r, o = {}) { return this._reg(id, { type: 'cylinder3d', deps: [b, t], update: null }); }
+  createCone3D(id, a, b, r, o = {}) { return this._reg(id, { type: 'cone3d', deps: [a, b], update: null }); }
+  createText3D(id, x, y, z, text, o = {}) { return this._reg(id, { type: 'text3d', deps: [], update: null }); }
+  createLabel3D(t, text) { const e = this.entries.get(t); if (!e) throw new Error(`标注目标「${t}」不存在`); return e; }
+  setStyle(t, o = {}) { const e = this.entries.get(t); if (!e) throw new Error(`目标「${t}」不存在`); return e; }
+  remove(id) { return this.entries.delete(id); }
+  clear() { this.entries.clear(); this.points.clear(); }
+  notifyPointMoved() {}
+}
+
+console.log('3D 画板无头回归');
+console.log('— 用例 1：正方体命令集 —');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  const res = exe.execute(DEMO_CUBE);
+  assert(res.length === DEMO_CUBE.length, `返回结果数 == 命令数 (${DEMO_CUBE.length})`);
+  assert(res.every((r) => r.ok), '全部命令执行成功');
+  assert(board.entries.size === DEMO_CUBE.length, 'entries 注册数 == 命令数');
+}
+
+console.log('— 用例 2：四棱锥命令集 —');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  const res = exe.execute(DEMO_PYRAMID);
+  assert(res.length === DEMO_PYRAMID.length, `返回结果数 == 命令数 (${DEMO_PYRAMID.length})`);
+  assert(res.every((r) => r.ok), '全部命令执行成功');
+  // 四棱锥结构断言
+  const pointCount = [...board.entries.values()].filter((e) => e.type === 'point3d').length;
+  const faceCount = [...board.entries.values()].filter((e) => e.type === 'polygon3d').length;
+  const edgeCount = [...board.entries.values()].filter((e) => e.type === 'segment3d').length;
+  assert(pointCount === 5, '顶点数 == 5（底面 4 + 锥顶 1）');
+  assert(faceCount === 5, '面数 == 5（底面 1 + 侧面 4）');
+  assert(edgeCount === 4, '侧棱数 == 4');
+  // 依赖闭环：侧面 fS1 依赖 P1/P2/A 都已定义
+  assert([...board.entries.get('fS1').deps].sort().join(',') === 'A,P1,P2', 'fS1 依赖 P1/P2/A 均存在');
+}
+
+console.log('— 健壮性：依赖缺失 / id 重复 —');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  const bad = exe.execute([
+    { op: 'point3d', id: 'X', x: 0, y: 0, z: 0 },
+    { op: 'segment3d', id: 's', from: 'X', to: 'GHOST' }, // GHOST 未定义
+  ]);
+  assert(bad[0].ok === true, '点 X 创建成功');
+  assert(bad[1].ok === false && /不存在/.test(bad[1].error), '引用未定义 id 被捕获为 ok:false');
+}
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  const dup = exe.execute([
+    { op: 'point3d', id: 'A', x: 0, y: 0, z: 0 },
+    { op: 'point3d', id: 'A', x: 1, y: 0, z: 0 },
+  ]);
+  assert(dup[0].ok === true, '首个 A 创建成功');
+  assert(dup[1].ok === false && /重复/.test(dup[1].error), '重复 id 被捕获为 ok:false');
+}
+
+console.log('— 持久化：moves() / applyMoves() 往返 —');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  exe.execute([{ op: 'point3d', id: 'A', x: 1, y: 0, z: 0 }]);
+  const before = exe.moves();
+  assert(before.length === 1 && before[0].id === 'A' && before[0].x === 1, 'moves() 读出当前坐标');
+  exe.applyMoves([{ id: 'A', x: 2.5, y: 0.5, z: -1 }]);
+  const after = exe.moves();
+  assert(after[0].x === 2.5 && after[0].y === 0.5 && after[0].z === -1, 'applyMoves() 后 moves() 反映新坐标');
+  assert(board.points.get('A').x === 2.5, '假 board 坐标随 applyMoves 更新');
+}
+
+console.log('— 会话描述 —');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  exe.execute(DEMO_PYRAMID);
+  assert(/P1\(point3d\)/.test(exe.describe()), 'describe() 列出现有图元');
+}
+
+console.log(`\n结果：通过 ${passed}，失败 ${failed}`);
+process.exit(failed === 0 ? 0 : 1);

@@ -28,6 +28,10 @@
       padding: 6px 10px; cursor: pointer; font-size: 13px; color: #334155;
     }
     .b3d-views button:hover { background: #e9edf6; }
+    .b3d-views select {
+      border: 1px solid #d8dee9; background: #f4f6fb; border-radius: 8px;
+      padding: 6px 8px; cursor: pointer; font-size: 13px; color: #334155;
+    }
     .b3d-status { font-size: 13px; color: #64748b; min-width: 84px; text-align: right; }
     .b3d-host { position: relative; flex: 1 1 auto; min-height: 0; }
     .b3d-hint {
@@ -62,6 +66,10 @@
       <button class="back" id="btnBack">← 返回</button>
       <input id="docName" class="doc-name" title="画板名称" />
       <div class="b3d-views">
+        <select id="demoPick" title="切换演示场景">
+          <option value="cube">正方体</option>
+          <option value="pyramid">四棱锥</option>
+        </select>
         <button data-view="iso">等轴</button>
         <button data-view="front">正视</button>
         <button data-view="top">俯视</button>
@@ -89,6 +97,7 @@
 
   <script type="module">
     import { Board3D, createBoard3DExecutor } from './js/board3d.js';
+    import { DEMO_CUBE, DEMO_PYRAMID, DEMOS } from './js/board3d-demos.js';
 
     const params = new URLSearchParams(location.search);
     const fileId0 = params.get('id');
@@ -105,35 +114,9 @@
 
     function setStatus(text) { saveStatus.textContent = text; }
 
-    // ---------- 默认演示：正方体（回归用例「画正方体」）----------
-    const DEMO_CUBE = [
-      { op: 'point3d', id: 'A', x: 0, y: 0, z: 0, label: 'A' },
-      { op: 'point3d', id: 'B', x: 3, y: 0, z: 0, label: 'B' },
-      { op: 'point3d', id: 'C', x: 3, y: 3, z: 0, label: 'C' },
-      { op: 'point3d', id: 'D', x: 0, y: 3, z: 0, label: 'D' },
-      { op: 'point3d', id: 'E', x: 0, y: 0, z: 3, label: 'E' },
-      { op: 'point3d', id: 'F', x: 3, y: 0, z: 3, label: 'F' },
-      { op: 'point3d', id: 'G', x: 3, y: 3, z: 3, label: 'G' },
-      { op: 'point3d', id: 'H', x: 0, y: 3, z: 3, label: 'H' },
-      { op: 'segment3d', id: 'sAB', from: 'A', to: 'B' },
-      { op: 'segment3d', id: 'sBC', from: 'B', to: 'C' },
-      { op: 'segment3d', id: 'sCD', from: 'C', to: 'D' },
-      { op: 'segment3d', id: 'sDA', from: 'D', to: 'A' },
-      { op: 'segment3d', id: 'sEF', from: 'E', to: 'F' },
-      { op: 'segment3d', id: 'sFG', from: 'F', to: 'G' },
-      { op: 'segment3d', id: 'sGH', from: 'G', to: 'H' },
-      { op: 'segment3d', id: 'sHE', from: 'H', to: 'E' },
-      { op: 'segment3d', id: 'sAE', from: 'A', to: 'E' },
-      { op: 'segment3d', id: 'sBF', from: 'B', to: 'F' },
-      { op: 'segment3d', id: 'sCG', from: 'C', to: 'G' },
-      { op: 'segment3d', id: 'sDH', from: 'D', to: 'H' },
-      { op: 'polygon3d', id: 'fBottom', points: ['A', 'B', 'C', 'D'], color: '#a5b4fc' },
-      { op: 'polygon3d', id: 'fTop', points: ['E', 'F', 'G', 'H'], color: '#a5b4fc' },
-      { op: 'polygon3d', id: 'fFront', points: ['A', 'B', 'F', 'E'], color: '#bfdbfe' },
-      { op: 'polygon3d', id: 'fBack', points: ['D', 'C', 'G', 'H'], color: '#bfdbfe' },
-      { op: 'polygon3d', id: 'fLeft', points: ['A', 'D', 'H', 'E'], color: '#c7d2fe' },
-      { op: 'polygon3d', id: 'fRight', points: ['B', 'C', 'G', 'F'], color: '#c7d2fe' },
-    ];
+    // ---------- 默认演示（回归用例「画正方体 / 四棱锥」）----------
+    // 演示场景说明已抽到 js/board3d-demos.js，浏览器与无头回归测试共用同一事实源。
+    const DEMO_MAP = { cube: DEMO_CUBE, pyramid: DEMO_PYRAMID };
 
     function load(commands, movesArr) {
       exe.execute([{ op: 'clear' }]);
@@ -143,6 +126,16 @@
       if (Array.isArray(movesArr) && movesArr.length) exe.applyMoves(movesArr);
     }
 
+    // 演示场景选择：?demo=pyramid 可直达四棱锥；默认正方体
+    const demoParam = (params.get('demo') || 'cube').toLowerCase();
+    const initDemoKey = DEMO_MAP[demoParam] ? demoParam : 'cube';
+
+    function loadDemo(key) {
+      currentCmds = DEMO_MAP[key] || DEMO_CUBE;
+      load(currentCmds);
+      setStatus('演示：' + (DEMOS[key] ? DEMOS[key].name : '正方体'));
+    }
+
     if (file && file.content && Array.isArray(file.content.cmds)) {
       nameInput.value = file.name;
       currentCmds = file.content.cmds;
@@ -150,9 +143,7 @@
       setStatus('已载入');
     } else {
       nameInput.value = file ? file.name : '立体画板（演示）';
-      currentCmds = DEMO_CUBE;
-      load(DEMO_CUBE);
-      setStatus('演示：正方体');
+      loadDemo(initDemoKey);
     }
 
     // ---------- 保存（新建或更新本地文件）----------
@@ -186,6 +177,13 @@
     document.getElementById('btnReset').addEventListener('click', () => board.viewReset());
     document.querySelectorAll('.b3d-views button[data-view]').forEach((b) => {
       b.addEventListener('click', () => board.viewPreset(b.dataset.view));
+    });
+    const demoPick = document.getElementById('demoPick');
+    demoPick.value = initDemoKey;
+    demoPick.addEventListener('change', () => {
+      board.clear();           // 清空当前（演示）内容
+      loadDemo(demoPick.value);
+      fileRef = null;          // 演示场景未关联任何已保存文件
     });
     document.getElementById('btnBack').addEventListener('click', () => { location.href = 'index.html'; });
 

@@ -1,0 +1,4 @@
+# 本地依赖（仅用于无头测试，不参与 Cloudflare Pages 静态部署）
+node_modules/
+package-lock.json
+package.json
