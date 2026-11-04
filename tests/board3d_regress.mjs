@@ -122,5 +122,58 @@ console.log('— 会话描述 —');
   assert(/P1\(point3d\)/.test(exe.describe()), 'describe() 列出现有图元');
 }
 
+console.log('— 用例 3：空间几何体命令集（球 / 圆柱 / 圆锥 / 圆 / 直线）—');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  const res = exe.execute([
+    { op: 'point3d', id: 'O', x: 0, y: 0, z: 0 },
+    { op: 'point3d', id: 'T', x: 0, y: 4, z: 0 },
+    { op: 'sphere3d', id: 'S', center: 'O', radius: 2 },
+    { op: 'cylinder3d', id: 'Cy', base: 'O', top: 'T', radius: 1 },
+    { op: 'cone3d', id: 'Co', apex: 'T', base: 'O', radius: 1.5 },
+    { op: 'circle3d', id: 'Ci', center: 'O', radius: 3, normal: [0, 1, 0] },
+    { op: 'line3d', id: 'Ln', through: ['O', 'T'] },
+  ]);
+  assert(res.length === 7, '返回结果数 == 命令数 (7)');
+  assert(res.every((r) => r.ok), '球/圆柱/圆锥/圆/直线 全部执行成功');
+  assert(board.entries.get('S').type === 'sphere3d', 'sphere3d 注册成功');
+  assert([...board.entries.get('S').deps].join(',') === 'O', 'sphere3d 依赖 center=O');
+  assert(board.entries.get('Cy').type === 'cylinder3d', 'cylinder3d 注册成功');
+  assert([...board.entries.get('Cy').deps].sort().join(',') === 'O,T', 'cylinder3d 依赖 base/top = O,T');
+  assert(board.entries.get('Co').type === 'cone3d', 'cone3d 注册成功');
+  assert([...board.entries.get('Co').deps].sort().join(',') === 'O,T', 'cone3d 依赖 apex/base = O,T');
+  assert(board.entries.get('Ci').type === 'circle3d', 'circle3d 注册成功');
+  assert(board.entries.get('Ln').type === 'line3d', 'line3d 注册成功');
+  assert([...board.entries.get('Ln').deps].sort().join(',') === 'O,T', 'line3d 依赖 through = O,T');
+}
+
+console.log('— 用例 4：文字 / 标注 / 样式 —');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  const res = exe.execute([
+    { op: 'point3d', id: 'P', x: 1, y: 2, z: 3 },
+    { op: 'text3d', id: 'Tx', x: 0, y: 0, z: 0, text: 'hello' },
+    { op: 'label3d', target: 'P', text: '顶点P' },
+    { op: 'style3d', target: 'P', color: '#ff0000' },
+  ]);
+  assert(res.length === 4, '返回结果数 == 命令数 (4)');
+  assert(res.every((r) => r.ok), 'text3d/label3d/style3d 全部执行成功');
+  assert(board.entries.get('Tx').type === 'text3d', 'text3d 注册成功');
+  assert(board.entries.get('P') != null, 'label3d 作用于已存在的目标 P');
+  assert(board.entries.size === 2, 'style3d 不新增图元（仅 P + Tx 两个元素）');
+}
+
+console.log('— 健壮性：体命令缺依赖 / 标注目标缺失 —');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  const r = exe.execute([{ op: 'sphere3d', id: 'S', center: 'NOPE', radius: 1 }]);
+  assert(r[0].ok === false && /不存在/.test(r[0].error), 'sphere3d 引用未定义 center 被捕获');
+  const r2 = exe.execute([{ op: 'label3d', target: 'NOPE', text: 'x' }]);
+  assert(r2[0].ok === false && /不存在/.test(r2[0].error), 'label3d 引用未定义 target 被捕获');
+}
+
 console.log(`\n结果：通过 ${passed}，失败 ${failed}`);
 process.exit(failed === 0 ? 0 : 1);
