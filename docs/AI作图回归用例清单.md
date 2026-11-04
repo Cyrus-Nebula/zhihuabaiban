@@ -38,6 +38,7 @@
 |---|------|-----------|------|------|
 | 12 | 参数 a 控制抛物线开口 | `slider` a → `function` expr:"a*x^2"（slider 必须在前） | ✅ | 滑动条 id 必须先于引用它的命令 |
 | 13 | 半径随滑动条 r 变 | `slider` r → `circle` radius:"r" | ✅ | radius 写字符串 id 触发联动 |
+| 23 | 画好参数演示后自动播放 | `slider` a → `function` expr:"a*x^2" → `animate` id:"a"（或 ids:["a","b"] / "__all__"，配 pingpong、speed） | ✅ | animate 必须放在滑动条定义之后；它不是画板元素，不进文档 |
 
 ## 易错构造（本次增量重点 few-shot）
 
@@ -60,7 +61,7 @@
 
 ## 协议扩展 TODO（不在本轮，供下一步）
 - [本轮已完成] `reflect` / `rotate` / `translate`：原生几何变换 op（见用例 17/21/22 与 `js/executor.js` 的 transform 分支）。
-- `animate`：配合现有 slider 的参数自动播放命令（当前靠前端「▶ 动画」按钮兜底）。
+- [本轮已完成] `animate`：自动播放参数动画命令（见用例 23 与 `js/executor.js` 的 animate 分支、`js/board.js` 的 animPlayTargets；前端复用既有滑动条动画引擎）。
 - read-back 闭环：在 `functions/api/ai/board.js` + `ai/board-backend.js` 把 `measure` 的 `value` 回传给 LLM，实现"测量→与预期不符则自动修正"，对标大角几何 MCP 式读画板状态后改图。
 
 ## 已知限制

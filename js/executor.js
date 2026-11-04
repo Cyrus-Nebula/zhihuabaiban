@@ -30,12 +30,14 @@
  *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
  *   transform {id,of,type,by?|angle?|center?|axis?}  几何变换：把 of 元素平移/旋转/反射成一份新副本（以 id 命名），
  *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?)；支持 point/segment/line/ray/polygon/circle
+ *   animate    {id|ids,pingpong?,speed?}             动画：让指定滑动条（id 或 ids，或 "__all__"）自动连续改值，依赖它的几何实时播放；speed: slow/normal/fast，pingpong:true 往复。仅前端播放，不进文档
  *
  * TODO(下一步·不在本轮): 1) 在 functions/api/ai/board.js + ai/board-backend.js 接入"执行命令→把 measure 的
  *     value 回传给 LLM"的 read-back 闭环，实现"测量→与预期不符则自动修正"（对标大角几何 MCP 式改图）；
- *   2) [本轮已完成] 协议新增几何变换 op（reflect/rotate/translate），原生支持"几何变换"作图，
- *      例：{"op":"transform","id":"tri2","of":"tri","type":"rotate","angle":90,"center":"O"}；
- *   3) 协议新增 animate 命令，配合现有 slider 做参数自动播放（当前靠前端「▶ 动画」按钮兜底）。
+ *   2) [本轮已完成] 协议新增几何变换 op（reflect/rotate/translate）与 animate 命令（自动播放参数动画，
+ *      原生支持"几何变换 / 动态演示"作图，例：{"op":"transform","id":"tri2","of":"tri","type":"rotate","angle":90}、
+ *      {"op":"animate","id":"a","pingpong":true,"speed":"normal"}）；
+ *   3) 继续打磨 read-back 闭环的自动修正策略与前端可视化。
  *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
@@ -587,6 +589,27 @@ export function createExecutor(board) {
         }
         throw new Error('transform 暂不支持 elType=' + et + '（目前支持 point/segment/line/polygon/circle）');
       }
+      case 'animate': {
+        // 动画命令（本轮新增，对标大角几何「滑动条 + 自动播放」）：
+        // 让指定滑动条(id 或 ids，或 "__all__")自动连续改值，依赖它的点/圆/曲线随之实时重算，
+        // 形成可讲解的动态演示。执行器只做校验并返回目标，真正的播放由前端按既有动画引擎驱动
+        // （见 js/board.js 的 animPlayTargets）。不注册任何画板元素、不进文档/历史。
+        //   {"op":"animate","id":"a"}                 播放单个滑动条
+        //   {"op":"animate","ids":["a","b"]}          同时播放多个
+        //   {"op":"animate","ids":"__all__"}          播放全部滑动条
+        //   {"op":"animate","id":"a","pingpong":true,"speed":"normal"}  往复 / 速度(slow|normal|fast)
+        const ids = cmd.ids != null
+          ? (Array.isArray(cmd.ids) ? cmd.ids : [cmd.ids])
+          : (cmd.id != null ? [cmd.id] : []);
+        if (!ids.length) throw new Error('animate 必须指定 id 或 ids');
+        const bad = ids.filter((id) => {
+          const el = registry.get(id);
+          return !(el && el.elType === 'slider');
+        });
+        if (bad.length) throw new Error('animate 目标不是滑动条或不存在：' + bad.join(', '));
+        const speed = ['slow', 'normal', 'fast'].includes(cmd.speed) ? cmd.speed : 'normal';
+        return { ids: ids.filter((id) => registry.has(id)), pingpong: cmd.pingpong === true, speed };
+      }
       default:
         throw new Error('未知命令 op: ' + cmd.op);
     }
@@ -625,6 +648,11 @@ export function createExecutor(board) {
       // 测量命令：build 已在画板生成临时读数文本（副作用），数值经 value 回传；不进注册表/文档
       if (cmd.op === 'measure') {
         out.push({ ok: true, op: 'measure', id: cmd.id || null, value: built && built.__measure ? built.value : NaN });
+        continue;
+      }
+      if (cmd.op === 'animate') {
+        // 动画是纯前端动作（驱动既有滑动条播放），不注册画板元素；把目标回传给前端去启动播放
+        out.push({ ok: true, op: 'animate', ids: (built && built.ids) || [], pingpong: !!(built && built.pingpong), speed: (built && built.speed) || 'normal' });
         continue;
       }
       const el = built;

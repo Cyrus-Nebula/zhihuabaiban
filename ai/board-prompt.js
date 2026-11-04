@@ -8,9 +8,9 @@
  *
  * TODO(下一步): 1) board-backend.js 接入 read-back 闭环——执行命令后把 measure 的 value
  *   回传给 LLM，实现"测量→与预期不符则自动修正"（对标大角几何 MCP 式读画板状态后改图）；
- *   2) [本轮已完成] 协议补几何变换 op（reflect/rotate/translate）：原生支持"几何变换"作图，
- *      见下方命令协议与例4；js/executor.js 同步加了 transform 分支与 REF_FIELDS 依赖。
- *   3) 协议补 animate 命令做参数自动播放。
+ *   2) [本轮已完成] 协议补几何变换 op（reflect/rotate/translate）与 animate 命令（自动播放参数动画），
+ *      见下方命令协议与例4 / 滑动条章节；js/executor.js 同步加了 transform 与 animate 分支。
+ *   3) 继续打磨 read-back 闭环的自动修正策略与前端可视化。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -55,6 +55,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - parallel   {"op":"parallel","id":"pl1","of":"l1","through":"A"}    平行线
 - function   {"op":"function","id":"f1","expr":"x^2","from":-5,"to":5}  函数曲线（from/to 是定义域，默认 -10~10；可选 "ymin"/"ymax" 做值域裁剪，如只要抛物线在 x 轴上方的部分：{"op":"function","id":"f1","expr":"x^2-4","from":-5,"to":5,"ymin":0}）
 - slider     {"op":"slider","id":"a","x1":-8,"y1":-9,"x2":-2,"y2":-9,"min":0,"max":5,"value":1,"step":0.1}  滑动条（用户可拖动的参数控件；x1,y1→x2,y2 是它在画板上的位置，省略会自动排到左下角）
+- animate    {"op":"animate","id":"a"} | {"op":"animate","ids":["a","b"]} | {"op":"animate","ids":"__all__","pingpong":true,"speed":"normal"}  自动播放动画（让指定滑动条自动连续改值，依赖它的几何实时演示；speed: slow/normal/fast；pingpong:true 往复；仅前端播放，不进画板文档）
 - text       {"op":"text","id":"t1","x":0,"y":5,"text":"说明文字"}    自由文本
 - angle      {"op":"angle","id":"ang","points":["A","B","C"]}        角（B 是顶点，画出角标记）
 - label      {"op":"label","target":"A","text":"A"}                  设置/修改标签
@@ -78,6 +79,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - step 省略（或 <=0）表示连续变化；给了 step 就按步长跳档（如 0.1）。
 - 用户没要求动态效果时不要加滑动条，保持图形简洁。
 - 滑动条做好后，用户可点顶部「▶ 动画」按钮让它自动播放（速度慢/中/快、往复来回），所以做"动态演示/动画"需求时用滑动条表达参数变化即可，不要生成多张静态图替代。
+- 你也可以在作图命令里直接发一条 animate 命令来自动开播，不必等用户点按钮：画好滑动条后追加 {"op":"animate","id":"a"}（单个）、{"op":"animate","ids":["a","b"]}（多个）或 {"op":"animate","ids":"__all__","pingpong":true,"speed":"normal"}（全部、往复、速度）。用户说"动起来 / 播放 / 演示一下参数变化"时优先用这条命令。
 
 # 函数表达式语法（JSXGraph）
 - 幂用 ^：x^2、x^3；乘号不可省略：2*x+1

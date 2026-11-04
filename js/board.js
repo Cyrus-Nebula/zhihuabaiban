@@ -227,6 +227,25 @@ function animStop() {
   animPlayBtn.textContent = '▶ 播放';
   animBtn.textContent = '▶ 动画';
 }
+/** 按命令触发动画（AI 的 animate 命令用）：播放指定滑动条，ids 可为数组、"__all__" 或单个 id。
+ *  复用既有动画引擎（anim/animTick），不联网、不改存档，与顶部「▶ 动画」按钮行为一致。 */
+function animPlayTargets(ids, opts) {
+  if (blockIfReplaying()) return;
+  ids = ids === '__all__' ? sliderIds() : (Array.isArray(ids) ? ids : [ids]);
+  opts = opts || {};
+  if (anim) animStop();
+  const ranges = {}, vals = {};
+  for (const id of ids) {
+    const r = sliderRange(id);
+    if (r) { ranges[id] = r; vals[id] = r.cur; }
+  }
+  if (!Object.keys(ranges).length) { toast('animate 无可播放的滑动条'); return; }
+  animPeriod = ANIM_PERIOD[opts.speed] || ANIM_PERIOD.normal;
+  anim = { ids: Object.keys(ranges), ranges, vals, dir: 1, pingpong: !!opts.pingpong, raf: 0, last: 0 };
+  animPlayBtn.textContent = '⏸ 暂停';
+  animBtn.textContent = '⏸ 动画中';
+  anim.raf = requestAnimationFrame(animTick);
+}
 function isSliderId(id) {
   const el = id ? executor.registry.get(id) : null;
   return !!(el && el.elType === 'slider');
@@ -398,10 +417,14 @@ function runCommands(cmds) {
   const r = executor.execute(list);
   list.forEach((cmd, i) => {
     if (!(r[i] && r[i].ok)) return;
-    if (cmd.op === 'measure') return; // 测量/验证是临时读数，不进文档与画板历史
+    if (cmd.op === 'measure' || cmd.op === 'animate') return; // 临时读数/动作，不进文档与画板历史
     if (cmd.op === 'clear') doc.commands = [];
     doc.commands.push(cmd);
   });
+  // 触发动画命令（不进文档，纯前端播放）
+  for (const x of r) {
+    if (x && x.ok && x.op === 'animate') animPlayTargets(x.ids, { pingpong: x.pingpong, speed: x.speed });
+  }
   const bad = r.filter((x) => !x.ok);
   if (bad.length) toast('命令执行失败：' + bad.map((b) => b.error).join('；'));
   scheduleSave();
@@ -2441,9 +2464,14 @@ async function aiSend() {
       for (const cmd of data.commands) {
         const r = executor.execute([cmd]);
         if (r[0] && r[0].ok) {
-          if (cmd.op === 'clear') doc.commands = [];
-          doc.commands.push(cmd);
-          okCount++;
+          if (cmd.op === 'measure' || cmd.op === 'animate') {
+            // 临时读数 / 动画动作：不进 doc.commands（避免污染保存与重放），动画直接启动播放
+            if (cmd.op === 'animate') animPlayTargets(r[0].ids, { pingpong: r[0].pingpong, speed: r[0].speed });
+          } else {
+            if (cmd.op === 'clear') doc.commands = [];
+            doc.commands.push(cmd);
+            okCount++;
+          }
         } else if (r[0]) {
           errs.push(`${cmd.op || '?'}(${r[0].error})`);
         }
