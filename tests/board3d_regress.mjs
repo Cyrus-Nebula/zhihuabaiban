@@ -13,11 +13,12 @@
  *       所有空间计算由假 board 记录，不触碰真实渲染。node_modules/three 已被 .gitignore 排除。
  */
 
-import { createBoard3DExecutor } from '../js/board3d.js';
+import { createBoard3DExecutor, lineEndpoints } from '../js/board3d.js';
 import { DEMO_CUBE, DEMO_PYRAMID } from '../js/board3d-demos.js';
 
 let passed = 0;
 let failed = 0;
+const LINE_RADIUS_FOR_TEST = 14; // 与 js/board3d.js 的 LINE_RADIUS（AXIS_LEN*2）一致
 function assert(cond, msg) {
   if (cond) { passed++; console.log('  ✓ ' + msg); }
   else { failed++; console.error('  ✗ ' + msg); }
@@ -198,6 +199,27 @@ console.log('— 用例 5：测量 measure3d（距离 / 夹角，纯计算不污
   const rKind = exe.execute([{ op: 'measure3d', kind: 'warp', of: ['A', 'B'] }]);
   assert(rKind[0].ok === false && /kind/.test(rKind[0].error), 'measure3d 未知 kind 被捕获');
   assert(board.entries.size === 4, 'measure3d 不新增图元（仍只有 4 个点）');
+}
+
+console.log('— 用例 6：直线无限延伸（裁剪到参考系球）—');
+{
+  // 过原点 (0,0,0) 与 (0,4,0) 的直线沿 Y 轴；裁剪半径 14 → 端点应为 (0,-14,0) 与 (0,14,0)
+  const e = lineEndpoints({ x: 0, y: 0, z: 0 }, { x: 0, y: 4, z: 0 }, LINE_RADIUS_FOR_TEST);
+  assert(!!e, 'Y 轴直线返回两个端点（非 null）');
+  assert(Math.abs(e[0].y - (-14)) < 1e-6 && Math.abs(e[1].y - 14) < 1e-6, 'Y 轴直线端点裁剪到 ±14');
+  assert(Math.abs(e[0].x) < 1e-9 && Math.abs(e[0].z) < 1e-9 && Math.abs(e[1].x) < 1e-9 && Math.abs(e[1].z) < 1e-9, 'X/Z 分量恒为 0');
+  // 平行于 Z 轴、x=1 的直线：端点 z = ±√(14²-1²)≈±13.964，x 偏移保留
+  const e2 = lineEndpoints({ x: 1, y: 0, z: 0 }, { x: 1, y: 0, z: 5 }, 14);
+  const zr = Math.sqrt(14 * 14 - 1 * 1);
+  assert(Math.abs(e2[0].z - (-zr)) < 1e-6 && Math.abs(e2[1].z - zr) < 1e-6, '平行于 Z 的直线端点裁剪正确');
+  assert(Math.abs(e2[0].x - 1) < 1e-9 && Math.abs(e2[1].x - 1) < 1e-9, 'x 偏移在两端点保留');
+  // 退化：两点重合 → 返回 null（方向未定义）
+  const e3 = lineEndpoints({ x: 2, y: 2, z: 2 }, { x: 2, y: 2, z: 2 }, 14);
+  assert(e3 === null, '两点重合返回 null（方向未定义）');
+  // 中点必落在裁剪端点之间（任意 t∈[t1,t2] 都在球内或边界）
+  const m = lineEndpoints({ x: 1, y: 2, z: 3 }, { x: -2, y: 0, z: 1 }, LINE_RADIUS_FOR_TEST);
+  const mx = (m[0].x + m[1].x) / 2, my = (m[0].y + m[1].y) / 2, mz = (m[0].z + m[1].z) / 2;
+  assert(Math.hypot(mx, my, mz) <= LINE_RADIUS_FOR_TEST + 1e-6, '线段中点在裁剪球内（无限直线被球包住）');
 }
 
 console.log(`\n结果：通过 ${passed}，失败 ${failed}`);

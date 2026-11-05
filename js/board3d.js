@@ -32,6 +32,7 @@ const COLORS = {
 
 const AXIS_LEN = 7;     // 主轴长度（单位：坐标格）
 const TICK = 1;         // 刻度间隔
+const LINE_RADIUS = AXIS_LEN * 2; // 直线裁剪到该半径的球（覆盖整个参考系，近似无限直线）
 
 /** 用 canvas 纹理做始终朝向相机的文字标签（Sprite），避免再 vendored 一个 CSS2DRenderer */
 function makeLabelSprite(text, opts = {}) {
@@ -72,6 +73,35 @@ function orientCylinder(mesh, a, b) {
   } else {
     mesh.scale.set(1, 1e-4, 1);
   }
+}
+
+/**
+ * 过 a、b 两点的无限直线，被「球心在原点、半径为 radius」的球裁剪后的两端点。
+ * 纯几何、无副作用，可被无头测试直接验证；替代原先「中点 + 固定 4 单位」的有限长近似，
+ * 让直线真正撑满整个参考系（近似无限直线），且在拖拽 a/b 时端点随参考系边界实时更新。
+ *
+ * 解 |a + t·d|² = radius²（其中 d = b - a）→ (d·d)t² + 2(a·d)t + (a·a - r²) = 0；
+ * 判别式 = (a·d)² - (d·d)(a·a - r²) = |d|²r² - |a×d|² ≥ 0，根恒为实数。
+ * 当 a、b 重合（d 为零向量、无法定方向）时返回 null。
+ *
+ * @param {THREE.Vector3|{x,y,z}} a 直线上一点
+ * @param {THREE.Vector3|{x,y,z}} b 直线上另一点
+ * @param {number} radius 裁剪球半径
+ * @returns {[THREE.Vector3, THREE.Vector3]|null}
+ */
+export function lineEndpoints(a, b, radius) {
+  const ax = a.x, ay = a.y, az = a.z;
+  const dx = b.x - ax, dy = b.y - ay, dz = b.z - az;
+  const dd = dx * dx + dy * dy + dz * dz;
+  if (dd < 1e-12) return null; // 两点重合，方向未定义
+  const ad = ax * dx + ay * dy + az * dz;   // a·d
+  const aa = ax * ax + ay * ay + az * az;   // a·a
+  const disc = ad * ad - dd * (aa - radius * radius);
+  const sq = Math.sqrt(Math.max(0, disc));
+  const t1 = (-ad - sq) / dd;
+  const t2 = (-ad + sq) / dd;
+  const at = (t) => new THREE.Vector3(ax + dx * t, ay + dy * t, az + dz * t);
+  return [at(t1), at(t2)];
 }
 
 export class Board3D {
@@ -214,7 +244,7 @@ export class Board3D {
     return entry;
   }
 
-  // 直线：以两个已知点确定方向，向两端各延长 4 个单位（无限直线的可视近似）
+  // 直线：以两个已知点确定方向，裁剪到参考系球（LINE_RADIUS），近似无限直线
   createLine3D(id, aId, bId, opts = {}) {
     if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
     const color = opts.color || COLORS.line;
@@ -226,11 +256,11 @@ export class Board3D {
       obj: mesh, type: 'line3d', deps: [aId, bId],
       update: (posOf) => {
         const a = posOf(aId), b = posOf(bId);
-        const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-        const dir = new THREE.Vector3().subVectors(b, a);
-        const len = dir.length() || 1;
-        const far = dir.clone().normalize().multiplyScalar(4);
-        orientCylinder(mesh, mid.clone().sub(far), mid.clone().add(far));
+        // 无限直线裁剪到参考系球（LINE_RADIUS）：端点随 a/b 拖拽与参考系边界实时更新
+        const ends = lineEndpoints(a, b, LINE_RADIUS);
+        const p1 = ends ? ends[0] : a;
+        const p2 = ends ? ends[1] : b;
+        orientCylinder(mesh, p1, p2);
       },
     };
     this.scene.add(mesh);
