@@ -6,6 +6,7 @@
  * - 参考系：X/Y/Z 坐标轴（带刻度与字母标签）+ XZ 平面网格
  * - 图元：point3d / segment3d / line3d / polygon3d / sphere3d / circle3d /
  *         cylinder3d / cone3d / text3d / label3d
+ * - 测量：measure3d（distance 两点距离 / angle 三点夹角，纯计算、不污染画板）
  * - 交互：点可拖拽——屏幕射线反投影到「工作面」（过点当前高度的水平面），
  *         依赖该点的线段/面/体随之实时联动（动态几何）
  * - 视角：重置 / 正视 / 俯视 / 侧视 / 等轴
@@ -521,8 +522,57 @@ export class Board3D {
 /**
  * 3D 命令执行器（与 2D createExecutor 平行，互不复用代码）。
  * 协议命令：point3d / segment3d / line3d / polygon3d / sphere3d / circle3d /
- *           cylinder3d / cone3d / text3d / label3d / style3d / clear
+ *           cylinder3d / cone3d / text3d / label3d / style3d / measure3d / clear
+ * measure3d：{op:'measure3d',kind:'distance',of:['A','B']} 或
+ *           {op:'measure3d',kind:'angle',of:['A','B','C']}（B 为顶点），
+ *           返回 {ok,op:'measure3d',kind,value:number}（不创建画板元素）
  */
+/**
+ * measure3d：纯计算的测量命令（不创建画板元素），与 2D measure 平行、互不复用。
+ * - kind:'distance' of:[A,B]    → 两点欧氏距离
+ * - kind:'angle'    of:[A,B,C]  → 以 B 为顶点的夹角（单位：度）
+ * 返回 {ok,op:'measure3d',kind,value}；测量目标须为已定义的点（引用未定义 id 被捕获为 ok:false）。
+ */
+function runMeasure3D(board, cmd, requireId, round) {
+  const kind = cmd.kind || 'distance';
+  const ids = Array.isArray(cmd.of) ? cmd.of : [];
+  try {
+    if (kind === 'distance') {
+      if (ids.length < 2) throw new Error('measure3d distance 需要 of:[A,B]');
+      const a = requirePoint(board, ids[0], requireId);
+      const b = requirePoint(board, ids[1], requireId);
+      const d = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+      return { ok: true, op: 'measure3d', kind, value: round(d) };
+    }
+    if (kind === 'angle') {
+      if (ids.length < 3) throw new Error('measure3d angle 需要 of:[A,B,C]（B 为顶点）');
+      const a = requirePoint(board, ids[0], requireId);
+      const bv = requirePoint(board, ids[1], requireId);
+      const c = requirePoint(board, ids[2], requireId);
+      const v1 = [a.x - bv.x, a.y - bv.y, a.z - bv.z];
+      const v2 = [c.x - bv.x, c.y - bv.y, c.z - bv.z];
+      const dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
+      const m1 = Math.hypot(v1[0], v1[1], v1[2]);
+      const m2 = Math.hypot(v2[0], v2[1], v2[2]);
+      if (!m1 || !m2) throw new Error('测量向量长度为零，无法求夹角');
+      const cos = Math.max(-1, Math.min(1, dot / (m1 * m2)));
+      const ang = Math.acos(cos) * 180 / Math.PI;
+      return { ok: true, op: 'measure3d', kind, value: round(ang) };
+    }
+    throw new Error('未知 measure3d.kind: ' + kind);
+  } catch (e) {
+    return { ok: false, op: 'measure3d', kind, error: String((e && e.message) || e) };
+  }
+}
+
+// 取点实时坐标：requireId 校验元素已定义，再从 board.points 取坐标（THREE.Vector3 或 {x,y,z} 皆可）
+function requirePoint(board, id, requireId) {
+  requireId(id);
+  const p = board.points.get(id);
+  if (!p) throw new Error(`测量目标「${id}」无坐标（仅点可被测量）`);
+  return p;
+}
+
 export function createBoard3DExecutor(board) {
   const plainPoints = new Set(); // 可拖拽自由点（坐标随 moves 持久化）
   const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
@@ -591,6 +641,10 @@ export function createBoard3DExecutor(board) {
       if (!cmd || typeof cmd !== 'object') continue;
       try {
         if (cmd.op === 'clear') { board.clear(); plainPoints.clear(); out.push({ ok: true, op: 'clear' }); continue; }
+        if (cmd.op === 'measure3d') {
+          out.push(runMeasure3D(board, cmd, requireId, round));
+          continue;
+        }
         if (!cmd.id && cmd.op !== 'label3d' && cmd.op !== 'style3d') throw new Error('缺少 id');
         build(cmd);
         out.push({ ok: true, op: cmd.op, id: cmd.id || null });

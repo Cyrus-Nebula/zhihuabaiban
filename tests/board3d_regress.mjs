@@ -175,5 +175,30 @@ console.log('— 健壮性：体命令缺依赖 / 标注目标缺失 —');
   assert(r2[0].ok === false && /不存在/.test(r2[0].error), 'label3d 引用未定义 target 被捕获');
 }
 
+console.log('— 用例 5：测量 measure3d（距离 / 夹角，纯计算不污染画板）—');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  exe.execute([
+    { op: 'point3d', id: 'A', x: 0, y: 0, z: 0 },
+    { op: 'point3d', id: 'B', x: 3, y: 0, z: 0 },
+    { op: 'point3d', id: 'C', x: 0, y: 4, z: 0 }, // A(0,0,0) B(3,0,0) C(0,4,0) → 3-4-5 直角三角形
+    { op: 'point3d', id: 'D', x: 1, y: 1, z: 0 },
+  ]);
+  const rAB = exe.execute([{ op: 'measure3d', kind: 'distance', of: ['A', 'B'] }]);
+  assert(rAB[0].ok && rAB[0].value === 3, 'measure3d distance A-B == 3');
+  const rBC = exe.execute([{ op: 'measure3d', kind: 'distance', of: ['B', 'C'] }]);
+  assert(rBC[0].ok && rBC[0].value === 5, 'measure3d distance B-C == 5（3-4-5 斜边）');
+  const rAng = exe.execute([{ op: 'measure3d', kind: 'angle', of: ['B', 'A', 'C'] }]);
+  assert(rAng[0].ok && rAng[0].value === 90, 'measure3d angle ∠BAC == 90°');
+  const rAng2 = exe.execute([{ op: 'measure3d', kind: 'angle', of: ['B', 'A', 'D'] }]);
+  assert(rAng2[0].ok && rAng2[0].value === 45, 'measure3d angle ∠BAD == 45°（cos=1/√2）');
+  const rBad = exe.execute([{ op: 'measure3d', kind: 'distance', of: ['A', 'GHOST'] }]);
+  assert(rBad[0].ok === false && /不存在/.test(rBad[0].error), 'measure3d 引用未定义点被捕获为 ok:false');
+  const rKind = exe.execute([{ op: 'measure3d', kind: 'warp', of: ['A', 'B'] }]);
+  assert(rKind[0].ok === false && /kind/.test(rKind[0].error), 'measure3d 未知 kind 被捕获');
+  assert(board.entries.size === 4, 'measure3d 不新增图元（仍只有 4 个点）');
+}
+
 console.log(`\n结果：通过 ${passed}，失败 ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

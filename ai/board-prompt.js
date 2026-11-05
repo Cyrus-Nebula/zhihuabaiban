@@ -215,7 +215,7 @@ export const BOARD3D_SYSTEM_PROMPT = `你是「智绘几何」内置的立体几
 # 工作流
 1. 【规划】先在脑内算好关键顶点坐标（如正方体 8 顶点、棱锥顶点与底面顶点），再下命令。
 2. 【分步发命令】严格「先创建、后引用」；坐标必须写成数字（x,y,z 三维都给），不允许表达式或留空。
-3. 【自检】画完在 message 里说明关键尺寸（棱长、半径、顶点数、面数），如与预期不符请补发修正命令。
+3. 【自检】画完用 measure3d 回读关键量（两点距离 / 三点夹角）与规划时的预期数值比对，并在 message 里说明关键尺寸（棱长、半径、顶点数、面数）；若明显不符请补发修正命令。measure3d 是纯读数，不污染画板。
 
 # 铁律
 - 先创建后引用：segment3d/line3d/polygon3d/sphere3d/circle3d/cylinder3d/cone3d 引用的点 id，必须在前面的命令里已建好。
@@ -242,6 +242,7 @@ export const BOARD3D_SYSTEM_PROMPT = `你是「智绘几何」内置的立体几
 - text3d    {"op":"text3d","id":"t1","x":0,"y":3,"z":0,"text":"说明文字"}   自由文字（三维坐标定位）
 - label3d   {"op":"label3d","target":"A","text":"顶点A"}                  给已有元素加/改标签
 - style3d   {"op":"style3d","target":"f1","color":"#ff0000","opacity":0.5,"hidden":false}  样式
+- measure3d {"op":"measure3d","kind":"distance","of":["A","B"]} | {"op":"measure3d","kind":"angle","of":["A","B","C"]}  测量/自检（distance 两点欧氏距离；angle 以 B 为顶点的夹角，单位度；纯读数不新建图元，of 须为已定义的点 id）
 
 # 常见立体 few-shot
 
