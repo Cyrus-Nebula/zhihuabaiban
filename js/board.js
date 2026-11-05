@@ -2429,6 +2429,48 @@ function appendLog(role, text) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// 把一次 measure 结果描述成可读串（read-back 闭环用）
+function describeMeasure(m) {
+  const v = m.value;
+  if (!Number.isFinite(v)) return '?';
+  if (m.kind === 'angle') return `∠${Array.isArray(m.of) ? m.of.join('') : ''} = ${v.toFixed(1)}°`;
+  if (m.kind === 'evaluate') return `${m.label || m.expr || 'expr'} @ x=${m.x} = ${v.toFixed(3)}`;
+  return `|${Array.isArray(m.of) ? m.of.join('') : ''}| = ${v.toFixed(2)}`;
+}
+
+// 把一轮自检的测量值拼成回读文本；没有则返回 null（表示本轮 AI 未主动自检，无需二次核对）
+function buildReadback(measures) {
+  if (!measures || !measures.length) return null;
+  return measures.map(describeMeasure).join('\n');
+}
+
+// 批量执行 AI 命令（同一撤销单元内）。paced=true 时逐条停顿，肉眼可见作图过程；
+// 收集 measure 的回读数值，供 read-back 闭环二次核对。返回 {okCount, errs, measures}。
+async function applyAiCommands(cmds, paced) {
+  let okCount = 0;
+  const errs = [];
+  const measures = [];
+  for (const cmd of (Array.isArray(cmds) ? cmds : [])) {
+    const r = executor.execute([cmd]);
+    const res = r && r[0];
+    if (res && res.ok) {
+      if (cmd.op === 'measure') {
+        measures.push({ kind: cmd.kind, of: cmd.of, expr: cmd.expr, x: cmd.x, label: cmd.label, value: res.value });
+      } else if (cmd.op === 'animate') {
+        animPlayTargets(res.ids, { pingpong: res.pingpong, speed: res.speed });
+      } else {
+        if (cmd.op === 'clear') doc.commands = [];
+        doc.commands.push(cmd);
+        okCount++;
+      }
+    } else if (res) {
+      errs.push(`${cmd.op || '?'}(${res.error})`);
+    }
+    if (paced) await sleep(90);
+  }
+  return { okCount, errs, measures };
+}
+
 async function aiSend() {
   if (blockIfReplaying()) return;
   const text = aiInput.value.trim();
@@ -2459,27 +2501,36 @@ async function aiSend() {
     if (Array.isArray(data.commands) && data.commands.length) {
       // 整批 AI 作图 = 一个撤销单元；逐条执行，肉眼可见作图过程
       pushUndo();
-      let okCount = 0;
-      const errs = [];
-      for (const cmd of data.commands) {
-        const r = executor.execute([cmd]);
-        if (r[0] && r[0].ok) {
-          if (cmd.op === 'measure' || cmd.op === 'animate') {
-            // 临时读数 / 动画动作：不进 doc.commands（避免污染保存与重放），动画直接启动播放
-            if (cmd.op === 'animate') animPlayTargets(r[0].ids, { pingpong: r[0].pingpong, speed: r[0].speed });
-          } else {
-            if (cmd.op === 'clear') doc.commands = [];
-            doc.commands.push(cmd);
-            okCount++;
-          }
-        } else if (r[0]) {
-          errs.push(`${cmd.op || '?'}(${r[0].error})`);
-        }
-        await sleep(90);
-      }
-      if (errs.length) appendLog('ai', `已执行 ${okCount} 条命令，${errs.length} 条失败：` + errs.join('；'));
+      const round1 = await applyAiCommands(data.commands, true);
+      if (round1.errs.length) appendLog('ai', `已执行 ${round1.okCount} 条命令，${round1.errs.length} 条失败：` + round1.errs.join('；'));
       saveNow();
       refreshObjects();
+
+      // ---- read-back 闭环（对标大角几何 MCP 式「读画板状态后改图」）----
+      // 执行完后把 measure 回读的数值送回 LLM 二次核对，几何关系与意图不符则自动补发修正命令。
+      // 仅当 AI 主动自检（本轮含 measure）时才多打一次 LLM；其余情况完全走原流程，零额外开销。
+      const rb = buildReadback(round1.measures);
+      if (rb) {
+        try {
+          executor.clearMeasures(); // 清掉上一轮的临时读数，避免堆积
+          const verifyMsg = `【自检回读】你刚才的作图已实际在画板上执行，自检测量结果如下：\n${rb}\n请核对几何关系是否符合用户意图（如该垂直是否垂直、该相等的角/边长是否相等、顶点函数值是否正确、交点是否落在应有的边上）。\n若符合，只输出 {"message":"已自检，符合意图","commands":[]}；若不符，只输出修正命令（移动点/改坐标/加删辅助线/改样式）使图形符合意图，修正后无需再 measure。不要输出任何思考过程或解释文字，只输出 JSON。`;
+          const vres = await fetch(CFG.boardAiEndpoint || '/api/ai/board', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: verifyMsg, model, context: executor.describe() }),
+          });
+          const vdata = await vres.json().catch(() => ({}));
+          if (vres.ok && vdata.ok !== false && Array.isArray(vdata.commands) && vdata.commands.length) {
+            const fix = await applyAiCommands(vdata.commands, false);
+            if (fix.okCount) appendLog('ai', `（已自动自检并修正 ${fix.okCount} 处）`);
+            if (fix.errs.length) appendLog('ai', `自检修正有 ${fix.errs.length} 条失败：` + fix.errs.join('；'));
+            saveNow();
+            refreshObjects();
+          }
+        } catch (ve) {
+          console.warn('自检闭环失败（不影响已出图）', ve);
+        }
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

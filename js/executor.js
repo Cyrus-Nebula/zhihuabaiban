@@ -32,12 +32,15 @@
  *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?)；支持 point/segment/line/ray/polygon/circle
  *   animate    {id|ids,pingpong?,speed?}             动画：让指定滑动条（id 或 ids，或 "__all__"）自动连续改值，依赖它的几何实时播放；speed: slow/normal/fast，pingpong:true 往复。仅前端播放，不进文档
  *
- * TODO(下一步·不在本轮): 1) 在 functions/api/ai/board.js + ai/board-backend.js 接入"执行命令→把 measure 的
- *     value 回传给 LLM"的 read-back 闭环，实现"测量→与预期不符则自动修正"（对标大角几何 MCP 式改图）；
- *   2) [本轮已完成] 协议新增几何变换 op（reflect/rotate/translate）与 animate 命令（自动播放参数动画，
- *      原生支持"几何变换 / 动态演示"作图，例：{"op":"transform","id":"tri2","of":"tri","type":"rotate","angle":90}、
- *      {"op":"animate","id":"a","pingpong":true,"speed":"normal"}）；
- *   3) 继续打磨 read-back 闭环的自动修正策略与前端可视化。
+ * 本文件职责（命令协议执行）：measure 命令回读几何量，并经 execute 结果透传 value（见 case 'measure'），
+ *   画板上生成的临时灰色读数不进注册表/文档（transient）。
+ * 其余分工：
+ *   - 协议新增几何变换 op（reflect/rotate/translate）与 animate 命令：已完成（见 transform / animate 分支）。
+ *   - read-back 闭环（测量→与预期不符则自动修正）：已在 js/board.js 的 aiSend() 前端驱动——执行命令后收集
+ *     measure 的 value，回传给 LLM 二次核对并自动补发修正命令（对标大角几何 MCP 式读画板状态后改图）。
+ *     本文件提供 clearMeasures() 供闭环在每轮自检前清掉上一轮的临时读数，避免堆积。
+ * TODO(下一步): 1) 打磨自动修正策略（放宽/收紧"不符"判定阈值、支持多轮收敛、修正前先 diff 再改）；
+ *   2) 前端可视化：在 AI 面板更清晰地呈现自检读数/修正动作（如"已自检：∠AHB=90.0° ✔ 已修正 1 处"）。
  *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
@@ -226,6 +229,7 @@ export function createExecutor(board) {
   const registry = new Map();    // id -> JXG 元素
   const plainPoints = new Set(); // 可通过 moves 覆盖坐标的自由点
   const sliders = new Set();     // 滑动条 id（值随 moves 一起持久化）
+  const measureEls = [];         // 上一轮自检的临时读数文本，clearMeasures() 清掉，避免堆积
 
   function resolve(ref) {
     if (typeof ref === 'number') return ref;
@@ -529,6 +533,7 @@ export function createExecutor(board) {
           const b = resolve(cmd.of && cmd.of[1]);
           const value = Math.hypot(b.X() - a.X(), b.Y() - a.Y());
           const el = measureReadout('✓ 距离 = ' + value.toFixed(2), [(a.X() + b.X()) / 2 + 0.4, (a.Y() + b.Y()) / 2 + 0.4]);
+          measureEls.push(el);
           return { __measure: true, el, value };
         }
         if (kind === 'angle') {
@@ -537,6 +542,7 @@ export function createExecutor(board) {
           const C = resolve(cmd.of && cmd.of[2]);
           const value = angleDeg(A, B, C);
           const el = measureReadout('✓ ∠ = ' + (Number.isFinite(value) ? value.toFixed(1) + '°' : '?'), [B.X() + 0.4, B.Y() + 0.4]);
+          measureEls.push(el);
           return { __measure: true, el, value };
         }
         if (kind === 'evaluate') {
@@ -544,6 +550,7 @@ export function createExecutor(board) {
           const at = cmd.x != null ? ' @ x=' + cmd.x : '';
           const el = measureReadout('✓ ' + (cmd.label || String(cmd.expr)) + at + ' = ' + (Number.isFinite(value) ? value.toFixed(3) : '?'),
             Array.isArray(cmd.at) ? cmd.at : [Number(cmd.x) || 0, (Number.isFinite(value) ? value : 0) + 0.6]);
+          measureEls.push(el);
           return { __measure: true, el, value };
         }
         throw new Error('measure.kind 只能是 distance / angle / evaluate');
@@ -671,6 +678,14 @@ export function createExecutor(board) {
     return out;
   }
 
+  /** 清掉上一轮自检留下的临时读数文本（read-back 闭环在每轮自检前调用，避免堆积） */
+  function clearMeasures() {
+    for (const el of measureEls) {
+      try { board.removeObject(el); } catch (_) { /* 忽略 */ }
+    }
+    measureEls.length = 0;
+  }
+
   /** 当前画板元素摘要（作为 AI 的上下文）；滑动条带出当前值，方便 AI 接着改 */
   function describe() {
     const items = [];
@@ -727,5 +742,5 @@ export function createExecutor(board) {
     if (restoredSlider) { try { board.update(); } catch (_) { /* 忽略 */ } }
   }
 
-  return { execute, describe, moves, applyMoves, clearAll, remove, registry, has: (id) => registry.has(id) };
+  return { execute, describe, moves, applyMoves, clearAll, remove, clearMeasures, registry, has: (id) => registry.has(id) };
 }
