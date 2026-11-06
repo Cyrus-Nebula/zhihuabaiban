@@ -470,3 +470,49 @@ export const BOARD3D_SYSTEM_PROMPT = `你是「智绘几何」内置的立体几
  *   6) 把「分段裁剪」从 UI 工具（js/tools.js 的 trim）升级为 AI 可下发的原生命令；
  *   7) 若 3D 分支需要同类能力，由「独立3D画板」任务自行追加；本任务不改任何 3D 代码 / appId / editor.html。
  * ==========================================================================*/
+
+/* ============================================================================
+ * 【本轮增量 · 独立自主3D画板】verify3d 声明式自检断言（3D 命令分支「追加段落」）
+ * append-only：只在文件末尾新增，未改动上方任何已有行（2D 主干 / verify / move / style 段落，
+ * 以及 isBoard3DIntent / BOARD3D_SYSTEM_PROMPT 原样保留）。
+ * 主题：兑现上一轮 2D 任务留下的交接项「若 3D 分支需要自检断言，由独立3D画板任务自行追加
+ *   verify3d」。此前 3D 只有 measure3d 裸回读，对错全靠 LLM 肉眼比对数值；现由 AI 在规划阶段
+ *   把关键量的期望写进命令，执行器复用 runMeasure3D() 的同一套测量函数算出实测值并机器判定
+ *   pass/delta，board3d.html 的 AI 面板逐项展示 ✔/✘ 摘要。
+ * 三处联动（均为追加 / 局部新增）：
+ *   1) 本文件末尾追加 BOARD3D_VERIFY_ADDENDUM（3D 系统提示词的增量章节，不重写原常量）；
+ *   2) ai/board-backend.js 的 selectSystemPrompt 把该增量拼到 3D 提示词后（2D 提示词不变）；
+ *   3) js/board3d.js 新增 runVerify3D + execute() 的 verify3d 分支；回归见 tests/board3d_regress.mjs 用例 10。
+ * 与 2D verify 语义一致：expect+tol 绝对容差 / expect+rtol 相对容差 / expectRange 区间容差三态互斥。
+ * 未改动旧路径：editor.html / appId / 大角 SDK 引用全部原样保留，新旧路径继续并存。
+ * ==========================================================================*/
+export const BOARD3D_VERIFY_ADDENDUM = `
+
+# 自检断言 verify3d（3D 分支追加 · 命令清单追加登记项）
+- 命令：{"op":"verify3d","id":"v1","kind":"distance","of":["A","B"],"expect":3,"tol":0.05,"label":"棱长 3"}
+        {"op":"verify3d","id":"v2","kind":"angle","of":["B","A","D"],"expect":90,"tol":0.5,"label":"底面直角"}
+  kind 只有 distance（两点欧氏距离，of:[A,B]）与 angle（以 of 第二个点为顶点的夹角，单位度，of:[A,B,C]）。
+- 与 measure3d 的区别：measure3d 只回读数值、无法判定对错；verify3d 在完全相同的回读值上叠加
+  期望值 + 容差，由执行器用机器判定 pass / delta，AI 面板逐项展示 ✔/✘ 摘要。两者共用同一套测量函数。
+- 期望值三种写法（互斥）：
+  · expect + tol         绝对容差，pass ⇔ |实测-预期| ≤ tol + rtol·|预期|（最常用；rtol 省略即 0）
+  · expect + rtol        相对容差，适合空间对角线这类大数量级（如 expect:5.196, rtol:0.01）
+  · expectRange:[lo,hi]  区间容差，实测落在 [lo,hi] 内即 pass（"体对角线约 5.2 左右"等模糊意图）
+  给了 expectRange 就走区间模式；否则走 expect(+tol/rtol)；二者都缺判不通过（不要写空的 verify3d）。
+- tol 省略时按量纲取默认值：angle 0.5°，distance 0.05。expect 与 expectRange 的元素必须是数字，
+  不能写表达式或字符串；实在算不出期望值就退回 measure3d。
+- verify3d 是临时读数：不进画板、不进注册表，保存/重画不会重建，只在本次作图过程中生效；
+  id 只作标识、不会被后续命令引用；of 里的点 id 仍遵守「先创建后引用」铁律，且只能是已定义的点。
+- 用法：在作图命令末尾附 1-3 条 verify3d，把规划时算好的关键尺寸写成 expect。只量用户真正关心的量
+  （棱长、半径、直角、夹角、体对角线），不要堆一堆必然通过的冗余断言，也不要用 verify3d 量无关的量。
+- 3D 一律用带 3d 后缀的 verify3d，不要用 2D 的 verify / measure（无后缀），两者执行器互不混用。
+
+== 例4：正方体 + 声明式自检（棱长 3）==
+用户："画一个棱长为 3 的正方体，并确认棱长和底面直角。"
+思路：先按例1 发完 8 顶点 / 12 棱 / 6 面，再在命令数组末尾追加 3 条自检：AB 棱长 3、
+∠BAD=90°（angle 的第二项是顶点，故 of 写 [B,A,D]）、体对角线 AG = 3√3 ≈ 5.196。
+{"op":"verify3d","id":"vEdge","kind":"distance","of":["A","B"],"expect":3,"tol":0.05,"label":"棱长 3"}
+{"op":"verify3d","id":"vRight","kind":"angle","of":["B","A","D"],"expect":90,"tol":0.5,"label":"底面直角"}
+{"op":"verify3d","id":"vDiag","kind":"distance","of":["A","G"],"expectRange":[5.19,5.21],"label":"体对角线≈3√3"}
+注意：自检失败（✘）时先用 remove3d 删掉画错的元素再补正确命令，不要整套 clear 重画；
+verify3d 与 measure3d 都不会污染画板，不要把它们写进需要持久化的作图命令里。`;

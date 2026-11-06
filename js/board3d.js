@@ -7,6 +7,7 @@
  * - 图元：point3d / segment3d / line3d / polygon3d / sphere3d / circle3d /
  *         cylinder3d / cone3d / text3d / label3d
  * - 测量：measure3d（distance 两点距离 / angle 三点夹角，纯计算、不污染画板）
+ * - 自检：verify3d（在 measure3d 同一回读值上叠加期望值/容差，机器判定 pass，纯读数）
  * - 交互：点可拖拽——屏幕射线反投影到「工作面」（默认过点当前高度的水平面；
  *         正视/侧视等视线接近水平时自动切换为面向相机的平面，避免求交退化），
  *         依赖该点的线段/面/体随之实时联动（动态几何）
@@ -623,13 +624,15 @@ export class Board3D {
  * 3D 命令执行器（与 2D createExecutor 平行，互不复用代码）。
  * 协议命令：point3d / segment3d / line3d / polygon3d / sphere3d / circle3d /
  *           cylinder3d / cone3d / text3d / label3d / style3d / measure3d /
- *           remove3d / clear
+ *           verify3d / remove3d / clear
  * remove3d：{op:'remove3d',id:'A'}  删除指定元素并级联删除其全部（传递）依赖者
  *           （如删除被引用的点会一并删除依赖它的线段/面/体），用于 AI 自校正时
  *           删掉画错的元素；引用不存在的 id 被捕获为 ok:false。
  * measure3d：{op:'measure3d',kind:'distance',of:['A','B']} 或
  *           {op:'measure3d',kind:'angle',of:['A','B','C']}（B 为顶点），
  *           返回 {ok,op:'measure3d',kind,value:number}（不创建画板元素）
+ * verify3d ：与 measure3d 同参数，额外带 expect+tol / rtol / expectRange:[lo,hi]；
+ *           返回 {ok,op:'verify3d',kind,value,pass,delta,mode,...}（纯读数，不创建画板元素）
  */
 /**
  * measure3d：纯计算的测量命令（不创建画板元素），与 2D measure 平行、互不复用。
@@ -675,6 +678,64 @@ function requirePoint(board, id, requireId) {
   const p = board.points.get(id);
   if (!p) throw new Error(`测量目标「${id}」无坐标（仅点可被测量）`);
   return p;
+}
+
+/**
+ * verify3d：声明式自检断言（3D 命令分支，与 2D verify 语义平行、互不复用代码）。
+ *
+ * 背景：此前 3D 只有 measure3d 裸回读，画得对不对全靠 LLM 肉眼比对数值，容易放过偏差。
+ * 现由 AI 在规划阶段把关键量的期望值写进命令，执行器复用 runMeasure3D() 的同一套测量算法
+ * 得到实测值，再由机器按容差判定 pass/delta —— 两套判定不会漂移。纯读数，不创建画板元素。
+ *
+ * 期望值三种写法（互斥，与 2D 一致）：
+ *   · expect + tol         ：绝对容差，pass ⇔ |实测-预期| ≤ tol + rtol·|预期|
+ *   · expect + rtol        ：相对容差（贴合 math.isclose，适合大数量级，如空间对角线）
+ *   · expectRange:[lo,hi]  ：区间容差，pass ⇔ lo ≤ 实测 ≤ hi（端点自动归一化）
+ * 缺省容差：kind='angle' 为 0.5°，其余 0.05；三者都缺 → pass:false（mode:'none'）。
+ */
+function runVerify3D(board, cmd, requireId, round) {
+  const m = runMeasure3D(board, cmd, requireId, round);
+  const kind = m.kind;
+  // 测量本身失败（引用不存在的点 / 未知 kind / 零长度向量）→ 断言直接判不通过，附带原因
+  if (!m.ok) {
+    return { ok: false, op: 'verify3d', kind, pass: false, mode: 'none', error: m.error };
+  }
+  const value = m.value;
+  const range = Array.isArray(cmd.expectRange) ? cmd.expectRange.map(Number) : null;
+  const hasRange = !!range && range.length === 2 && Number.isFinite(range[0]) && Number.isFinite(range[1]);
+  const expect = Number(cmd.expect != null ? cmd.expect : cmd.expected);
+  const expectFinite = Number.isFinite(expect);
+  const tolRaw = Number(cmd.tol != null ? cmd.tol : cmd.tolerance);
+  const tol = Number.isFinite(tolRaw) && tolRaw >= 0 ? tolRaw : (kind === 'angle' ? 0.5 : 0.05);
+  const rtolRaw = Number(cmd.rtol != null ? cmd.rtol : cmd.relativeTol);
+  const rtol = Number.isFinite(rtolRaw) && rtolRaw >= 0 ? rtolRaw : 0;
+
+  let pass, delta, mode;
+  if (hasRange) {
+    mode = 'range';
+    const lo = Math.min(range[0], range[1]);
+    const hi = Math.max(range[0], range[1]);
+    pass = Number.isFinite(value) && value >= lo && value <= hi;
+    delta = NaN; // 区间模式无单一偏差
+  } else if (expectFinite) {
+    mode = rtol > 0 ? 'rtol' : 'abs';
+    delta = Number.isFinite(value) ? value - expect : NaN;
+    const bound = tol + rtol * Math.abs(expect); // 绝对 + 相对组合容差
+    pass = Number.isFinite(delta) && Math.abs(delta) <= bound;
+  } else {
+    mode = 'none';
+    pass = false;
+    delta = NaN;
+  }
+  const label = String(cmd.label || (kind === 'angle' ? '夹角自检' : '距离自检'));
+  return {
+    ok: true, op: 'verify3d', kind, value, pass, delta, mode,
+    tol, rtol,
+    expect: expectFinite ? expect : NaN,
+    expectRange: hasRange ? [range[0], range[1]] : undefined,
+    label,
+    id: cmd.id || null,
+  };
 }
 
 export function createBoard3DExecutor(board) {
@@ -759,6 +820,11 @@ export function createBoard3DExecutor(board) {
         if (cmd.op === 'clear') { board.clear(); plainPoints.clear(); out.push({ ok: true, op: 'clear' }); continue; }
         if (cmd.op === 'measure3d') {
           out.push(runMeasure3D(board, cmd, requireId, round));
+          continue;
+        }
+        // verify3d 与 measure3d 同为纯读数：不建图元、不需要 id，故在「缺少 id」校验之前特判
+        if (cmd.op === 'verify3d') {
+          out.push(runVerify3D(board, cmd, requireId, round));
           continue;
         }
         if (cmd.op === 'remove3d') {

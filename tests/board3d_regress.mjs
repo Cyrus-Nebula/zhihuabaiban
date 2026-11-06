@@ -7,6 +7,7 @@
  *   - 依赖缺失（引用未定义 id）被安全捕获为 ok:false
  *   - id 重复定义被捕获
  *   - moves()/applyMoves() 坐标往返一致（持久化）
+ *   - verify3d 声明式自检断言三态判定与健壮性（用例 10）
  *
  * 运行：node tests/board3d_regress.mjs
  * 注意：js/board3d.js 顶层会 import three；本测试仅用于加载模块，
@@ -302,6 +303,72 @@ console.log('— 用例 8：多边形三角扇顶点数组（纯计算，拖拽�
   assert(v2[0] === 20 && v2[2] === 20 && v2[9] === 20, '顶点变更后三角扇数据同步更新（包围体据此重算）');
   assert(polygonTriangles(quad.slice(0, 2)).length === 0, '少于 3 点返回空数组（安全降级）');
   assert(polygonTriangles(quad.slice(0, 3)).length === 9, '三角形 → 1 个三角形 → 9 个数字');
+}
+
+console.log('— 用例 10：声明式自检断言 verify3d（三态期望值 / 机器判定 pass / 不污染画板）—');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  exe.execute([
+    { op: 'point3d', id: 'A', x: 0, y: 0, z: 0 },
+    { op: 'point3d', id: 'B', x: 3, y: 0, z: 0 },
+    { op: 'point3d', id: 'C', x: 0, y: 4, z: 0 },   // 3-4-5 直角三角形
+    { op: 'point3d', id: 'P', x: 100, y: 100, z: 0 }, // 大数量级：AP = 100√2 ≈ 141.421
+  ]);
+  const before = board.entries.size;
+
+  // ① 绝对容差 expect + tol
+  const v1 = exe.execute([{ op: 'verify3d', id: 'v1', kind: 'distance', of: ['A', 'B'], expect: 3, tol: 0.05, label: '棱长 3' }])[0];
+  assert(v1.ok && v1.op === 'verify3d' && v1.value === 3, 'verify3d 复用 measure3d 回读值（AB == 3）');
+  assert(v1.pass === true && v1.delta === 0 && v1.mode === 'abs', 'expect+tol 命中 → pass:true / delta:0 / mode:abs');
+  assert(v1.tol === 0.05 && v1.rtol === 0 && v1.label === '棱长 3' && v1.id === 'v1', 'tol/rtol/label/id 原样透传');
+  const m1 = exe.execute([{ op: 'measure3d', kind: 'distance', of: ['A', 'B'] }])[0];
+  assert(m1.value === v1.value, 'measure3d 与 verify3d 共用同一回读值（无判定漂移）');
+  const v2 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'B'], expect: 3.2, tol: 0.05 }])[0];
+  assert(v2.pass === false && Math.abs(v2.delta + 0.2) < 1e-9, 'expect 偏差超容差 → pass:false / delta 精确');
+  assert(v2.ok && v2.id === null, 'verify3d 无需 id（纯读数，不走「缺少 id」校验）');
+
+  // ② angle 断言与缺省容差（angle 0.5° / distance 0.05）
+  const v3 = exe.execute([{ op: 'verify3d', kind: 'angle', of: ['B', 'A', 'C'], expect: 90 }])[0];
+  assert(v3.ok && v3.value === 90 && v3.pass === true, 'angle 断言 ∠BAC == 90° 通过');
+  assert(v3.tol === 0.5, 'angle 省略 tol 时缺省 0.5°');
+  const v4 = exe.execute([{ op: 'verify3d', kind: 'angle', of: ['B', 'A', 'C'], expect: 89 }])[0];
+  assert(v4.pass === false, 'angle 偏差 1° > 0.5° → pass:false');
+  const v5 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'B'], expect: 3.04 }])[0];
+  assert(v5.tol === 0.05 && v5.pass === true, 'distance 省略 tol 时缺省 0.05（3.04 在边界内）');
+  const v6 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'B'], expect: 3.06 }])[0];
+  assert(v6.pass === false, 'distance 偏差 0.06 > 0.05 → pass:false（缺省容差边界）');
+
+  // ③ 区间容差 expectRange（端点归一化 / 越界 / 非法值）
+  const v7 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['B', 'C'], expectRange: [4.9, 5.1], label: '斜边≈5' }])[0];
+  assert(v7.ok && v7.value === 5 && v7.pass === true && v7.mode === 'range', 'expectRange 命中 → pass:true / mode:range');
+  assert(Number.isNaN(v7.delta) && v7.expectRange[0] === 4.9, '区间模式无单一偏差（delta:NaN）且保留原始区间');
+  const v8 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['B', 'C'], expectRange: [5.1, 4.9] }])[0];
+  assert(v8.pass === true, '区间端点反序自动归一化后仍判通过');
+  const v9 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'B'], expectRange: [4, 5] }])[0];
+  assert(v9.pass === false, '实测 3 落在 [4,5] 之外 → pass:false');
+  const v10 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'B'], expectRange: ['bad', 5] }])[0];
+  assert(v10.mode === 'none' && v10.pass === false, '非法 expectRange（非数字）安全降级为 mode:none');
+
+  // ④ 相对容差 rtol（大数量级，与绝对容差对比）
+  const v11 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'P'], expect: 140, tol: 0.05, rtol: 0.02, label: '对角线≈141' }])[0];
+  assert(v11.ok && v11.mode === 'rtol' && v11.pass === true, '大数量级用 rtol:0.02 → mode:rtol / pass:true（容差 2.85）');
+  assert(Math.abs(v11.value - 141.421) < 0.001, '实测 100√2 经 round 为 141.421');
+  const v12 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'P'], expect: 140, tol: 0.05 }])[0];
+  assert(v12.mode === 'abs' && v12.pass === false, '同一 expect 去掉 rtol（绝对容差 0.05）→ pass:false');
+
+  // ⑤ 缺期望值 / 测量失败 / 别名 / 互斥 / 不污染画板
+  const v13 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'B'] }])[0];
+  assert(v13.ok && v13.mode === 'none' && v13.pass === false, '未给 expect / expectRange → mode:none / pass:false');
+  const v14 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'GHOST'], expect: 3 }])[0];
+  assert(v14.ok === false && v14.pass === false && /不存在/.test(v14.error), '引用未定义点 → ok:false / pass:false 并附原因');
+  const v15 = exe.execute([{ op: 'verify3d', kind: 'warp', of: ['A', 'B'], expect: 1 }])[0];
+  assert(v15.ok === false && /kind/.test(v15.error), '未知 kind 被捕获为 ok:false');
+  const v16 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'B'], expected: 3, tolerance: 0.01, relativeTol: 0.001 }])[0];
+  assert(v16.pass === true && v16.tol === 0.01 && v16.rtol === 0.001, '别名 expected/tolerance/relativeTol 与 2D 一致');
+  const v17 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'B'], expect: 3, expectRange: [0, 1] }])[0];
+  assert(v17.mode === 'range' && v17.pass === false, 'expect 与 expectRange 同时给出时区间模式优先（互斥）');
+  assert(board.entries.size === before, 'verify3d 全程不新增画板元素（纯读数，不污染画板）');
 }
 
 console.log(`\n结果：通过 ${passed}，失败 ${failed}`);

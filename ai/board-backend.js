@@ -20,7 +20,7 @@
  *   LLM_MODEL     默认 glm-4.7-flash
  */
 
-import { BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, isBoard3DIntent } from './board-prompt.js';
+import { BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, BOARD3D_VERIFY_ADDENDUM, isBoard3DIntent } from './board-prompt.js';
 import { DEFAULT_MODEL, resolveModel, supportsVision } from './models.js';
 
 const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
@@ -160,9 +160,11 @@ function commandUsable(c) {
  */
 export function selectSystemPrompt(message, modeHint) {
   const want3d = modeHint === '3d' || isBoard3DIntent(message);
+  // 3D 提示词 = 原常量 + 末尾追加的 verify3d 章节（BOARD3D_SYSTEM_PROMPT 本身一行未改，
+  // 2D 主干提示词完全不受影响；append-only 增量见 ai/board-prompt.js 末尾）。
   return {
     mode: want3d ? '3d' : '2d',
-    prompt: want3d ? BOARD3D_SYSTEM_PROMPT : BOARD_SYSTEM_PROMPT,
+    prompt: want3d ? (BOARD3D_SYSTEM_PROMPT + BOARD3D_VERIFY_ADDENDUM) : BOARD_SYSTEM_PROMPT,
   };
 }
 

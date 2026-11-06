@@ -45,6 +45,8 @@
     .b3d-ai-log .ai-msg.user { color: #1d4ed8; }
     .b3d-ai-log .ai-msg.ai { color: #334155; }
     .b3d-ai-log .ai-msg.err { color: #dc2626; }
+    .b3d-ai-log .ai-msg.verify-pass { color: #15803d; }
+    .b3d-ai-log .ai-msg.verify-fail { color: #c2410c; }
     .b3d-ai-bar { display: flex; gap: 8px; padding: 8px 14px; }
     .b3d-ai-bar input { flex: 1; border: 1px solid #d8dee9; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
     .b3d-ai-bar button { border: 1px solid #c7d2fe; background: #eef2ff; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 14px; color: #3730a3; }
@@ -201,6 +203,22 @@
       aiLog.scrollTop = aiLog.scrollHeight;
     }
 
+    // 把 verify3d 的机器判定结果格式化成一行 ✔/✘ 摘要（与 2D read-back 的自检展示同构）。
+    // 判定完全由 createBoard3DExecutor 给出，这里只做展示，不掺入任何 2D 执行器逻辑。
+    function describeVerify3D(v) {
+      if (!v.ok) return '✘ ' + (v.label || '自检') + '：测量失败（' + (v.error || '未知原因') + '）';
+      const unit = v.kind === 'angle' ? '°' : '';
+      const head = (v.pass ? '✔ ' : '✘ ') + (v.label || '自检') + ' = ' + v.value + unit;
+      if (v.mode === 'range' && Array.isArray(v.expectRange)) {
+        return head + '（应在 [' + v.expectRange[0] + ',' + v.expectRange[1] + ']' + unit
+          + (v.pass ? '）' : '，越界）');
+      }
+      if (v.mode === 'none') return head + '（未给期望值，判不通过）';
+      const tol = v.tol + (v.rtol ? '+' + v.rtol + '·|E|' : '');
+      return head + '（预期 ' + v.expect + unit + '，容差 ' + tol + unit
+        + (v.pass ? '）' : '，偏差 ' + v.delta + unit + '）');
+    }
+
     async function aiSend3d() {
       const text = aiInput.value.trim();
       if (!text) return;
@@ -225,14 +243,27 @@
         if (Array.isArray(data.commands) && data.commands.length) {
           let okCount = 0;
           const errs = [];
+          const verifyRows = [];
           for (const cmd of data.commands) {
             const r = exe.execute([cmd]);
-            if (r[0] && r[0].ok) {
+            const row = r[0];
+            if (row && row.op === 'verify3d') verifyRows.push(row);
+            if (row && row.ok) {
+              // measure3d / verify3d 是纯读数（临时自检），不写进持久化的作图命令；
+              // clear / remove3d 属于状态变更，仍按序重放才能还原画板。
               if (cmd.op === 'clear') currentCmds = [];
-              else currentCmds.push(cmd);
+              else if (cmd.op !== 'measure3d' && cmd.op !== 'verify3d') currentCmds.push(cmd);
               okCount++;
-            } else if (r[0]) {
-              errs.push((cmd.op || '?') + '(' + r[0].error + ')');
+            } else if (row) {
+              errs.push((cmd.op || '?') + '(' + row.error + ')');
+            }
+          }
+          if (verifyRows.length) {
+            const passCount = verifyRows.filter((v) => v.pass).length;
+            appendLog('ai', '自检 ' + passCount + '/' + verifyRows.length
+              + (passCount === verifyRows.length ? ' 全部通过 ✔' : ' 存在失败项 ✘'));
+            for (const v of verifyRows) {
+              appendLog(v.pass ? 'verify-pass' : 'verify-fail', '  ' + describeVerify3D(v));
             }
           }
           if (errs.length) appendLog('ai', '已执行 ' + okCount + ' 条，' + errs.length + ' 条失败：' + errs.join('；'));
