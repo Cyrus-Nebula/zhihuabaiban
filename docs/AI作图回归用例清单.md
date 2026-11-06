@@ -72,6 +72,8 @@
 | 30 | 断言未通过时自动修正 | `verify` expect:90 但实测 60 → 闭环把「预期 90° / 实测 60° / 偏差 -30°」列进【未通过断言】回传 LLM，补发修正命令 | ✅ | 不再靠 LLM 肉眼比对裸数值；修正完成后 `clearMeasures()` 清掉临时读数 |
 | 31 | 全部断言通过时跳过二次调用 | 本轮只含 `verify` 且全 `pass` → 不发起第二次 LLM 请求，AI 面板显示「已自检 N 项，全部符合预期」 | ✅ | 只要含裸 `measure`（无期望值）就必须二次核对，不能省 |
 | 32 | verify 不进文档 / 不重建 | 保存、重画、撤销后断言读数不出现 | ✅ | 与 `measure` 一致的 transient 行为；`runCommands()` 与 `applyAiCommands()` 均不过滤进 `doc.commands` |
+| 33 | 自检：sin(x) 在 π/2 最大值≈1（区间容差） | `function` expr:"sin(x)" from:-1 to:4 → `verify` kind:evaluate expr:"sin(x)" x:1.570796 expectRange:[0.98,1.02] label:"sin(π/2)≈1" | ✅ | 区间模式：实测落在 [lo,hi] 内即 pass；比硬写 expect 更贴合"约等于"口语意图（例8a） |
+| 34 | 自检：大正方形对角线≈141（相对容差） | `verify` kind:distance of:[A,C] expect:141.42 rtol:0.01 label:"对角线≈141" | ✅ | 相对容差：\|实测−预期\| ≤ tol + rtol·\|预期\|；适合预期值很大的量（≈1.4 容差），避免绝对 tol 过苛误判（例8b） |
 
 ## 协议扩展 TODO（不在本轮，供下一步）
 - [本轮已完成] `reflect` / `rotate` / `translate`：原生几何变换 op（见用例 17/21/22 与 `js/executor.js` 的 transform 分支）。
@@ -82,7 +84,11 @@
   - `js/executor.js`：新增 `verify` 执行分支与 `computeMeasure()`（`measure` / `verify` 共用同一种测量算法），按 `expect` + `tol` 自动算出 `pass` / `delta`，画板生成绿色 ✔ / 橙色 ✘ 临时读数，`execute()` 结果透传 `pass/expect/tol/delta/label`。
   - `js/board.js`：`describeMeasure()` / `buildReadback()` 升级为结构化回读；read-back 闭环在全部断言通过时**跳过二次 LLM 调用**，有失败项时把「预期 / 实测 / 偏差」列入【未通过断言】做定向修正；AI 面板逐行展示 ✔/✘ 自检摘要；`runCommands()` / `applyAiCommands()` 均把 `verify` 挡在 `doc.commands` 之外。
   - `ai/board-prompt.js`：**仅追加段落**（未改动任何已有行与 3D 分支）——「# 自检断言 verify」命令清单登记章节 + 例6（带断言的高线）/ 例7（顶点式 evaluate 断言），见用例 28~32。
-- [下一步·待办] 1) `verify` 支持 `expectRange:[lo,hi]` / 相对容差 `rtol`，覆盖"约等于 / 落在区间内"的模糊意图；2) 打磨自动修正策略（多轮收敛、修正前先 diff 再改，避免重画已通过部分）；3) 给 `style` 增加 `opacity` / `labelColor` 等细粒度样式；4) AI 面板把 ✔/✘ 摘要做成可折叠自检清单。
+- [本轮已完成] `verify` 期望值三态：`expectRange:[lo,hi]` 区间容差 + `expect+rtol` 相对容差（对应"约等于 / 落在区间内"的模糊意图），与既有 `expect+tol` 绝对容差互斥。
+  - `js/executor.js`：在 `verify` 执行分支按三种模式算 `pass`（`range` / `abs` / `rtol`），`rtol` 用 `|实测−预期| ≤ tol + rtol·|预期|` 组合容差（贴合 math.isclose），透传 `mode/expectRange/rtol`；`measureReadout()` 据模式生成对应读数文案。
+  - `js/board.js`：`describeMeasure()` 支持 `range`（`应在 [lo,hi]`）/ `rtol`（`容差 tol+rtol·|E|`）展示；`applyAiCommands()` 透传 `mode/expectRange/rtol`；`buildReadback()` 的 `allPassed` 仍以 `pass` 为准，闭环行为不变。
+  - `ai/board-prompt.js`：**仅追加段落**——「# 自检断言 verify」补充三种期望值写法说明 + 例8（区间容差 8a、相对容差 8b），未改动任何已有行与 3D 分支；见用例 33/34。
+- [下一步·待办] 1) 打磨自动修正策略（多轮收敛、修正前先 diff 再改，避免重画已通过部分）；2) 给 `style` 增加 `opacity` / `labelColor` 等细粒度样式；3) AI 面板把 ✔/✘ 摘要做成可折叠自检清单。
 
 ## 已知限制
 - 沙箱无头环境无法实例化真实 JSXGraph，上述用例需在带浏览器的环境目视确认或补单测；命令序列本身已与 `js/executor.js` 协议逐条对齐。

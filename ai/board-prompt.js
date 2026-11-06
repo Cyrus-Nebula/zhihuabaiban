@@ -13,8 +13,10 @@
  *
  * TODO(下一步): 1) 打磨自动修正策略（放宽/收紧"不符"阈值、支持多轮收敛、修正前先 diff 再改）；
  *   2) 前端可视化：在 AI 面板更清晰地呈现自检读数/修正动作；
- *   3) [本轮已完成] 协议补几何变换 op（reflect/rotate/translate）与 animate 命令（自动播放参数动画），
+ *   3) [已完成] 协议补几何变换 op（reflect/rotate/translate）与 animate 命令（自动播放参数动画），
  *      见下方命令协议与例4 / 滑动条章节；js/executor.js 同步加了 transform 与 animate 分支。
+ *   4) [本轮已完成] verify 期望值三态：expectRange 区间容差 + rtol 相对容差（见下方「# 自检断言 verify」含
+ *      三种写法说明与例8），js/executor.js 的 verify 分支与 js/board.js 的 read-back 展示已同步支持。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -183,6 +185,12 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
   distance/angle 用 of:[...]，evaluate 用 expr + x；字段写法与 measure 一一对应。
 - tol 省略时按量纲取默认值：角度 0.5°，其余 0.05；expect 必须是数字（不能写表达式或字符串），
   实在算不出 expect 就退回 measure。tol 按图形精度给，坐标取整的图用 0.05~0.2 即可，别给过大容差把错误放过。
+- 期望值三种写法（本轮增强，覆盖"约等于 / 落在区间内"的模糊意图，与 expect+tol 绝对容差互斥）：
+  · expectRange:[lo,hi] 区间容差：实测落在 [lo,hi] 内即 pass。适合"≈π""交点横坐标约在 1 左右""最大值约 1"等口语意图。
+  · expect + rtol 相对容差：判定改为 |实测-预期| ≤ tol + rtol·|预期|（贴合 math.isclose 语义），rtol 取 0.01 即允许 1% 偏差；
+    适合预期值本身很大的量（如坐标量级上千的欧氏距离），用绝对 tol 会过苛、轻微拖拽即误判。
+  · 给了 expectRange 就走区间模式；否则仍走 expect(+tol/rtol) 模式；二者都缺则判不通过。
+  id 仍只作标识、不会被引用；of / expr / x 仍遵守"先创建后引用"铁律。
 - verify 是临时读数：不进画板文档、不进注册表，保存/重画不会重建，只在本次作图过程中生效。
 - 第 4 步【自检 verify】的推荐做法：在作图命令末尾附 1-3 条 verify，把第 2 步规划时算好的关键数值写成 expect。
   系统执行后会：全部通过 → 机器直接判定符合意图（不再重复画、不再二次询问）；任一未通过 → 把「预期 / 实测 / 偏差」
@@ -210,6 +218,21 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 {"op":"point","id":"V","x":2,"y":3}
 {"op":"verify","id":"v3","kind":"evaluate","expr":"3-(x-2)^2","x":2,"expect":3,"tol":0.001,"label":"顶点函数值"}
 注意：verify 的 id 只作标识，不会被后续命令引用（它不是画板图元）；of / expr / x 仍遵守"先创建后引用"铁律。
+
+== 例8：期望值三态——区间容差 expectRange 与相对容差 rtol ==
+用户："画 sin(x)，确认它在 x=π/2（取 1.5708）附近的最大值约为 1，允许 0.98~1.02 的浮点误差。"
+思路：用区间容差 expectRange 比硬写 expect:1 更贴合"约等于、带浮点误差"的口语意图；实测 sin(1.5708)≈0.9999999 落在 [0.98,1.02] → ✔。
+{"op":"function","id":"f1","expr":"sin(x)","from":-1,"to":4}
+{"op":"verify","id":"vMax","kind":"evaluate","expr":"sin(x)","x":1.570796,"expectRange":[0.98,1.02],"label":"sin(π/2)≈1"}
+
+用户："画一个边长约为 100 的大正方形，确认它的对角线长度约等于 141（允许约 1% 偏差）。"
+思路：对角线 = 100√2 ≈ 141.42。预期值很大（百位），若用绝对容差 tol:0.05 会过苛、轻微拖拽就误判；改用相对容差 rtol:0.01（≈1.4 容差）更稳。
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":100,"y":0}
+{"op":"point","id":"C","x":100,"y":100}
+{"op":"point","id":"D","x":0,"y":100}
+{"op":"polygon","id":"sq","points":["A","B","C","D"]}
+{"op":"verify","id":"vDiag","kind":"distance","of":["A","C"],"expect":141.42,"rtol":0.01,"label":"对角线≈141"}
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
@@ -365,7 +388,10 @@ export const BOARD3D_SYSTEM_PROMPT = `你是「智绘几何」内置的立体几
  *   共用同一套测量函数）。js/board.js 的 read-back 闭环据此：全部通过时跳过二次 LLM 调用，
  *   有失败项时把「预期 / 实测 / 偏差」精确回传做定向修正，AI 面板逐项展示 ✔/✘ 自检摘要。
  * - 协议联动：命令清单已追加登记 verify；回归用例见 docs/AI作图回归用例清单.md。
- * TODO(下一步): 1) verify 支持 expectRange:[lo,hi] / 相对容差 rtol，覆盖"约等于 / 落在区间内"的模糊意图；
+ * 本轮增强（verify 期望值三态）：在 expect+tol 绝对容差之外，新增 expectRange:[lo,hi] 区间容差与
+ *   expect+rtol 相对容差（见上方「# 自检断言 verify」三种写法说明与例8）。js/executor.js 的 verify 分支
+ *   与 js/board.js 的 describeMeasure / read-back 展示已同步支持 range 与 rtol 两种模式，allPassed 仍以 pass 为准。
+ * TODO(下一步): 1) [本轮已完成] verify 支持 expectRange 区间容差与 rtol 相对容差；
  *   2) 打磨自动修正策略：多轮收敛、修正前先 diff 再改，避免重画已通过的部分；
  *   3) AI 面板把 ✔/✘ 摘要做成可折叠的自检清单（当前已按行展示）。
  *   4) 若 3D 分支需要自检断言，由「独立3D画板」任务自行追加 verify3d；本任务不改任何 3D 代码。

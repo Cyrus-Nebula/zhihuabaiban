@@ -2439,7 +2439,14 @@ function describeMeasure(m) {
     const digits = m.kind === 'evaluate' ? 3 : (m.kind === 'angle' ? 1 : 2);
     const f = (x) => Number.isFinite(x) ? x.toFixed(digits) : '?';
     const tag = m.pass ? '✔ 通过' : '✘ 未通过';
-    return `${tag}｜${m.label || '自检'}：实测 ${f(v)}${unit}，预期 ${f(m.expect)}${unit}，容差 ${f(m.tol)}${unit}`
+    // 区间模式（expectRange）：展示"应在 [lo,hi]"，越界时提示
+    if (m.mode === 'range' && Array.isArray(m.expectRange)) {
+      return `${tag}｜${m.label || '自检'}：实测 ${f(v)}${unit}，应在 [${f(m.expectRange[0])}, ${f(m.expectRange[1])}]${unit}`
+        + (m.pass ? '' : '，越界');
+    }
+    // 相对容差模式（rtol）：容差写成 "tol+rtol·|E|"
+    const tolTxt = m.rtol ? `，容差 ${f(m.tol)}+${m.rtol}·|E|${unit}` : (m.tol != null ? `，容差 ${f(m.tol)}${unit}` : '');
+    return `${tag}｜${m.label || '自检'}：实测 ${f(v)}${unit}，预期 ${f(m.expect)}${unit}${tolTxt}`
       + (m.pass ? '' : `，偏差 ${f(m.delta)}${unit}`);
   }
   if (!Number.isFinite(v)) return '?';
@@ -2476,6 +2483,7 @@ async function applyAiCommands(cmds, paced) {
         if (cmd.op === 'verify') {
           m.pass = res.pass; m.expect = res.expect; m.tol = res.tol; m.delta = res.delta;
           m.label = res.label || cmd.label;
+          m.mode = res.mode; m.expectRange = res.expectRange; m.rtol = res.rtol;
         }
         measures.push(m);
       } else if (cmd.op === 'animate') {

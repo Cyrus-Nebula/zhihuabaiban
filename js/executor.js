@@ -28,9 +28,10 @@
  *   label     {target,text}                    设置/修改标签
  *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?}  样式
  *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
- *   verify    {kind,of|expr/x,expect,tol?,label?}   自检断言：复用 measure 的回读值，叠加「期望值 expect + 容差 tol」，
- *                                                           由执行器自动判定 pass(✔/✘) 并透传 delta；画板生成带色临时读数，
- *                                                           不进注册表/文档。read-back 闭环据此做定向修正（见 js/board.js）
+ *   verify    {kind,of|expr/x,expect?,tol?,rtol?,expectRange?,label?}   自检断言：复用 measure 的回读值，
+ *                                                           叠加「期望值」自动判定 pass(✔/✘) 并透传 delta。期望值三种写法：
+ *                                                           expect+tol 绝对容差 / expect+rtol 相对容差 / expectRange:[lo,hi] 区间容差；
+ *                                                           画板生成带色临时读数，不进注册表/文档。read-back 闭环据此做定向修正（见 js/board.js）
  *   transform {id,of,type,by?|angle?|center?|axis?}  几何变换：把 of 元素平移/旋转/反射成一份新副本（以 id 命名），
  *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?)；支持 point/segment/line/ray/polygon/circle
  *   animate    {id|ids,pingpong?,speed?}             动画：让指定滑动条（id 或 ids，或 "__all__"）自动连续改值，依赖它的几何实时播放；speed: slow/normal/fast，pingpong:true 往复。仅前端播放，不进文档
@@ -48,7 +49,12 @@
  *   后按 tol 自动算出 pass/delta，measure 与 verify 共用同一套测量函数，避免两套判定漂移。
  *   js/board.js 的 read-back 闭环据此：全部断言通过时跳过二次 LLM 调用；有失败项时把「预期/实测/偏差」
  *   精确回传给 LLM 做定向修正，并在 AI 面板显示 ✔/✘ 自检摘要。
- * TODO(下一步): 1) verify 支持 expectRange:[lo,hi] 与相对容差 rtol，覆盖"约等于/在区间内"的模糊意图；
+ * 本轮增量（verify 增强 · 期望值三态）：在绝对容差 expect+tol 之上，新增两种期望值写法——
+ *   expect+rtol（相对容差，pass⇔|实测-预期|≤tol+rtol·|预期|，贴合 math.isclose，适合大数量级）与
+ *   expectRange:[lo,hi]（区间容差，pass⇔lo≤实测≤hi，覆盖"≈π""落在象限内"等模糊意图）。
+ *   三者互斥：给了 expectRange 走区间模式；否则走 expect(+tol/rtol) 模式；二者都缺判不通过。
+ *   board.js 的 describeMeasure/read-back 闭环同步支持 range 与 rtol 两种展示，allPassed 仍以 pass 为准。
+ * TODO(下一步): 1) [本轮已完成] verify 支持 expectRange 区间容差与 rtol 相对容差；
  *   2) 打磨自动修正策略（多轮收敛、修正前先 diff 再改，避免把已通过的部分重画）；
  *   3) AI 面板把 ✔/✘ 读数做成可折叠的自检清单（当前已按行展示）。
  *
@@ -577,29 +583,68 @@ export function createExecutor(board) {
         return { __measure: true, el, value: m.value };
       }
       case 'verify': {
-        // 声明式自检断言（本轮新增）：在 measure 的实测值上叠加「期望值 expect + 容差 tol」，
-        // 由执行器自动判定 pass，不再依赖 LLM 肉眼比对裸数值。AI 在第 2 步规划时就把关键量的
-        // 预期数值写进命令；失败项会被 read-back 闭环精确回传（预期/实测/偏差）做定向修正。
+        // 声明式自检断言：在 measure 的实测值上叠加「期望值」自动判定 pass，不再依赖 LLM 肉眼比对裸数值。
+        // AI 在第 2 步规划时就把关键量的预期写进命令；失败项会被 read-back 闭环精确回传做定向修正（见 js/board.js）。
         //   {"op":"verify","id":"v1","kind":"angle","of":["A","H","B"],"expect":90,"tol":0.5,"label":"高线垂直"}
-        //   {"op":"verify","id":"v2","kind":"distance","of":["A","B"],"expect":5,"tol":0.05}
-        //   {"op":"verify","id":"v3","kind":"evaluate","expr":"3-(x-2)^2","x":2,"expect":3}
-        // tol 省略时按量纲给默认值（角度 0.5°、其余 0.05）；expect 必须是数字，缺失即判不通过。
+        //   {"op":"verify","id":"v2","kind":"distance","of":["A","H"],"expect":4,"tol":0.05}
+        //   {"op":"verify","id":"v3","kind":"evaluate","expr":"3-(x-2)^2","x":2,"expect":3,"label":"顶点函数值"}
+        // 期望值三种写法（本轮增强，覆盖"约等于/落在区间内"的模糊意图）：
+        //   · expect + tol        ：绝对容差，pass ⇔ |实测-预期| ≤ tol（最常用；tol 缺省按量纲取 0.5°/0.05）
+        //   · expect + rtol       ：相对容差，pass ⇔ |实测-预期| ≤ tol + rtol·|预期|（贴合 math.isclose 语义，
+        //                            适合预期本身很大的量，如坐标量级在千位的欧氏距离）
+        //   · expectRange:[lo,hi]  ：区间容差，pass ⇔ lo ≤ 实测 ≤ hi（"π≈3.14""落在象限内""约等于 2 左右"用）
+        //   互斥：给了 expectRange 走区间模式；否则走 expect(+tol/rtol) 模式；二者都缺判不通过。
         const m = computeMeasure(cmd);
-        const expect = Number(cmd.expect != null ? cmd.expect : cmd.expected);
-        const tolRaw = Number(cmd.tol != null ? cmd.tol : cmd.tolerance);
-        const tol = Number.isFinite(tolRaw) && tolRaw >= 0 ? tolRaw : (m.kind === 'angle' ? 0.5 : 0.05);
-        const delta = Number.isFinite(m.value) && Number.isFinite(expect) ? m.value - expect : NaN;
-        const pass = Number.isFinite(delta) && Math.abs(delta) <= tol;
+        const value = m.value;
         const unit = m.kind === 'angle' ? '°' : '';
         const digits = m.kind === 'evaluate' ? 3 : (m.kind === 'angle' ? 1 : 2);
         const fmt = (v) => Number.isFinite(v) ? v.toFixed(digits) : '?';
+
+        const range = Array.isArray(cmd.expectRange) ? cmd.expectRange.map(Number) : null;
+        const hasRange = !!range && range.length === 2 && Number.isFinite(range[0]) && Number.isFinite(range[1]);
+        const expect = Number(cmd.expect != null ? cmd.expect : cmd.expected);
+        const expectFinite = Number.isFinite(expect);
+        const tolRaw = Number(cmd.tol != null ? cmd.tol : cmd.tolerance);
+        const tol = Number.isFinite(tolRaw) && tolRaw >= 0 ? tolRaw : (m.kind === 'angle' ? 0.5 : 0.05);
+        const rtolRaw = Number(cmd.rtol != null ? cmd.rtol : cmd.relativeTol);
+        const rtol = Number.isFinite(rtolRaw) && rtolRaw >= 0 ? rtolRaw : 0;
+
+        let pass, delta, mode, infoExpect, infoTol;
+        if (hasRange) {
+          mode = 'range';
+          const lo = Math.min(range[0], range[1]);
+          const hi = Math.max(range[0], range[1]);
+          pass = Number.isFinite(value) && value >= lo && value <= hi;
+          delta = NaN; // 区间模式无单一偏差
+          infoExpect = '[' + fmt(lo) + ',' + fmt(hi) + ']';
+          infoTol = '';
+        } else if (expectFinite) {
+          mode = rtol > 0 ? 'rtol' : 'abs';
+          delta = Number.isFinite(value) ? value - expect : NaN;
+          const abse = Number.isFinite(delta) ? Math.abs(delta) : Infinity;
+          const bound = tol + rtol * Math.abs(expect); // 绝对+相对组合容差
+          pass = abse <= bound;
+          infoExpect = fmt(expect);
+          infoTol = rtol > 0 ? (fmt(tol) + '+' + rtol + '·|E|') : String(tol);
+        } else {
+          mode = 'none';
+          pass = false; delta = NaN; infoExpect = '?'; infoTol = '';
+        }
+
         const label = String(cmd.label || m.title || '自检');
-        const body = (pass ? '✔ ' : '✘ ') + label + ' = ' + fmt(m.value) + unit
-          + '（预期 ' + fmt(expect) + unit + '，容差 ' + tol + unit
-          + (pass ? '）' : '，偏差 ' + fmt(delta) + unit + '）');
+        const body = (pass ? '✔ ' : '✘ ') + label + ' = ' + fmt(value) + unit
+          + (mode === 'range'
+              ? ('（应在 ' + infoExpect + unit + (pass ? '）' : '，越界）'))
+              : ('（预期 ' + infoExpect + unit + (infoTol ? ('，容差 ' + infoTol + unit) : '')
+                + (pass ? '）' : ('，偏差 ' + fmt(delta) + unit + '）'))));
         const el = measureReadout(body, m.pos, pass ? '#15803D' : '#C2410C');
         measureEls.push(el);
-        return { __measure: true, __verify: true, el, value: m.value, expect, tol, pass, delta, label };
+        return {
+          __measure: true, __verify: true, el, value,
+          expect: expectFinite ? expect : NaN,
+          expectRange: hasRange ? [range[0], range[1]] : undefined,
+          rtol, tol, pass, delta, mode, label,
+        };
       }
       case 'transform': {
         // 几何变换 op（本轮新增，对标"几何变换"作图）：把源元素按 type 做平移/旋转/反射，
