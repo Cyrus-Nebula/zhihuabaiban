@@ -75,7 +75,8 @@
     // ---- 4. 拖拽拾取：屏幕射线反投影到工作面 + 依赖联动（10 / 11）----
     board.camera.updateMatrixWorld(true);
     const el = board.renderer.domElement;
-    el.setPointerCapture = () => {}; // 无真实指针，屏蔽捕获
+    el.setPointerCapture = () => {};      // 无真实指针，屏蔽捕获
+    el.releasePointerCapture = () => {};  // 同上，避免合成 pointerup 触发真实 DOM 异常
     const A = board.points.get('A');
     const proj = A.clone().project(board.camera);
     const sx = (proj.x + 1) / 2 * 800;
@@ -134,7 +135,64 @@
     check('board3d.html 内置 3D 命令执行器与 mode:3d AI 面板',
       /createBoard3DExecutor/.test(html) && /mode:\s*'3d'/.test(html));
 
-    // ---- 7. resize / 外部请求 ----
+    // ---- 7. 渲染稳健性与工作面自适应（本轮增量）----
+    exe.execute([
+      { op: 'clear' },
+      { op: 'point3d', id: 'P0', x: 0, y: 0, z: 0 },
+      { op: 'point3d', id: 'P1', x: 2, y: 0, z: 0 },
+      { op: 'point3d', id: 'P2', x: 2, y: 0, z: 2 },
+      { op: 'point3d', id: 'P3', x: 0, y: 0, z: 2 },
+      { op: 'polygon3d', id: 'F', points: ['P0', 'P1', 'P2', 'P3'] },
+    ]);
+    const face = board.entries.get('F');
+    const geo = face.obj.geometry;
+    check('多边形面半透明材质 depthWrite:false（缓解 z-fighting）', face.obj.material.depthWrite === false);
+    check('多边形面生成时即计算包围球', !!geo.boundingSphere);
+    const bs0 = geo.boundingSphere.clone();
+    board.points.get('P0').set(20, 0, 20);
+    board.notifyPointMoved('P0');
+    const bs1 = geo.boundingSphere;
+    check('拖拽顶点后包围球被重算（不再沿用旧球）',
+      !bs1.center.equals(bs0.center) || bs1.radius !== bs0.radius,
+      '旧 r=' + bs0.radius.toFixed(2) + ' 新 r=' + bs1.radius.toFixed(2));
+    const farPt = board.points.get('P0');
+    check('新包围球包含拖远后的顶点（面不会被视锥错误剔除）',
+      farPt.distanceTo(bs1.center) <= bs1.radius + 1e-6,
+      '距球心 ' + farPt.distanceTo(bs1.center).toFixed(2) + ' / 半径 ' + bs1.radius.toFixed(2));
+
+    // 四视角下拖拽位移均合理：正视/侧视不再把顶点甩到 ±14 的相机位置
+    function dragDistance(view) {
+      exe.execute([{ op: 'clear' }, { op: 'point3d', id: 'Q', x: 0, y: 0, z: 0 }]);
+      board.viewPreset(view);
+      board.camera.updateMatrixWorld(true);
+      board.scene.updateMatrixWorld(true);
+      const el2 = board.renderer.domElement;
+      el2.setPointerCapture = () => {};
+      el2.releasePointerCapture = () => {};
+      const q = board.points.get('Q');
+      const pr = q.clone().project(board.camera);
+      const x0 = (pr.x + 1) / 2 * 800, y0 = (1 - pr.y) / 2 * 600;
+      const ev = (t, x, y) => el2.dispatchEvent(new PointerEvent(t, {
+        clientX: x, clientY: y, pointerId: 2, button: 0, buttons: 1, bubbles: true,
+      }));
+      ev('pointerdown', x0, y0);
+      const picked = !!board.dragging;
+      const before = q.clone();
+      ev('pointermove', x0 + 90, y0 + 40);
+      const d = q.distanceTo(before);
+      ev('pointerup', x0 + 90, y0 + 40);
+      return { picked, d, horizontal: board.workPlaneHorizontal };
+    }
+    for (const [view, expectHoriz] of [['iso', true], ['top', true], ['front', false], ['side', false]]) {
+      const r = dragDistance(view);
+      check('视角 ' + view + ' 拖拽可拾取且位移合理（0.05 < d < 6）',
+        r.picked && r.d > 0.05 && r.d < 6, '位移 ' + r.d.toFixed(2));
+      check('视角 ' + view + ' 工作面为' + (expectHoriz ? '水平面' : '面向相机平面'),
+        r.horizontal === expectHoriz);
+    }
+    board.viewReset();
+
+    // ---- 8. resize / 外部请求 ----
     host.style.width = '1000px';
     host.style.height = '500px';
     board.resize();

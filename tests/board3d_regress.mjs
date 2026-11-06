@@ -13,7 +13,7 @@
  *       所有空间计算由假 board 记录，不触碰真实渲染。node_modules/three 已被 .gitignore 排除。
  */
 
-import { createBoard3DExecutor, lineEndpoints } from '../js/board3d.js';
+import { createBoard3DExecutor, lineEndpoints, polygonTriangles, workPlaneForDrag } from '../js/board3d.js';
 import { DEMO_CUBE, DEMO_PYRAMID } from '../js/board3d-demos.js';
 
 let passed = 0;
@@ -220,6 +220,54 @@ console.log('— 用例 6：直线无限延伸（裁剪到参考系球）—');
   const m = lineEndpoints({ x: 1, y: 2, z: 3 }, { x: -2, y: 0, z: 1 }, LINE_RADIUS_FOR_TEST);
   const mx = (m[0].x + m[1].x) / 2, my = (m[0].y + m[1].y) / 2, mz = (m[0].z + m[1].z) / 2;
   assert(Math.hypot(mx, my, mz) <= LINE_RADIUS_FOR_TEST + 1e-6, '线段中点在裁剪球内（无限直线被球包住）');
+}
+
+console.log('— 用例 7：拖拽工作面自适应视角（正视/侧视不再退化）—');
+{
+  const P = { x: 0, y: 2, z: 0 };
+  // 等轴视线 (-9,-7,-11)：|dy|≈0.44 >= 0.25 → 仍是水平面（高度守恒语义不变）
+  const iso = workPlaneForDrag({ x: -9, y: -7, z: -11 }, P);
+  assert(iso.horizontal === true, '等轴视角仍用水平工作面（保持高度守恒）');
+  assert(iso.normal.join(',') === '0,1,0' && iso.constant === -2, '水平面方程 y - 2 = 0');
+  const top = workPlaneForDrag({ x: 0, y: -14, z: 0 }, P);
+  assert(top.horizontal === true, '俯视视角仍用水平工作面');
+  // 正视视线 (0,0,-14)：|dy| = 0 → 切换为面向相机的平面
+  const front = workPlaneForDrag({ x: 0, y: 0, z: -14 }, P);
+  assert(front.horizontal === false, '正视切换为面向相机的平面');
+  assert(Math.abs(front.normal[2] + 1) < 1e-9, '正视平面法线归一化为单位视线 (0,0,-1)');
+  const side = workPlaneForDrag({ x: -14, y: 0, z: 0 }, P);
+  assert(side.horizontal === false && Math.abs(side.normal[0] + 1) < 1e-9, '侧视切换且法线 (-1,0,0)');
+  // 平面必过被拖拽点：normal·point + constant = 0
+  for (const wp of [iso, top, front, side]) {
+    const n = wp.normal;
+    assert(Math.abs(n[0] * P.x + n[1] * P.y + n[2] * P.z + wp.constant) < 1e-9,
+      '平面过被拖拽点（' + (wp.horizontal ? '水平' : '面向相机') + '）');
+  }
+  // 关键：面向相机平面使射线求交分母 |n·dir| = 1（原水平面正视时为 0）
+  assert(Math.abs(front.normal[2] * -1 - 1) < 1e-9, '面向相机平面令射线求交分母为 1（不再退化）');
+  // 非单位视线输入同样安全归一化；阈值可配置
+  const custom = workPlaneForDrag({ x: 0, y: 0, z: -5 }, P, 0.4);
+  assert(custom.horizontal === false && Math.abs(custom.normal[2] + 1) < 1e-9, '非单位视线输入被正确归一化');
+  const zero = workPlaneForDrag({ x: 0, y: 0, z: 0 }, P);
+  assert(zero.horizontal === false, '零向量视线不抛错、安全降级');
+}
+
+console.log('— 用例 8：多边形三角扇顶点数组（纯计算，拖拽后同步刷新）—');
+{
+  const quad = [
+    { x: 0, y: 0, z: 0 }, { x: 2, y: 0, z: 0 },
+    { x: 2, y: 0, z: 2 }, { x: 0, y: 0, z: 2 },
+  ];
+  const v = polygonTriangles(quad);
+  assert(v.length === 18, '4 点扇 → 2 三角形 → 18 个数字');
+  assert(v.slice(0, 3).join(',') === '0,0,0' && v.slice(3, 6).join(',') === '2,0,0',
+    '第一个三角形为 A-B-C');
+  assert(v.slice(9, 12).join(',') === '0,0,0', '第二个三角形仍以 A 为公共顶点');
+  const moved = quad.map((p, i) => (i === 0 ? { x: 20, y: 0, z: 20 } : p));
+  const v2 = polygonTriangles(moved);
+  assert(v2[0] === 20 && v2[2] === 20 && v2[9] === 20, '顶点变更后三角扇数据同步更新（包围体据此重算）');
+  assert(polygonTriangles(quad.slice(0, 2)).length === 0, '少于 3 点返回空数组（安全降级）');
+  assert(polygonTriangles(quad.slice(0, 3)).length === 9, '三角形 → 1 个三角形 → 9 个数字');
 }
 
 console.log(`\n结果：通过 ${passed}，失败 ${failed}`);

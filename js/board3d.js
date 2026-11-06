@@ -7,9 +7,11 @@
  * - 图元：point3d / segment3d / line3d / polygon3d / sphere3d / circle3d /
  *         cylinder3d / cone3d / text3d / label3d
  * - 测量：measure3d（distance 两点距离 / angle 三点夹角，纯计算、不污染画板）
- * - 交互：点可拖拽——屏幕射线反投影到「工作面」（过点当前高度的水平面），
+ * - 交互：点可拖拽——屏幕射线反投影到「工作面」（默认过点当前高度的水平面；
+ *         正视/侧视等视线接近水平时自动切换为面向相机的平面，避免求交退化），
  *         依赖该点的线段/面/体随之实时联动（动态几何）
  * - 视角：重置 / 正视 / 俯视 / 侧视 / 等轴
+ * - 渲染稳健性：多边形面顶点更新后重算包围体，半透明面 depthWrite:false 缓解 z-fighting
  *
  * 命令执行器 createBoard3DExecutor 与 js/executor.js（2D/JSXGraph）平行，
  * 互不混用——3D 命令以数字坐标为真值，不引入滑动条/交点筛选等 2D 概念。
@@ -104,6 +106,54 @@ export function lineEndpoints(a, b, radius) {
   return [at(t1), at(t2)];
 }
 
+/**
+ * 三角扇把一个（可非平面）多边形拆成三角形，返回扁平顶点数组 [x,y,z,…]。
+ * 纯计算、不依赖 Three.js，供 createPolygon3D 与无头回归共用同一事实源。
+ * n 个顶点 → n-2 个三角形 → (n-2)*9 个数字。
+ */
+export function polygonTriangles(pts) {
+  const verts = [];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p0 = pts[0], p1 = pts[i], p2 = pts[i + 1];
+    verts.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+  }
+  return verts;
+}
+
+/**
+ * 依据相机视线方向选择拖拽「工作面」，避免射线与平面近乎平行时求交退化。
+ *
+ * 背景：工作面固定为水平面（法线 0,1,0）时，射线与平面求交的分母 = |视线·法线| = |dir.y|。
+ * 正视 (0,0,-1) / 侧视 (-1,0,0) 下该值为 0：射线与水平面平行，交点被推到极远处
+ * （实测拖拽 90px 会把顶点瞬移到 ±14 的相机位置），拖拽完全不可用。
+ *
+ * 规则（threshold 默认 0.25）：
+ *  - |dir.y| >= threshold：保留水平面，拖拽保持「高度守恒」（既有语义与回归不变）
+ *  - |dir.y| <  threshold：切换为「面向相机的平面」，法线取单位视线方向，
+ *    此时 n·dir = 1，求交最稳定；点在该屏幕平面内随鼠标移动
+ *
+ * 平面方程 normal·x + constant = 0（可直接喂给 THREE.Plane.set），故 constant = -normal·point。
+ *
+ * @param {{x:number,y:number,z:number}} viewDir 相机视线方向（不必单位化）
+ * @param {{x:number,y:number,z:number}} point 被拖拽点当前坐标（平面过该点）
+ * @param {number} threshold |dir.y| 低于此值即判定「视线接近水平」
+ * @returns {{normal:number[], constant:number, horizontal:boolean}}
+ */
+export function workPlaneForDrag(viewDir, point, threshold = 0.25) {
+  const vx = viewDir.x, vy = viewDir.y, vz = viewDir.z;
+  const len = Math.hypot(vx, vy, vz) || 1;
+  const dy = Math.abs(vy / len);
+  if (dy >= threshold) {
+    return { normal: [0, 1, 0], constant: -point.y, horizontal: true };
+  }
+  const n = [vx / len, vy / len, vz / len];
+  return {
+    normal: n,
+    constant: -(n[0] * point.x + n[1] * point.y + n[2] * point.z),
+    horizontal: false,
+  };
+}
+
 export class Board3D {
   constructor(container, opts = {}) {
     this.container = container;
@@ -112,6 +162,7 @@ export class Board3D {
     this.points = new Map();    // id -> THREE.Vector3（点网格的实时 position 引用）
     this.dragging = null;
     this.workPlaneY = 0;
+    this.workPlaneHorizontal = true;
     this.workPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -275,20 +326,23 @@ export class Board3D {
     const geo = new THREE.BufferGeometry();
     const mesh = new THREE.Mesh(
       geo,
-      new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.32, side: THREE.DoubleSide, roughness: 0.85 })
+      new THREE.MeshStandardMaterial({
+        color, transparent: true, opacity: 0.32, side: THREE.DoubleSide, roughness: 0.85,
+        // 半透明面不写深度：多层 face 叠加时缓解 z-fighting 与透明混合顺序错乱
+        depthWrite: false,
+      })
     );
     const entry = {
       obj: mesh, type: 'polygon3d', deps: [...pointsIds],
       update: (posOf) => {
         const pts = pointsIds.map(posOf).filter(Boolean);
         if (pts.length < 3) return;
-        const verts = [];
-        for (let i = 1; i < pts.length - 1; i++) {
-          const p0 = pts[0], p1 = pts[i], p2 = pts[i + 1];
-          verts.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
-        }
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(polygonTriangles(pts), 3));
         geo.computeVertexNormals();
+        // 顶点随拖拽改变后必须重算包围体：Three.js 首次渲染会缓存 boundingSphere，
+        // 若不刷新，视锥剔除沿用旧球，拖到远处的面会被错误剔除而凭空消失。
+        geo.computeBoundingSphere();
+        geo.computeBoundingBox();
         geo.attributes.position.needsUpdate = true;
       },
     };
@@ -428,8 +482,7 @@ export class Board3D {
       if (hit && !hit.userData.fixed) {
         this.dragging = hit;
         this.controls.enabled = false;
-        this.workPlaneY = hit.position.y;
-        this.workPlane.set(new THREE.Vector3(0, 1, 0), -this.workPlaneY);
+        this._setDragWorkPlane(hit.position);
         el.setPointerCapture && el.setPointerCapture(e.pointerId);
       }
     });
@@ -453,6 +506,23 @@ export class Board3D {
     };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
+  }
+
+  /**
+   * 按下点时按当前视角选定拖拽工作面（平面过该点）。
+   * 等轴/俯视仍用水平面保持「高度守恒」；正视/侧视等视线接近水平的视角
+   * 自动切换为面向相机的平面，避免射线与水平面平行导致顶点被甩到极远处。
+   */
+  _setDragWorkPlane(point) {
+    const dir = this._viewDir || (this._viewDir = new THREE.Vector3());
+    this.camera.getWorldDirection(dir);
+    const p = workPlaneForDrag(dir, point);
+    this.workPlane.set(
+      new THREE.Vector3(p.normal[0], p.normal[1], p.normal[2]),
+      p.constant
+    );
+    this.workPlaneY = point.y;
+    this.workPlaneHorizontal = p.horizontal;
   }
 
   _updatePointer(e) {
