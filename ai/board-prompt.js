@@ -63,7 +63,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - text       {"op":"text","id":"t1","x":0,"y":5,"text":"说明文字"}    自由文本
 - angle      {"op":"angle","id":"ang","points":["A","B","C"]}        角（B 是顶点，画出角标记）
 - label      {"op":"label","target":"A","text":"A"}                  设置/修改标签
-- style      {"op":"style","target":"tri","color":"#3E44D9","strokeWidth":2,"dash":0,"fill":true,"hidden":false}  样式
+- style      {"op":"style","target":"tri","color":"#3E44D9","strokeWidth":2,"dash":0,"fill":true,"hidden":false}  样式（dash:0 实线，1/2/3 虚线疏密递增；color 同时改描边与填充；fill:true 加半透明底色；hidden:true 隐藏元素）
 - transform  {"op":"transform","id":"tri2","of":"tri","type":"translate","by":[3,1]} | {"op":"transform","id":"tri3","of":"tri","type":"rotate","angle":90,"center":"O"} | {"op":"transform","id":"triS","of":"tri","type":"reflect","axis":"lBC"}  几何变换（把 of 指向的已有元素整份复制并按 type 平移/旋转/反射：translate 用 by:[dx,dy]；rotate 用 angle(度) 与 center(点id或[x,y]，省缺原点)；reflect 用 axis(直线/线段id) 关于该线对称，或省略 axis 用 center 做中心对称）。支持 point/segment/line/polygon/circle，新副本以 id 命名。
 - measure    {"op":"measure","kind":"distance","of":["A","B"]} | {"op":"measure","kind":"angle","of":["A","B","C"]} | {"op":"measure","kind":"evaluate","expr":"x^2","x":2}  测量/自检（回读数值，画板上给临时灰色读数，不污染画板）
 - 画板自带坐标轴：引用 x 轴用 id "xaxis"、y 轴用 "yaxis"（如求函数与 x 轴靠左的交点：{"op":"intersect","id":"P1","of":["f1","xaxis"],"select":"left"}），不要自己画坐标轴。
@@ -157,6 +157,23 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 {"op":"line","id":"lBC","through":["B","C"]}
 {"op":"transform","id":"triS","of":"tri","type":"reflect","axis":"lBC"}
 注意：transform 的 of 必须是前面已建好的元素 id（point/segment/line/ray/polygon/circle 皆可），新副本以 id 命名；旋转/中心对称的 center 可写点 id 或 [x,y]（省缺原点），反射对称用 axis 指定直线/线段 id。副本为静态落点（不随源拖拽实时联动，但保存/重画会按命令重建）——这正是"几何变换"作图的原生支持，比逐点手算坐标更稳、更不易错。
+
+== 例5：样式与标注（线型/颜色/标签，让成品更像"教科书图"） ==
+用户："画三角形 ABC，把边描红加粗，作 BC 边上的高并把辅助垂线改成虚线，给顶点 A 加标签『顶点A』。"
+思路：先画三角形→作高（同例1）→用 style 改边色/线宽、把辅助线 dash 设成虚线、用 label 给点加文字。规则：dash:0 实线，1/2/3 为不同疏密的虚线；strokeWidth 是像素线宽；color 同时作用于描边与填充底；style/label 只改外观、不新建图元，可放心在作图末尾多次追加。
+{"op":"point","id":"A","x":0,"y":3}
+{"op":"point","id":"B","x":-2,"y":-1}
+{"op":"point","id":"C","x":3,"y":-1}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"line","id":"lBC","through":["B","C"]}
+{"op":"perpendicular","id":"h","of":"lBC","through":"A"}
+{"op":"intersect","id":"H","of":["h","lBC"]}
+{"op":"segment","id":"AH","from":"A","to":"H"}
+{"op":"style","target":"tri","color":"#E11D48","strokeWidth":3}        // 三角形描红加粗
+{"op":"style","target":"h","dash":2,"hidden":false}                    // 辅助垂线改成虚线（dash≠0）
+{"op":"style","target":"H","color":"#0EA5E9"}                          // 垂足改色
+{"op":"label","target":"A","text":"顶点A"}                             // 给点加/改标签文字
+// 自检：measure 量 ∠AHB 应≈90°；style/label 仅改外观，不影响几何关系，可自由追加
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
