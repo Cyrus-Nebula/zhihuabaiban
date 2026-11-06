@@ -234,6 +234,56 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 {"op":"polygon","id":"sq","points":["A","B","C","D"]}
 {"op":"verify","id":"vDiag","kind":"distance","of":["A","C"],"expect":141.42,"rtol":0.01,"label":"对角线≈141"}
 
+# 增量修正命令 move（本轮追加 · 命令清单追加登记项，与上方 # 命令协议 同级）
+- 命令：{"op":"move","id":"A","x":0,"y":3} | {"op":"move","id":"A","to":[0,3]} | {"op":"move","id":"a","v":2}
+- 用途：把【已存在】的自由点移到新坐标，或把滑动条当前值改成 v。不新建图元、不改 id，依赖它的线/圆/函数/断言实时联动，并会进画板文档与回放。
+- 为什么需要它：自检回读要求你「移动点/改坐标」时，不能再用 point 重复定义同一个 id（执行器会报「id 重复定义」，修正实际改不动图），更不要 clear 重画整张图。用 move 就地改，才是真正的增量修正。
+- 铁律：move 的 id 必须是前面已建好、或「当前画板元素」列表里已有的元素；点用 x/y 或 to:[x,y]（坐标数值化），滑动条用数值 v。
+- move 是普通作图命令（与 measure/verify 这类临时读数不同）：修正轮里允许 move / style / label / polygon 等增量命令，但禁止 clear / measure / verify。
+- 与 js/executor.js 的 move 分支一一对应；回归用例见 docs/AI作图回归用例清单.md 用例 39~42。
+
+== 例9：自检失败后只改该改的那一处（diff 感知修正） ==
+用户："作 BC 边上的高，要求垂足处成直角、高长为 4。"
+首轮作图末尾照例写两条断言（A 原误画在 (0,2.6)）：
+{"op":"verify","id":"v1","kind":"angle","of":["A","H","B"],"expect":90,"tol":0.5,"label":"高线垂直"}
+{"op":"verify","id":"v2","kind":"distance","of":["A","H"],"expect":4,"tol":0.05,"label":"高的长度"}
+若【自检回读·第 1/2 轮】显示 ✔ 高线垂直 / ✘ 高的长度（实测 3.6），只输出一条增量命令——不重画三角形与高线、不 clear、不再发 verify：
+{"message":"已把 A 上移使高长回到 4","commands":[{"op":"move","id":"A","x":0,"y":3}]}
+系统会用首轮原始的 v1/v2 自动复跑判定是否收敛，无需你再声明断言。
+
+# 细粒度样式（本轮追加 · 命令清单追加登记项，与上方 # 命令协议 同级）
+- style 命令在既有 color / strokeWidth / dash / fill / hidden 之外，新增 4 个可选字段（只改外观、不新建图元，可放心在作图末尾多次追加）：
+  · opacity:0~1        整体不透明度，同时作用于描边与填充；超出范围自动夹到 [0,1]。用于"半透明底色""淡化的辅助线"。
+  · fillColor:"#..."   单独指定填充色，与描边色 color 解耦（写 "color":"#E11D48","fillColor":"#FEE2E2" 即红边浅红底）。
+  · labelColor:"#..."  标签文字颜色（只改标签，不动几何）。
+  · labelSize:14       标签字号（像素）。
+- 组合示例：{"op":"style","target":"tri","color":"#3E44D9","fillColor":"#DBEAFE","fill":true,"opacity":0.35,"labelColor":"#1E1B4B","labelSize":15}
+- 省略这 4 个字段时行为与之前完全一致；用户没要求样式时不要堆砌，保持图形简洁。
+- 注意：fill:true 默认填充不透明度 0.25，若同时给了 opacity，以 opacity 为准（两者都写 fillOpacity，后者覆盖前者）。
+- 与 js/executor.js 的 style 分支一一对应；回归用例见 docs/AI作图回归用例清单.md 用例 35~38。
+
+== 例10：细粒度样式（半透明填充 + 独立标签配色） ==
+用户："画三角形 ABC，填充淡蓝半透明、描边靛紫，顶点 A 的标签用红色大字号。"
+思路：先建三角形 → 一条 style 同时给 color / fillColor / fill / opacity / labelColor / labelSize → 再对点 A 单独追加一条 style 只改标签；无需新建任何图元。
+{"op":"point","id":"A","x":0,"y":3}
+{"op":"point","id":"B","x":-2,"y":-1}
+{"op":"point","id":"C","x":3,"y":-1}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"style","target":"tri","color":"#3E44D9","fillColor":"#DBEAFE","fill":true,"opacity":0.35,"labelColor":"#1E1B4B","labelSize":15}
+{"op":"style","target":"A","labelColor":"#E11D48","labelSize":17}
+// 自检：style 仅改外观，不影响几何关系，无需额外 measure/verify
+
+# 自检修正策略（本轮追加 · 多轮收敛，与第 4 步【自检 verify】配套）
+- 系统在作图后会复跑你首轮写的 verify 断言，最多进行 2 轮「定向修正 → 复检」：只要还有 ✘，就会再次把读数发回给你；全部 ✔ 立即收敛，不再打扰 LLM。
+- 收到以【自检回读·第 N/M 轮】开头的消息时，严格遵守：
+  · 只输出针对【未通过断言】的增量修正命令；【已通过项，请勿重画】里列出的断言所对应的作图命令一律不要再输出。
+  · 禁止输出 clear（会清空整张画板、把已通过的部分重画一遍）；系统会直接过滤掉修正轮里的 clear / measure / verify。
+  · 优先用 move 就地改坐标 / 改滑动条值，其次用 style / label 微调；不要重复输出已经画好的点、线、圆、函数。
+  · 不要输出 measure / verify——复检由系统用你首轮写的原始 verify 自动复跑，无需你再声明。
+- 若连续两轮复检的未通过项都没有减少，系统会停止自动修正并在 AI 面板保留 ✘ 读数；此时在 message 里如实说明未收敛，不要假装已完成。
+- 只有裸 measure（没有 verify）时系统只修正一轮就收手，所以关键数值尽量写成 verify 的 expect / expectRange，让机器判定收敛。
+- 与 js/board.js 的 aiSend() read-back 闭环一一对应；回归用例见 docs/AI作图回归用例清单.md 用例 39~42。
+
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
 - 点在默认情况下可拖拽（动态几何）；固定不动的点才设 fixed:true。
@@ -395,4 +445,26 @@ export const BOARD3D_SYSTEM_PROMPT = `你是「智绘几何」内置的立体几
  *   2) 打磨自动修正策略：多轮收敛、修正前先 diff 再改，避免重画已通过的部分；
  *   3) AI 面板把 ✔/✘ 摘要做成可折叠的自检清单（当前已按行展示）。
  *   4) 若 3D 分支需要自检断言，由「独立3D画板」任务自行追加 verify3d；本任务不改任何 3D 代码。
+ * ==========================================================================*/
+
+/* ============================================================================
+ * 【本轮增量 · AI作图对标大角几何】「读取画板状态后修改图形」闭环补强（2D 主干「追加段落」，
+ * 未改动上方任何已有行，3D 命令分支 isBoard3DIntent / BOARD3D_SYSTEM_PROMPT 原样保留）
+ * 主题：对标 §1.3 大角几何「MCP 式读取画板状态后修改图形」——此前自检失败后 AI 被要求「移动点/改坐标」，
+ * 但协议里没有就地修改的命令（point 同 id 会报重复定义），修正只能整幅重画，多轮收敛更无从谈起。
+ * 本轮三处联动（均为追加 / 局部新增，不覆盖另一任务内容）：
+ *   1) 新增 move 增量修正命令：ai/board-prompt.js 追加「# 增量修正命令 move」登记章节 + 例9；
+ *      js/executor.js 新增 case 'move' 与 execute() 的 move 特判（跳过注册表，避免 id 重复定义）。
+ *   2) style 细粒度样式：ai/board-prompt.js 追加「# 细粒度样式」登记章节 + 例10（opacity / fillColor /
+ *      labelColor / labelSize）；js/executor.js 的 style 分支同步支持，省略字段时行为与旧版完全一致。
+ *   3) 自检闭环多轮收敛：ai/board-prompt.js 追加「# 自检修正策略」；js/board.js 的 aiSend() read-back
+ *      改成「定向修正 → 复跑首轮原始 verify → 机器判定收敛」最多 2 轮，修正轮过滤 clear/measure/verify，
+ *      提示词带【已通过项，请勿重画】diff 清单，失败项不减少即提前收手。
+ * 协议联动：两条新增/扩展命令均已在命令清单追加登记，并与执行器分支、回归用例（35~42）一一对齐。
+ * TODO(下一步): 1) [本轮已完成] move 增量修正；2) [本轮已完成] style 细粒度样式；
+ *   3) [本轮已完成] 自动修正多轮收敛 + diff 感知（不再重画已通过部分）；
+ *   4) 给 style 补 strokeOpacity / fillOpacity 独立控制与 labelFont / labelOffset；
+ *   5) AI 面板把 ✔/✘ 摘要做成可折叠自检清单（当前已按行展示）；
+ *   6) 把「分段裁剪」从 UI 工具（js/tools.js 的 trim）升级为 AI 可下发的原生命令；
+ *   7) 若 3D 分支需要同类能力，由「独立3D画板」任务自行追加；本任务不改任何 3D 代码 / appId / editor.html。
  * ==========================================================================*/

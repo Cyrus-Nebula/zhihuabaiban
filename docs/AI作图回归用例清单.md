@@ -58,6 +58,10 @@
 | 25 | 三角形描红加粗 | `polygon` tri → `style` target:tri color:"#E11D48" strokeWidth:3 | ✅ | color 同时改描边+填充；strokeWidth 为像素线宽 |
 | 26 | 辅助线改成虚线 | `style` target:h dash:2（dash:0 实线，1/2/3 虚线疏密递增） | ✅ | dash≠0 即虚线；只改外观不新建图元 |
 | 27 | 给顶点 A 加标签「顶点A」 | `label` target:A text:"顶点A" | ✅ | 标签改的是元素名/文字，不是新建点；可多次追加 |
+| 35 | 半透明填充 + 描边/填充分色 | `style` target:tri color:"#3E44D9" fillColor:"#DBEAFE" fill:true opacity:0.35 | ✅ | 本轮新增细粒度字段；opacity 夹到 [0,1] 并同时写 strokeOpacity/fillOpacity；fill:true 默认的 0.25 被显式 opacity 覆盖 |
+| 36 | 标签文字改色 | `style` target:A labelColor:"#E11D48" | ✅ | 只改 label 的 strokeColor，不动几何元素 |
+| 37 | 标签字号放大 | `style` target:A labelSize:17 | ✅ | 写 label 的 fontSize(px)；≤0 或非数值忽略 |
+| 38 | 省略新字段时向后兼容 | `style` target:tri color:"#E11D48" strokeWidth:3 dash:2 hidden:false | ✅ | 不传 4 个新字段时行为与旧版完全一致；`tests/executor_style_regress.mjs` 无头覆盖 |
 
 ## 测量 / 自检（verify 层）
 
@@ -75,6 +79,15 @@
 | 33 | 自检：sin(x) 在 π/2 最大值≈1（区间容差） | `function` expr:"sin(x)" from:-1 to:4 → `verify` kind:evaluate expr:"sin(x)" x:1.570796 expectRange:[0.98,1.02] label:"sin(π/2)≈1" | ✅ | 区间模式：实测落在 [lo,hi] 内即 pass；比硬写 expect 更贴合"约等于"口语意图（例8a） |
 | 34 | 自检：大正方形对角线≈141（相对容差） | `verify` kind:distance of:[A,C] expect:141.42 rtol:0.01 label:"对角线≈141" | ✅ | 相对容差：\|实测−预期\| ≤ tol + rtol·\|预期\|；适合预期值很大的量（≈1.4 容差），避免绝对 tol 过苛误判（例8b） |
 
+## 增量修正与自检收敛（move / 多轮闭环，本轮新增）
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 说明 |
+|---|------|-----------|------|------|
+| 39 | 自检失败后就地改坐标、不重画整图 | 首轮 `verify` v1 ✔ / v2 ✘（高长 3.6≠4）→ 修正轮只输出 `move` id:A x:0 y:3（或 to:[0,3]） | ✅ | 本轮新增 `move` 增量命令：对已存在 id 就地改坐标；此前用 `point` 重定义同 id 会报「id 重复定义」，修正实际改不动图 |
+| 40 | 改滑动条当前值做增量修正 | `move` id:a v:2（a 是已存在的 `slider`）→ 依赖它的 `function` 实时联动 | ✅ | 滑动条用数值 `v`、点用 `x/y` 或 `to:[x,y]`；`move` 是普通作图命令，会进文档/回放 |
+| 41 | 多轮收敛：复跑首轮原始 verify | 修正轮执行后系统复跑首轮 `verify`（transient、不进文档）→ 全部 ✔ 即收敛，不再请求 LLM | ✅ | `js/board.js` 的 `aiSend()` 最多 2 轮；失败项未减少或只有裸 `measure` 时提前收手，避免无限调用 |
+| 42 | diff 感知：不重画已通过部分 | 修正提示带【已通过项，请勿重画】；修正轮里的 `clear` / `measure` / `verify` 被前端过滤 | ✅ | 防误清画板、防临时读数堆积；AI 面板提示「（已忽略修正轮里的 clear / measure / verify 命令）」 |
+
 ## 协议扩展 TODO（不在本轮，供下一步）
 - [本轮已完成] `reflect` / `rotate` / `translate`：原生几何变换 op（见用例 17/21/22 与 `js/executor.js` 的 transform 分支）。
 - [本轮已完成] `animate`：自动播放参数动画命令（见用例 23 与 `js/executor.js` 的 animate 分支、`js/board.js` 的 animPlayTargets；前端复用既有滑动条动画引擎）。
@@ -88,9 +101,17 @@
   - `js/executor.js`：在 `verify` 执行分支按三种模式算 `pass`（`range` / `abs` / `rtol`），`rtol` 用 `|实测−预期| ≤ tol + rtol·|预期|` 组合容差（贴合 math.isclose），透传 `mode/expectRange/rtol`；`measureReadout()` 据模式生成对应读数文案。
   - `js/board.js`：`describeMeasure()` 支持 `range`（`应在 [lo,hi]`）/ `rtol`（`容差 tol+rtol·|E|`）展示；`applyAiCommands()` 透传 `mode/expectRange/rtol`；`buildReadback()` 的 `allPassed` 仍以 `pass` 为准，闭环行为不变。
   - `ai/board-prompt.js`：**仅追加段落**——「# 自检断言 verify」补充三种期望值写法说明 + 例8（区间容差 8a、相对容差 8b），未改动任何已有行与 3D 分支；见用例 33/34。
-- [下一步·待办] 1) 打磨自动修正策略（多轮收敛、修正前先 diff 再改，避免重画已通过部分）；2) 给 `style` 增加 `opacity` / `labelColor` 等细粒度样式；3) AI 面板把 ✔/✘ 摘要做成可折叠自检清单。
+- [本轮新增] `move` 增量修正命令（对标大角几何「MCP 式读取画板状态后修改图形」）：此前自检失败后提示词要求 AI「移动点/改坐标」，但 `point` 对同 id 会报「id 重复定义」，修正只能整幅重画。`move` 就地改点坐标/滑动条值，不新建图元、不改 id、不改依赖。
+  - `js/executor.js`：新增 `case 'move'`（自由点 `setPosition`/`moveTo`，滑动条 `setValue` + `board.update()`）与 `execute()` 的 `move` 特判（跳过 `registry.set`，否则会误报重复定义）。
+  - `ai/board-prompt.js`：**仅追加段落**——「# 增量修正命令 move」命令清单登记 + 例9（diff 感知修正），未改动任何已有行与 3D 分支；见用例 39/40。
+- [本轮新增] `style` 细粒度样式：`opacity`（0~1 整体不透明度，描边+填充）、`fillColor`（独立填充色，与 `color` 解耦）、`labelColor` / `labelSize`（标签文字色/字号）。见用例 35~38 与 `ai/board-prompt.js` 的「# 细粒度样式」登记章节 + 例10；`js/executor.js` 的 `style` 分支同步支持，省略新字段时行为与旧版完全一致。
+- [本轮新增] 自检闭环多轮收敛 + diff 感知：修正轮从「单次 LLM 二次核对」升级为「定向修正 → 复跑首轮原始 `verify` → 机器判定收敛」，最多 2 轮。
+  - `js/board.js` 的 `aiSend()`：修正提示带【已通过项，请勿重画】清单，过滤修正轮里的 `clear` / `measure` / `verify`，复检失败项不减少即提前收手；`allPassed` 时仍跳过二次调用。
+  - `ai/board-prompt.js`：**仅追加段落**——「# 自检修正策略」章节（多轮收敛、禁止 clear/重画、优先 move、复检由系统自动复跑），未改动任何已有行与 3D 分支；见用例 41/42。
+- [下一步·待办] 1) 给 `style` 补 `strokeOpacity` / `fillOpacity` 独立控制与 `labelFont` / `labelOffset`；2) AI 面板把 ✔/✘ 摘要做成可折叠自检清单；3) 把「分段裁剪」从 UI 工具（`js/tools.js` 的 `trim`）升级为 AI 可下发的原生命令（目前只能靠 `arc` + `glider` + `style hidden` 绕）；4) 打磨"未收敛"时的人工接管提示。
 
 ## 已知限制
 - 沙箱无头环境无法实例化真实 JSXGraph，上述用例需在带浏览器的环境目视确认或补单测；命令序列本身已与 `js/executor.js` 协议逐条对齐。
 - `measure` 在前端画板生成临时读数并回传数值；read-back 闭环已在 `js/board.js` 接入（执行后用 measure 数值驱动 LLM 二次核对并自动修正），无需后端改造。沙箱无头环境无法跑真实 JSXGraph + LLM，闭环行为需在带浏览器的环境目视确认（用例 14/15/16/20/24）。
 - 本轮新增 `verify` 的 `pass` 判定是纯数值计算（|实测 − 预期| ≤ tol），不依赖 LLM，可在无头单测里覆盖；但 ✔/✘ 读数渲染、AI 面板自检摘要，以及「全通过跳过二次调用 / 失败项定向修正」两条闭环分支仍需带浏览器的环境目视确认（用例 28~32）。
+- 本轮 `move` / 细粒度 `style` 协议分支可用 `node tests/executor_style_regress.mjs` 无头跑（mock board，覆盖新旧字段、标签属性、滑动条改值、向后兼容与错误路径）；但「修正 → 复跑 verify → 收敛」的多轮循环依赖真实 LLM 请求与浏览器画板，需在带浏览器的环境目视确认（用例 39~42）。

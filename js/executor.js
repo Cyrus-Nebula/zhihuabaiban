@@ -26,7 +26,14 @@
  *   text      {id,x,y,bind:{kind,of}}          动态测量文本（kind: distance/length/radius/angle/value）
  *   angle     {id,points:[A,B,C]}              角（B为顶点）
  *   label     {target,text}                    设置/修改标签
- *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?}  样式
+ *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?,opacity?,fillColor?,labelColor?,labelSize?}  样式
+ *                                                               后四个为细粒度样式（本轮新增）：
+ *                                                               opacity 0~1 整体不透明度（描边+填充）、
+ *                                                               fillColor 独立填充色、labelColor 标签文字色、
+ *                                                               labelSize 标签字号(px)；省略则完全沿用旧行为
+ *   move      {id,x,y} | {id,to:[x,y]} | {id,v}   增量修正（本轮新增）：把已存在的自由点移到新坐标、
+ *                                                或把滑动条 id 的当前值改为 v；不新建图元、不改 id、不进注册表。
+ *                                                自检闭环据此只改未通过断言相关的那一处，避免 clear 重画整张图
  *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
  *   verify    {kind,of|expr/x,expect?,tol?,rtol?,expectRange?,label?}   自检断言：复用 measure 的回读值，
  *                                                           叠加「期望值」自动判定 pass(✔/✘) 并透传 delta。期望值三种写法：
@@ -54,9 +61,19 @@
  *   expectRange:[lo,hi]（区间容差，pass⇔lo≤实测≤hi，覆盖"≈π""落在象限内"等模糊意图）。
  *   三者互斥：给了 expectRange 走区间模式；否则走 expect(+tol/rtol) 模式；二者都缺判不通过。
  *   board.js 的 describeMeasure/read-back 闭环同步支持 range 与 rtol 两种展示，allPassed 仍以 pass 为准。
- * TODO(下一步): 1) [本轮已完成] verify 支持 expectRange 区间容差与 rtol 相对容差；
- *   2) 打磨自动修正策略（多轮收敛、修正前先 diff 再改，避免把已通过的部分重画）；
- *   3) AI 面板把 ✔/✘ 读数做成可折叠的自检清单（当前已按行展示）。
+ * 本轮增量（增量修正 move + 细粒度样式 + 自检闭环多轮收敛）：
+ *   1) 新增 move 增量修正命令（见 case 'move' 与 execute() 的 move 特判）：此前提示词让 AI「移动点/改坐标」，
+ *      但 point 对同 id 会报「重复定义」，自检修正实际改不动图。move 就地改点坐标/滑动条值，不新建图元。
+ *   2) style 分支新增 opacity / fillColor / labelColor / labelSize 四个可选字段（见 case 'style'），
+ *      与 ai/board-prompt.js 两处「命令清单追加登记项」、docs/AI作图回归用例清单.md 用例 35~42 同步；
+ *      tests/executor_style_regress.mjs 用 mock board 无头覆盖 move / 新旧 style 字段与向后兼容。
+ *   3) read-back 闭环升级为「定向修正 → 复跑原 verify → 机器判定收敛」多轮循环（js/board.js aiSend()），
+ *      修正轮过滤 clear/measure/verify、提示词带「已通过项请勿重画」diff 清单；本文件无需额外改动。
+ * TODO(下一步): 1) [本轮已完成] move 增量修正；2) [本轮已完成] style 细粒度样式；
+ *   3) [本轮已完成] 自动修正多轮收敛 + diff 感知（不再重画已通过部分）；
+ *   4) 给 style 补 opacity 的逐元素独立控制（strokeOpacity / fillOpacity 分开）与 labelFont / labelOffset；
+ *   5) AI 面板把 ✔/✘ 读数做成可折叠的自检清单（当前已按行展示）；
+ *   6) 把「分段裁剪」从 UI 工具（js/tools.js 的 trim）升级为 AI 可直接下发的原生命令（目前 AI 只能靠 arc/glider 绕）。
  *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
@@ -559,15 +576,68 @@ export function createExecutor(board) {
         else if (typeof el.setLabel === 'function') el.setLabel(t);
         return null;
       }
+      case 'move': {
+        // 增量修正命令（本轮新增，对标大角几何「MCP 式读取画板状态后修改图形」）：
+        // 把已存在的自由点/滑动条改到新的数值，不新建图元、不改 id、不破坏依赖关系。
+        // 此前自检闭环提示 AI「移动点/改坐标」，但 point 对同 id 会报「重复定义」，修正实际改不动图；
+        // 有了 move，AI 才能只改未通过断言相关的那一处，而不必 clear 重画整张图。
+        //   {"op":"move","id":"A","x":0,"y":2.6}  移动自由点
+        //   {"op":"move","id":"A","to":[0,2.6]}   等价写法
+        //   {"op":"move","id":"a","v":2}          改滑动条当前值（依赖它的几何实时联动）
+        const el = resolve(cmd.id);
+        if (sliders.has(cmd.id)) {
+          const v = num(cmd.v, NaN);
+          if (!Number.isFinite(v)) throw new Error('move 滑动条需要数值 v');
+          if (typeof el.setValue !== 'function') throw new Error('该滑动条不支持 setValue');
+          el.setValue(v);
+        } else {
+          const to = Array.isArray(cmd.to) ? cmd.to : [cmd.x, cmd.y];
+          const x = num(to[0], NaN), y = num(to[1], NaN);
+          if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('move 需要 x/y 或 to:[x,y] 数值坐标');
+          const COORDS_BY_USER = 1; // JXG.COORDS_BY_USER，避免依赖全局
+          if (typeof el.setPosition === 'function') el.setPosition(COORDS_BY_USER, [x, y]);
+          else if (typeof el.moveTo === 'function') el.moveTo([x, y]);
+          else throw new Error('move 目标不是可移动的点：' + cmd.id);
+        }
+        try { board.update(); } catch (_) { /* 刷新失败不致命，下一帧也会重算 */ }
+        return null;
+      }
       case 'style': {
+        // 细粒度样式（本轮新增，对标大角几何「生产级成品度」）：
+        //   opacity     整体不透明度 0~1，同时作用于描边与填充；越界自动夹到 [0,1]
+        //   fillColor   单独指定填充色，与描边色 color 解耦（红边浅红底成为可能）
+        //   labelColor  标签文字颜色（只改 label，不动几何）
+        //   labelSize   标签字号（像素）
+        // 四个字段全部可选，省略时行为与旧版完全一致，保证向后兼容。
+        // 本分支与 ai/board-prompt.js「# 细粒度样式」登记项一一对应，改字段要两边同步。
         const el = resolve(cmd.target);
         const a = {};
         if (cmd.color) { a.strokeColor = cmd.color; a.highlightStrokeColor = cmd.color; a.fillColor = cmd.color; }
         if (cmd.strokeWidth != null) a.strokeWidth = num(cmd.strokeWidth, 2);
         if (cmd.dash != null) a.dash = num(cmd.dash, 0);
         if (cmd.fill) { a.fillColor = cmd.color || '#C7D2FE'; a.fillOpacity = 0.25; }
+        if (cmd.fillColor != null) a.fillColor = String(cmd.fillColor); // 覆盖 color 带来的同色填充
+        if (cmd.opacity != null) {
+          const o = Number(cmd.opacity);
+          if (Number.isFinite(o)) {
+            const clamped = Math.max(0, Math.min(1, o));
+            a.strokeOpacity = clamped;
+            a.fillOpacity = clamped; // 与 fill:true 的默认 0.25 冲突时以显式 opacity 为准
+          }
+        }
         if (cmd.hidden != null) a.visible = !cmd.hidden;
-        el.setAttribute(a);
+        if (Object.keys(a).length) el.setAttribute(a);
+        // 标签是独立的 JXG.Text：文字颜色用 strokeColor、字号用 fontSize，不能塞进几何元素的 setAttribute
+        const lab = el && el.label;
+        if (lab && typeof lab.setAttribute === 'function' && (cmd.labelColor != null || cmd.labelSize != null)) {
+          const la = {};
+          if (cmd.labelColor != null) la.strokeColor = String(cmd.labelColor);
+          if (cmd.labelSize != null) {
+            const fs = num(cmd.labelSize, 0);
+            if (fs > 0) la.fontSize = fs;
+          }
+          if (Object.keys(la).length) lab.setAttribute(la);
+        }
         return null;
       }
       case 'measure': {
@@ -760,6 +830,11 @@ export function createExecutor(board) {
       if (cmd.op === 'animate') {
         // 动画是纯前端动作（驱动既有滑动条播放），不注册画板元素；把目标回传给前端去启动播放
         out.push({ ok: true, op: 'animate', ids: (built && built.ids) || [], pingpong: !!(built && built.pingpong), speed: (built && built.speed) || 'normal' });
+        continue;
+      }
+      if (cmd.op === 'move') {
+        // 增量修正：build 返回 null，且 cmd.id 是已注册元素，绝不能再走 registry.set（会误报「重复定义」/把值写成 null）
+        out.push({ ok: true, op: 'move', id: cmd.id || null });
         continue;
       }
       const el = built;
