@@ -175,6 +175,42 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 {"op":"label","target":"A","text":"顶点A"}                             // 给点加/改标签文字
 // 自检：measure 量 ∠AHB 应≈90°；style/label 仅改外观，不影响几何关系，可自由追加
 
+# 自检断言 verify（本轮追加 · 命令清单追加登记项，与上方 # 命令协议 同级）
+- 命令：{"op":"verify","id":"v1","kind":"angle","of":["A","H","B"],"expect":90,"tol":0.5,"label":"高线垂直"}
+- 与 measure 的区别：measure 只回读数值（无法判定对错）；verify 在同样的回读值上叠加 expect(期望值) + tol(容差)，
+  由执行器自动算出 pass(✔/✘) 与 delta(偏差)，画板生成绿色 ✔ / 橙色 ✘ 的临时读数。
+- kind 与 measure 完全一致：distance(两点距离) / angle(∠ABC，中点是顶点，单位度) / evaluate(表达式在 x 处的值)。
+  distance/angle 用 of:[...]，evaluate 用 expr + x；字段写法与 measure 一一对应。
+- tol 省略时按量纲取默认值：角度 0.5°，其余 0.05；expect 必须是数字（不能写表达式或字符串），
+  实在算不出 expect 就退回 measure。tol 按图形精度给，坐标取整的图用 0.05~0.2 即可，别给过大容差把错误放过。
+- verify 是临时读数：不进画板文档、不进注册表，保存/重画不会重建，只在本次作图过程中生效。
+- 第 4 步【自检 verify】的推荐做法：在作图命令末尾附 1-3 条 verify，把第 2 步规划时算好的关键数值写成 expect。
+  系统执行后会：全部通过 → 机器直接判定符合意图（不再重复画、不再二次询问）；任一未通过 → 把「预期 / 实测 / 偏差」
+  精确回传给你做定向修正。因此不要用 verify 去量无关的量，也不要堆一堆必然通过的冗余断言。
+- 收到【自检回读】时的规则不变：只输出修正命令或空 commands，且修正命令里不要再带 measure/verify。
+
+== 例6：带断言的高线构造（把例1的"肉眼核对"升级为机器判定） ==
+用户："画三角形 ABC，并作 BC 边上的高（要求垂足处成直角）。"
+思路：构造同例1；规划阶段已算好 ∠AHB 应为 90°、A(0,3) 到垂足 H(0,-1) 的高应为 4，把两个预期值写进末尾 verify。
+{"op":"point","id":"A","x":0,"y":3}
+{"op":"point","id":"B","x":-2,"y":-1}
+{"op":"point","id":"C","x":3,"y":-1}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"line","id":"lBC","through":["B","C"]}
+{"op":"perpendicular","id":"h","of":"lBC","through":"A"}
+{"op":"intersect","id":"H","of":["h","lBC"]}
+{"op":"segment","id":"AH","from":"A","to":"H"}
+{"op":"style","target":"h","hidden":true}
+{"op":"verify","id":"v1","kind":"angle","of":["A","H","B"],"expect":90,"tol":0.5,"label":"高线垂直"}
+{"op":"verify","id":"v2","kind":"distance","of":["A","H"],"expect":4,"tol":0.05,"label":"高的长度"}
+
+== 例7：顶点式抛物线用 evaluate 断言核对 ==
+用户："画顶点 (2,3)、开口向下的抛物线，并确认顶点没画错。"
+{"op":"function","id":"f1","expr":"3-(x-2)^2","from":-2,"to":6}
+{"op":"point","id":"V","x":2,"y":3}
+{"op":"verify","id":"v3","kind":"evaluate","expr":"3-(x-2)^2","x":2,"expect":3,"tol":0.001,"label":"顶点函数值"}
+注意：verify 的 id 只作标识，不会被后续命令引用（它不是画板图元）；of / expr / x 仍遵守"先创建后引用"铁律。
+
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
 - 点在默认情况下可拖拽（动态几何）；固定不动的点才设 fixed:true。
@@ -320,3 +356,17 @@ export const BOARD3D_SYSTEM_PROMPT = `你是「智绘几何」内置的立体几
 - 引用其他元素用它的 id，id 必须在之前的命令里已经定义。
 - 直角/特殊位置可在 message 里说明，或用 text3d 标注，不要自行添加无关辅助线。
 - 需要看不同视角时点顶部「等轴 / 正视 / 俯视 / 侧视 / 重置视角」按钮（无需你发命令）。`;
+
+/* ============================================================================
+ * 【本轮增量 · AI作图对标大角几何】自检断言 verify（2D 主干「追加段落」，未改动任何已有行 / 3D 分支）
+ * 对应上方新增的「# 自检断言 verify」章节与例6 / 例7，以及 js/executor.js 的 verify 执行分支。
+ * - 已落地：此前「与预期不符」全靠 LLM 肉眼比对 measure 的裸数值；现由 AI 在规划阶段把关键量的
+ *   期望值写进 verify(expect/tol)，执行器用 computeMeasure() 自动判定 pass/delta（measure 与 verify
+ *   共用同一套测量函数）。js/board.js 的 read-back 闭环据此：全部通过时跳过二次 LLM 调用，
+ *   有失败项时把「预期 / 实测 / 偏差」精确回传做定向修正，AI 面板逐项展示 ✔/✘ 自检摘要。
+ * - 协议联动：命令清单已追加登记 verify；回归用例见 docs/AI作图回归用例清单.md。
+ * TODO(下一步): 1) verify 支持 expectRange:[lo,hi] / 相对容差 rtol，覆盖"约等于 / 落在区间内"的模糊意图；
+ *   2) 打磨自动修正策略：多轮收敛、修正前先 diff 再改，避免重画已通过的部分；
+ *   3) AI 面板把 ✔/✘ 摘要做成可折叠的自检清单（当前已按行展示）。
+ *   4) 若 3D 分支需要自检断言，由「独立3D画板」任务自行追加 verify3d；本任务不改任何 3D 代码。
+ * ==========================================================================*/

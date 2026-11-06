@@ -67,14 +67,24 @@
 | 19 | 量 ∠ABC 角度 | `measure` kind:angle of:[A,B,C] | ✅ | 中点是顶点 |
 | 20 | 量函数在 x=2 处的值 | `measure` kind:evaluate expr:"x^2" x:2 | ✅ | 数值经 execute 结果回传 |
 | 24 | AI 作图后自动自检并修正（read-back 闭环） | AI 输出作图命令 + `measure`；前端执行后把 measure 数值回传 LLM 二次核对，几何关系不符时自动补发修正命令 | ✅ | 前端 `js/board.js` 的 `aiSend()` 驱动；仅当一轮含 `measure` 时触发一次额外 LLM 调用；`executor.clearMeasures()` 清上一轮读数 |
+| 28 | 声明式断言：高线垂直（通过） | `verify` kind:angle of:[A,H,B] expect:90 tol:0.5 label:"高线垂直" | ✅ | 执行器按 expect/tol 自动判定 `pass:true`，画板生成绿色 ✔ 读数；与 `measure` 共用 `computeMeasure()` |
+| 29 | 声明式断言：顶点函数值（evaluate） | `verify` kind:evaluate expr:"3-(x-2)^2" x:2 expect:3 tol:0.001 | ✅ | expect 必须是数字；tol 省略时角度默认 0.5°、其余 0.05 |
+| 30 | 断言未通过时自动修正 | `verify` expect:90 但实测 60 → 闭环把「预期 90° / 实测 60° / 偏差 -30°」列进【未通过断言】回传 LLM，补发修正命令 | ✅ | 不再靠 LLM 肉眼比对裸数值；修正完成后 `clearMeasures()` 清掉临时读数 |
+| 31 | 全部断言通过时跳过二次调用 | 本轮只含 `verify` 且全 `pass` → 不发起第二次 LLM 请求，AI 面板显示「已自检 N 项，全部符合预期」 | ✅ | 只要含裸 `measure`（无期望值）就必须二次核对，不能省 |
+| 32 | verify 不进文档 / 不重建 | 保存、重画、撤销后断言读数不出现 | ✅ | 与 `measure` 一致的 transient 行为；`runCommands()` 与 `applyAiCommands()` 均不过滤进 `doc.commands` |
 
 ## 协议扩展 TODO（不在本轮，供下一步）
 - [本轮已完成] `reflect` / `rotate` / `translate`：原生几何变换 op（见用例 17/21/22 与 `js/executor.js` 的 transform 分支）。
 - [本轮已完成] `animate`：自动播放参数动画命令（见用例 23 与 `js/executor.js` 的 animate 分支、`js/board.js` 的 animPlayTargets；前端复用既有滑动条动画引擎）。
 - [本轮已完成] read-back 闭环：在 `js/board.js` 的 `aiSend()` 前端驱动——执行命令后收集 `measure` 的 `value`，回传给 LLM 二次核对，几何关系不符则自动补发修正命令（对标大角几何 MCP 式读画板状态后改图）。`ai/board-prompt.js` 第 4 步已约定 AI 收到【自检回读】时只输出修正命令或空 commands；`js/executor.js` 提供 `clearMeasures()` 清上一轮读数。（注：因画板实例在浏览器侧，闭环放在前端而非后端，效果等价。）
-- [本轮新增] 样式与标注 few-shot 与回归用例（线型 dash / 颜色 color / 线宽 strokeWidth / 标签 label）：见用例 25/26/27 与 `ai/board-prompt.js` 例5；`js/executor.js` 的 `style` / `label` 分支已支持，本次补齐"教学示例"，让 AI 主动把成品描红、加粗、虚线化、加标签（对标大角几何"生产级成品度"）。
-- [下一步·待办] 给 `style` 增加 `opacity` / `labelColor` 等细粒度样式；或把「自检点」(measure 读数) 用高亮色自动标注，进一步提升成品辨识度与"教科书图"观感。
+- [上轮已完成] 样式与标注 few-shot 与回归用例（线型 dash / 颜色 color / 线宽 strokeWidth / 标签 label）：见用例 25/26/27 与 `ai/board-prompt.js` 例5；`js/executor.js` 的 `style` / `label` 分支已支持，补齐"教学示例"，让 AI 主动把成品描红、加粗、虚线化、加标签（对标大角几何"生产级成品度"）。
+- [本轮新增] 声明式自检断言 `verify`（清单第 3 项「与预期不符时自动修正」的落地）：此前自检只回读裸数值、靠 LLM 肉眼判断是否符合意图；现 AI 在规划阶段把关键量的期望值写进命令。
+  - `js/executor.js`：新增 `verify` 执行分支与 `computeMeasure()`（`measure` / `verify` 共用同一种测量算法），按 `expect` + `tol` 自动算出 `pass` / `delta`，画板生成绿色 ✔ / 橙色 ✘ 临时读数，`execute()` 结果透传 `pass/expect/tol/delta/label`。
+  - `js/board.js`：`describeMeasure()` / `buildReadback()` 升级为结构化回读；read-back 闭环在全部断言通过时**跳过二次 LLM 调用**，有失败项时把「预期 / 实测 / 偏差」列入【未通过断言】做定向修正；AI 面板逐行展示 ✔/✘ 自检摘要；`runCommands()` / `applyAiCommands()` 均把 `verify` 挡在 `doc.commands` 之外。
+  - `ai/board-prompt.js`：**仅追加段落**（未改动任何已有行与 3D 分支）——「# 自检断言 verify」命令清单登记章节 + 例6（带断言的高线）/ 例7（顶点式 evaluate 断言），见用例 28~32。
+- [下一步·待办] 1) `verify` 支持 `expectRange:[lo,hi]` / 相对容差 `rtol`，覆盖"约等于 / 落在区间内"的模糊意图；2) 打磨自动修正策略（多轮收敛、修正前先 diff 再改，避免重画已通过部分）；3) 给 `style` 增加 `opacity` / `labelColor` 等细粒度样式；4) AI 面板把 ✔/✘ 摘要做成可折叠自检清单。
 
 ## 已知限制
 - 沙箱无头环境无法实例化真实 JSXGraph，上述用例需在带浏览器的环境目视确认或补单测；命令序列本身已与 `js/executor.js` 协议逐条对齐。
 - `measure` 在前端画板生成临时读数并回传数值；read-back 闭环已在 `js/board.js` 接入（执行后用 measure 数值驱动 LLM 二次核对并自动修正），无需后端改造。沙箱无头环境无法跑真实 JSXGraph + LLM，闭环行为需在带浏览器的环境目视确认（用例 14/15/16/20/24）。
+- 本轮新增 `verify` 的 `pass` 判定是纯数值计算（|实测 − 预期| ≤ tol），不依赖 LLM，可在无头单测里覆盖；但 ✔/✘ 读数渲染、AI 面板自检摘要，以及「全通过跳过二次调用 / 失败项定向修正」两条闭环分支仍需带浏览器的环境目视确认（用例 28~32）。
