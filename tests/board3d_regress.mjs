@@ -46,7 +46,7 @@ class FakeBoard {
   createText3D(id, x, y, z, text, o = {}) { return this._reg(id, { type: 'text3d', deps: [], update: null }); }
   createLabel3D(t, text) { const e = this.entries.get(t); if (!e) throw new Error(`标注目标「${t}」不存在`); return e; }
   setStyle(t, o = {}) { const e = this.entries.get(t); if (!e) throw new Error(`目标「${t}」不存在`); return e; }
-  remove(id) { return this.entries.delete(id); }
+  remove(id) { this.entries.delete(id); this.points.delete(id); return true; }
   clear() { this.entries.clear(); this.points.clear(); }
   notifyPointMoved() {}
 }
@@ -100,6 +100,40 @@ console.log('— 健壮性：依赖缺失 / id 重复 —');
   ]);
   assert(dup[0].ok === true, '首个 A 创建成功');
   assert(dup[1].ok === false && /重复/.test(dup[1].error), '重复 id 被捕获为 ok:false');
+}
+
+console.log('— 用例 9：remove3d 删除单元素并级联依赖 —');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  const res = exe.execute([
+    { op: 'point3d', id: 'A', x: 0, y: 0, z: 0 },
+    { op: 'point3d', id: 'B', x: 1, y: 0, z: 0 },
+    { op: 'point3d', id: 'C', x: 0, y: 1, z: 0 },
+    { op: 'segment3d', id: 'sAB', from: 'A', to: 'B' },
+    { op: 'segment3d', id: 'sBC', from: 'B', to: 'C' },
+    { op: 'sphere3d', id: 'spA', center: 'A', radius: 2 },
+  ]);
+  assert(res.every((r) => r.ok), '建点/线段/球全部成功');
+  assert(board.entries.size === 6, '初始 6 个元素');
+  const r1 = exe.execute([{ op: 'remove3d', id: 'A' }]);
+  assert(r1[0].ok === true, 'remove3d A 成功');
+  // A 被删，依赖 A 的 sAB 与 spA 级联删除；依赖 B、C 的 sBC 保留
+  assert(!board.entries.has('A'), 'A 已被删除');
+  assert(!board.entries.has('sAB'), '依赖 A 的线段 sAB 级联删除');
+  assert(!board.entries.has('spA'), '依赖 A 的球 spA 级联删除');
+  assert(board.entries.has('sBC'), '不依赖 A 的 sBC 保留');
+  assert(board.entries.size === 3, '剩余元素 == 3（B/C/sBC）');
+  const removedIds = new Set(r1[0].removed);
+  assert(removedIds.has('A') && removedIds.has('sAB') && removedIds.has('spA'), 'removed 数组含 A/sAB/spA');
+}
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  const bad = exe.execute([{ op: 'remove3d', id: 'NOPE' }]);
+  assert(bad[0].ok === false && /不存在/.test(bad[0].error), '删除不存在的 id 被捕获为 ok:false');
+  const noId = exe.execute([{ op: 'remove3d' }]);
+  assert(noId[0].ok === false && /缺少 id/.test(noId[0].error), '缺少 id 被捕获为 ok:false');
 }
 
 console.log('— 持久化：moves() / applyMoves() 往返 —');

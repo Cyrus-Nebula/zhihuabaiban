@@ -622,7 +622,11 @@ export class Board3D {
 /**
  * 3D 命令执行器（与 2D createExecutor 平行，互不复用代码）。
  * 协议命令：point3d / segment3d / line3d / polygon3d / sphere3d / circle3d /
- *           cylinder3d / cone3d / text3d / label3d / style3d / measure3d / clear
+ *           cylinder3d / cone3d / text3d / label3d / style3d / measure3d /
+ *           remove3d / clear
+ * remove3d：{op:'remove3d',id:'A'}  删除指定元素并级联删除其全部（传递）依赖者
+ *           （如删除被引用的点会一并删除依赖它的线段/面/体），用于 AI 自校正时
+ *           删掉画错的元素；引用不存在的 id 被捕获为 ok:false。
  * measure3d：{op:'measure3d',kind:'distance',of:['A','B']} 或
  *           {op:'measure3d',kind:'angle',of:['A','B','C']}（B 为顶点），
  *           返回 {ok,op:'measure3d',kind,value:number}（不创建画板元素）
@@ -681,6 +685,18 @@ export function createBoard3DExecutor(board) {
   function requireId(id) {
     if (!board.entries.has(id)) throw new Error(`引用了不存在的元素「${id}」`);
     return id;
+  }
+
+  // 收集 id 的全部（传递）依赖者：被引用的点/元素删除时，依赖它的图元要一起删，
+  // 否则拖拽时会引用已删除的 point 而崩溃。
+  function collectDependents(id, acc = new Set()) {
+    for (const [oid, e] of board.entries) {
+      if (e.deps && e.deps.includes(id) && !acc.has(oid)) {
+        acc.add(oid);
+        collectDependents(oid, acc);
+      }
+    }
+    return acc;
   }
 
   function build(cmd) {
@@ -743,6 +759,18 @@ export function createBoard3DExecutor(board) {
         if (cmd.op === 'clear') { board.clear(); plainPoints.clear(); out.push({ ok: true, op: 'clear' }); continue; }
         if (cmd.op === 'measure3d') {
           out.push(runMeasure3D(board, cmd, requireId, round));
+          continue;
+        }
+        if (cmd.op === 'remove3d') {
+          if (!cmd.id) throw new Error('缺少 id');
+          requireId(cmd.id);
+          const toRemove = collectDependents(cmd.id);
+          toRemove.add(cmd.id);
+          for (const rid of toRemove) {
+            board.remove(rid);
+            plainPoints.delete(rid);
+          }
+          out.push({ ok: true, op: 'remove3d', id: cmd.id, removed: [...toRemove] });
           continue;
         }
         if (!cmd.id && cmd.op !== 'label3d' && cmd.op !== 'style3d') throw new Error('缺少 id');
