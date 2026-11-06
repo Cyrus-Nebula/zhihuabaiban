@@ -516,3 +516,37 @@ export const BOARD3D_VERIFY_ADDENDUM = `
 {"op":"verify3d","id":"vDiag","kind":"distance","of":["A","G"],"expectRange":[5.19,5.21],"label":"体对角线≈3√3"}
 注意：自检失败（✘）时先用 remove3d 删掉画错的元素再补正确命令，不要整套 clear 重画；
 verify3d 与 measure3d 都不会污染画板，不要把它们写进需要持久化的作图命令里。`;
+
+/* ============================================================================
+ * 【本轮增量 · 独立自主3D画板】move3d 增量修正 + 自检回读闭环（3D 命令分支「追加段落」）
+ * append-only：只在文件末尾新增，未改动上方任何已有行（2D 主干 / verify / move / style 段落，
+ * 以及 isBoard3DIntent / BOARD3D_SYSTEM_PROMPT / BOARD3D_VERIFY_ADDENDUM 原样保留）。
+ * 主题：兑现 docs/3D画板回归用例清单.md 末尾「已知限制」里登记的后续项——verify3d 此前只做
+ *   「机器判定 + ✔/✘ 摘要展示」，尚未接入 2D 那样的 read-back 多轮自动修正闭环。
+ * 三处联动（均为追加 / 局部新增）：
+ *   1) 本文件末尾追加 BOARD3D_MOVE_ADDENDUM（3D 系统提示词增量章节，登记 move3d + 修正策略）；
+ *   2) ai/board-backend.js 的 selectSystemPrompt 把该增量拼到 3D 提示词后（2D 提示词不变）；
+ *   3) board3d.html 的 AI 面板新增「定向修正 → 复跑首轮原始 verify3d → 机器判定收敛」多轮闭环；
+ *      js/board3d.js 新增 move3d 命令 + movePoint3D 方法 + build3DReadback / build3DCorrectMsg 纯函数。
+ * 与 2D read-back 闭环同构：全部 verify3d 断言通过即机器确认符合意图、跳过二次 LLM 调用；
+ * 有失败项时把「预期/实测/偏差」精确回传做定向修正（优先 move3d 就地改坐标，或用 remove3d 删错重建），
+ * 复跑原始 verify3d 由机器判定是否收敛，失败项不减少即提前收手，最多 2 轮。未改动旧路径（editor.html / appId）。
+ * ==========================================================================*/
+export const BOARD3D_MOVE_ADDENDUM = `
+
+# 增量修正命令 move3d（3D 分支追加 · 命令清单追加登记项）
+- 命令：{"op":"move3d","id":"A","x":2,"y":1,"z":0}   就地移动一个已存在的自由点（只改坐标、不新建图元）
+- 用途：自检闭环里针对某个坐标画错的点做定向修正，而不必 remove3d 整组级联重建、也不必整套重画。
+- 约束：id 必须是已定义的自由点（fixed:true 的锁定点不可移动，会报错）；被它依赖的线段/面/体实时联动。
+- 与 remove3d 的关系：move3d 适合「点坐标偏了」；若元素类型/拓扑画错（如少画一条棱），仍用 remove3d 删掉错误元素再补正确命令。
+
+# 自检修正策略（read-back 闭环，3D 分支追加）
+- 你作图命令末尾附的 verify3d 会实际执行并由机器判定 pass / ✘；AI 面板/后端会把 ✘ 项的「预期 / 实测 / 偏差」
+  精确回传给你做定向修正（对标大角几何「读画板状态后改图」）。
+- 全部 verify3d 通过：机器已确认符合意图，无需再调 LLM；只有裸 measure3d（无期望值）时才需要你肉眼核对。
+- 有 ✘ 项时：只针对未通过项输出增量修正命令——
+  · 优先 move3d 就地改坐标；
+  · 或 remove3d 删掉错误元素后补发正确 point3d/segment3d/...（remove3d 会级联释放该 id 供重建）；
+  · 严禁 clear 重画整块画板、严禁重复已画好的部分、严禁再输出 measure3d/verify3d 与解释文字；
+  · 已通过的断言对应的作图命令不要重复输出。
+- 复跑原始 verify3d 由机器判定是否收敛：全部通过即停止；失败项没有减少也会提前收手（最多 2 轮自动修正）。`

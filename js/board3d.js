@@ -155,6 +155,72 @@ export function workPlaneForDrag(viewDir, point, threshold = 0.25) {
   };
 }
 
+/**
+ * 把一次 measure3d / verify3d 结果描述成可读串（read-back 闭环与 AI 面板自检摘要共用）。
+ * 与 2D describeMeasure 同构：verify3d 透出「预期 / 实测 / 容差 / 偏差」，让 LLM 不必肉眼猜数值是否符合意图。
+ * m 字段约定（执行器 verify3d / measure3d 的返回对象）：op('verify3d'|'measure3d') / kind('distance'|'angle') /
+ * value / pass / expect / tol / rtol / mode / expectRange / delta / label / of。纯函数，不依赖 Three.js，可被无头测试直接验证。
+ */
+export function describeMeasure3D(m) {
+  const v = m.value;
+  const unit = m.kind === 'angle' ? '°' : '';
+  const digits = m.kind === 'angle' ? 1 : 3;
+  const f = (x) => (Number.isFinite(x) ? x.toFixed(digits) : '?');
+  if (m.op === 'verify3d') {
+    const tag = m.pass ? '✔ 通过' : '✘ 未通过';
+    if (m.mode === 'range' && Array.isArray(m.expectRange)) {
+      return `${tag}｜${m.label || '自检'}：实测 ${f(v)}${unit}，应在 [${f(m.expectRange[0])}, ${f(m.expectRange[1])}]${unit}`
+        + (m.pass ? '' : '，越界');
+    }
+    const tolTxt = m.rtol ? `，容差 ${f(m.tol)}+${m.rtol}·|E|${unit}` : (m.tol != null ? `，容差 ${f(m.tol)}${unit}` : '');
+    return `${tag}｜${m.label || '自检'}：实测 ${f(v)}${unit}，预期 ${f(m.expect)}${unit}${tolTxt}`
+      + (m.pass ? '' : `，偏差 ${f(m.delta)}${unit}`);
+  }
+  if (!Number.isFinite(v)) return '?';
+  if (m.kind === 'angle') return `∠${Array.isArray(m.of) ? m.of.join('') : ''} = ${v.toFixed(1)}°`;
+  return `|${Array.isArray(m.of) ? m.of.join('') : ''}| = ${v.toFixed(2)}`;
+}
+
+/**
+ * 汇总一轮自检结果：text 送回 LLM / 面板展示；failed 机器判定未通过的断言；
+ * allPassed 表示「本轮全部是 verify3d 断言且全部通过」——机器已确认符合意图，可跳过二次 LLM 调用。
+ * 只要含裸 measure3d（无期望值），就必须交给 LLM 核对，不能省。纯函数，与 2D buildReadback 同构。
+ * @param {Array} measures 本轮的 measure3d / verify3d 返回对象数组
+ */
+export function build3DReadback(measures) {
+  if (!measures || !measures.length) return null;
+  const failed = measures.filter((m) => m.op === 'verify3d' && !m.pass);
+  return {
+    text: measures.map(describeMeasure3D).join('\n'),
+    failed,
+    allPassed: failed.length === 0 && measures.every((m) => m.op === 'verify3d' && m.pass),
+  };
+}
+
+/**
+ * 构造「自检回读·修正轮」提示词（纯函数，便于无头测试）。
+ * 与 2D 同构：带【未通过】清单 + 【已通过项请勿重画】diff 清单；要求只针对未通过项做增量修正，
+ * 优先 move3d 就地改坐标，或 remove3d 删错元素后重建，禁止 clear 重画、禁止重复 measure3d/verify3d。
+ * @param {{text:string,failed:Array}} rb build3DReadback 的返回值
+ * @param {{round?:number,maxRounds?:number}} opts 轮次文案
+ */
+export function build3DCorrectMsg(rb, { round = 1, maxRounds = 2 } = {}) {
+  if (!rb) return '';
+  const passedTxt = rb.text.split('\n').filter((l) => l.startsWith('✔')).join('\n');
+  const failHint = rb.failed.length
+    ? `\n【未通过断言，请重点修正】\n${rb.failed.map(describeMeasure3D).join('\n')}\n`
+    : '\n';
+  const diffHint = passedTxt
+    ? `\n【已通过项，请勿重画】下列断言已符合预期，修正时不要 clear、不要重复输出它们对应的作图命令：\n${passedTxt}\n`
+    : '';
+  return `【自检回读·第 ${round}/${maxRounds} 轮】你刚才的作图已实际在画板上执行，自检测量结果如下：\n${rb.text}\n${failHint}${diffHint}` +
+    `请核对几何关系是否符合用户意图（该垂直是否垂直、角/边长是否相等、半径/高度是否符合预期）。\n` +
+    `只针对未通过项输出增量修正命令：优先用 move3d 就地改坐标（{"op":"move3d","id":"A","x":..,"y":..,"z":..}），` +
+    `或删除并重建错误元素（先用 remove3d 删掉错误元素，再补发正确的 point3d/segment3d/...，remove3d 会级联释放该 id 供重建）；` +
+    `禁止 clear 重画整块画板、禁止重复已画好的部分、禁止输出 measure3d/verify3d 与任何解释文字。` +
+    `若已符合意图，只输出 {"message":"已自检，符合意图","commands":[]}。`;
+}
+
 export class Board3D {
   constructor(container, opts = {}) {
     this.container = container;
@@ -474,6 +540,24 @@ export class Board3D {
     return e;
   }
 
+  /**
+   * 就地移动一个已存在的自由点（增量修正，对标 2D 的 move 命令）：
+   * 只改坐标、不新建图元，依赖它的线段/面/体随之实时联动。
+   * 用于 AI 自检闭环的定向修正——避免「同 id 重发 point3d 报重复定义」或「remove3d 整组级联重建」的笨重做法。
+   * 安全降级：id 不存在 / 不是点 / 已 fixed 锁定 → 抛错（由执行器捕获为 ok:false）。
+   */
+  movePoint3D(id, x, y, z) {
+    const e = this.entries.get(id);
+    if (!e) throw new Error(`点「${id}」不存在`);
+    if (e.type !== 'point3d') throw new Error(`「${id}」不是点，无法移动`);
+    if (e.data && e.data.fixed) throw new Error(`点「${id}」已锁定（fixed），不可移动`);
+    const p = this.points.get(id);
+    if (p) p.set(x, y, z);
+    if (e.data) { e.data.x = x; e.data.y = y; e.data.z = z; }
+    this.notifyPointMoved(id);
+    return e;
+  }
+
   // ---------------- 拖拽 / 拾取 ----------------
   _bindEvents() {
     const el = this.renderer.domElement;
@@ -765,6 +849,11 @@ export function createBoard3DExecutor(board) {
       case 'point3d':
         board.createPoint3D(cmd.id, num(cmd.x, 0), num(cmd.y, 0), num(cmd.z, 0), { fixed: cmd.fixed, label: cmd.label, color: cmd.color });
         if (!cmd.fixed) plainPoints.add(cmd.id);
+        return;
+      case 'move3d':
+        // 增量修正：就地改一个已存在自由点的坐标，不新建图元，依赖实时联动。
+        requireId(cmd.id);
+        board.movePoint3D(cmd.id, num(cmd.x, 0), num(cmd.y, 0), num(cmd.z, 0));
         return;
       case 'segment3d':
         requireId(cmd.from); requireId(cmd.to);

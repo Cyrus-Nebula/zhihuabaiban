@@ -14,7 +14,7 @@
  *       所有空间计算由假 board 记录，不触碰真实渲染。node_modules/three 已被 .gitignore 排除。
  */
 
-import { createBoard3DExecutor, lineEndpoints, polygonTriangles, workPlaneForDrag } from '../js/board3d.js';
+import { createBoard3DExecutor, lineEndpoints, polygonTriangles, workPlaneForDrag, describeMeasure3D, build3DReadback, build3DCorrectMsg } from '../js/board3d.js';
 import { DEMO_CUBE, DEMO_PYRAMID } from '../js/board3d-demos.js';
 
 let passed = 0;
@@ -35,7 +35,8 @@ class FakeBoard {
   createPoint3D(id, x, y, z, opts = {}) {
     if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
     this.points.set(id, { x, y, z, set(a, b, c) { this.x = a; this.y = b; this.z = c; } });
-    return this._reg(id, { obj: { position: { x, y, z }, add() {} }, type: 'point3d', deps: [], update: null });
+    // 忠实建模真实 Board3D 的 entry.data（含 fixed 标志），move3d 的锁定守卫依赖它
+    return this._reg(id, { obj: { position: { x, y, z }, add() {} }, type: 'point3d', deps: [], update: null, data: { x, y, z, fixed: !!opts.fixed } });
   }
   createSegment3D(id, a, b, o = {}) { return this._reg(id, { type: 'segment3d', deps: [a, b], update: null }); }
   createLine3D(id, a, b, o = {}) { return this._reg(id, { type: 'line3d', deps: [a, b], update: null }); }
@@ -47,6 +48,16 @@ class FakeBoard {
   createText3D(id, x, y, z, text, o = {}) { return this._reg(id, { type: 'text3d', deps: [], update: null }); }
   createLabel3D(t, text) { const e = this.entries.get(t); if (!e) throw new Error(`标注目标「${t}」不存在`); return e; }
   setStyle(t, o = {}) { const e = this.entries.get(t); if (!e) throw new Error(`目标「${t}」不存在`); return e; }
+  movePoint3D(id, x, y, z) {
+    const e = this.entries.get(id);
+    if (!e) throw new Error(`点「${id}」不存在`);
+    if (e.type !== 'point3d') throw new Error(`「${id}」不是点，无法移动`);
+    if (e.data && e.data.fixed) throw new Error(`点「${id}」已锁定（fixed），不可移动`);
+    const p = this.points.get(id);
+    if (p) p.set(x, y, z);
+    if (e.data) { e.data = { ...e.data, x, y, z, fixed: e.data.fixed }; }
+    return e;
+  }
   remove(id) { this.entries.delete(id); this.points.delete(id); return true; }
   clear() { this.entries.clear(); this.points.clear(); }
   notifyPointMoved() {}
@@ -369,6 +380,78 @@ console.log('— 用例 10：声明式自检断言 verify3d（三态期望值 / 
   const v17 = exe.execute([{ op: 'verify3d', kind: 'distance', of: ['A', 'B'], expect: 3, expectRange: [0, 1] }])[0];
   assert(v17.mode === 'range' && v17.pass === false, 'expect 与 expectRange 同时给出时区间模式优先（互斥）');
   assert(board.entries.size === before, 'verify3d 全程不新增画板元素（纯读数，不污染画板）');
+}
+
+console.log('— 用例 11：move3d 增量修正（就地改坐标 / 依赖联动 / 边界守卫）—');
+{
+  const board = new FakeBoard();
+  const exe = createBoard3DExecutor(board);
+  const res = exe.execute([
+    { op: 'point3d', id: 'A', x: 0, y: 0, z: 0 },
+    { op: 'point3d', id: 'B', x: 1, y: 0, z: 0 },
+    { op: 'segment3d', id: 'sAB', from: 'A', to: 'B' },
+  ]);
+  assert(res.every((r) => r.ok), '建点/线段全部成功');
+  const m1 = exe.execute([{ op: 'move3d', id: 'A', x: 2, y: 1, z: -1 }]);
+  assert(m1[0].ok === true, 'move3d 就地移动自由点 A 成功');
+  assert(board.points.get('A').x === 2 && board.points.get('A').y === 1 && board.points.get('A').z === -1, 'A 坐标被就地更新');
+  const after = exe.moves();
+  const aMv = after.find((m) => m.id === 'A');
+  assert(aMv && aMv.x === 2 && aMv.y === 1 && aMv.z === -1, 'moves() 反映 move3d 后的新坐标');
+  // 依赖联动：notifyPointMoved 被调用（FakeBoard 无副作用，用 entries 结构确认依赖关系存在）
+  assert([...board.entries.get('sAB').deps].includes('A'), '线段 sAB 仍依赖 A（移动后依赖关系不变，渲染期实时联动）');
+  // 边界：移动不存在的点
+  const m2 = exe.execute([{ op: 'move3d', id: 'NOPE', x: 0, y: 0, z: 0 }]);
+  assert(m2[0].ok === false && /不存在/.test(m2[0].error), 'move3d 移动不存在的点被捕获为 ok:false');
+  // 边界：缺 id
+  const m3 = exe.execute([{ op: 'move3d', x: 0, y: 0, z: 0 }]);
+  assert(m3[0].ok === false && /缺少 id/.test(m3[0].error), 'move3d 缺 id 被捕获为 ok:false');
+  // 边界：fixed 锁定点不可移动
+  const res2 = exe.execute([{ op: 'point3d', id: 'L', x: 0, y: 0, z: 0, fixed: true }]);
+  assert(res2[0].ok === true, '锁定点 L 创建成功');
+  const m4 = exe.execute([{ op: 'move3d', id: 'L', x: 5, y: 5, z: 5 }]);
+  assert(m4[0].ok === false && /锁定/.test(m4[0].error), 'move3d 移动 fixed 点被捕获为 ok:false');
+  // 持久化：move3d 作为真实坐标编辑应进入 currentCmds（用 execute 直接驱动，验证其不被「纯读数」过滤）
+  const plainBoard = new FakeBoard();
+  const exeP = createBoard3DExecutor(plainBoard);
+  exeP.execute([{ op: 'point3d', id: 'P', x: 0, y: 0, z: 0 }]);
+  const mv = exeP.execute([{ op: 'move3d', id: 'P', x: 3, y: 3, z: 3 }]);
+  assert(mv[0].ok === true && plainBoard.entries.has('P'), 'move3d 不新建/删除图元（仅改坐标）');
+  assert(plainBoard.entries.size === 1, 'move3d 后元素数仍为 1（无冗余图元）');
+}
+
+console.log('— read-back 闭环纯函数：describeMeasure3D / build3DReadback / build3DCorrectMsg —');
+{
+  // describeMeasure3D：verify3d 透出 预期/实测/偏差；measure3d 仅回读
+  const vPass = { op: 'verify3d', kind: 'distance', of: ['A', 'B'], value: 3, pass: true, expect: 3, tol: 0.05, label: '棱长 3' };
+  const vFail = { op: 'verify3d', kind: 'angle', of: ['B', 'A', 'C'], value: 88, pass: false, expect: 90, tol: 0.5, delta: -2, label: '底面直角' };
+  const msr = { op: 'measure3d', kind: 'distance', of: ['A', 'B'], value: 3 };
+  assert(/通过/.test(describeMeasure3D(vPass)) && /预期 3/.test(describeMeasure3D(vPass)), 'describeMeasure3D 通过项含 预期/实测');
+  assert(/未通过/.test(describeMeasure3D(vFail)) && /偏差/.test(describeMeasure3D(vFail)), 'describeMeasure3D 失败项含 偏差');
+  assert(/\|AB\| = 3\.00/.test(describeMeasure3D(msr)), 'describeMeasure3D 裸测量展示 |AB| = 3.00');
+  // 区间模式
+  const vRange = { op: 'verify3d', kind: 'distance', of: ['A', 'G'], value: 5.2, pass: true, mode: 'range', expectRange: [5.19, 5.21], label: '体对角线' };
+  assert(/应在 \[5\.190, 5\.210\]/.test(describeMeasure3D(vRange)), 'describeMeasure3D 区间模式展示 应在[lo,hi]');
+
+  // build3DReadback：纯 verify 全通过 → allPassed；有失败项 → failed 列表；裸 measure 不满足 allPassed
+  const rb1 = build3DReadback([vPass, vRange]);
+  assert(rb1.allPassed === true && rb1.failed.length === 0, 'build3DReadback 全部通过 → allPassed:true');
+  const rb2 = build3DReadback([vPass, vFail]);
+  assert(rb2.allPassed === false && rb2.failed.length === 1, 'build3DReadback 含失败项 → allPassed:false / failed 长度 1');
+  const rb3 = build3DReadback([msr]);
+  assert(rb3.allPassed === false && rb3.failed.length === 0, 'build3DReadback 只有裸 measure → allPassed:false（须交 LLM 核对）');
+  assert(build3DReadback([]) === null, 'build3DReadback 空数组返回 null');
+  assert(build3DReadback(null) === null, 'build3DReadback null 返回 null');
+
+  // build3DCorrectMsg：带【未通过】与【已通过项请勿重画】清单；禁止 clear / measure/verify 的约束
+  const rbFix = build3DReadback([vPass, vFail, vRange]);
+  const msg = build3DCorrectMsg(rbFix, { round: 1, maxRounds: 2 });
+  assert(/第 1\/2 轮/.test(msg), 'build3DCorrectMsg 含轮次文案');
+  assert(/未通过断言/.test(msg) && /底面直角/.test(msg), 'build3DCorrectMsg 含未通过项清单');
+  assert(/已通过项，请勿重画/.test(msg) && /棱长 3/.test(msg), 'build3DCorrectMsg 含已通过项 diff 清单');
+  assert(/move3d/.test(msg) && /remove3d/.test(msg), 'build3DCorrectMsg 指导 move3d / remove3d 定向修正');
+  assert(/禁止 clear/.test(msg), 'build3DCorrectMsg 明令禁止 clear 重画');
+  assert(build3DCorrectMsg(null) === '', 'build3DCorrectMsg(null) 返回空串');
 }
 
 console.log(`\n结果：通过 ${passed}，失败 ${failed}`);

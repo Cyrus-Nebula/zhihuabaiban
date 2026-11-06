@@ -20,7 +20,7 @@
  *   LLM_MODEL     默认 glm-4.7-flash
  */
 
-import { BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, BOARD3D_VERIFY_ADDENDUM, isBoard3DIntent } from './board-prompt.js';
+import { BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, BOARD3D_VERIFY_ADDENDUM, BOARD3D_MOVE_ADDENDUM, isBoard3DIntent } from './board-prompt.js';
 import { DEFAULT_MODEL, resolveModel, supportsVision } from './models.js';
 
 const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
@@ -151,6 +151,8 @@ function commandUsable(c) {
   if ((c.op === 'point' || c.op === 'glider') && !(typeof c.x === 'number' && typeof c.y === 'number')) return false;
   // 3D 点必须 x/y/z 都是数字
   if (c.op === 'point3d' && !(typeof c.x === 'number' && typeof c.y === 'number' && typeof c.z === 'number')) return false;
+  // 3D 增量修正 move3d 同样需要 x/y/z 都是数字
+  if (c.op === 'move3d' && !(typeof c.x === 'number' && typeof c.y === 'number' && typeof c.z === 'number')) return false;
   return true;
 }
 
@@ -164,7 +166,7 @@ export function selectSystemPrompt(message, modeHint) {
   // 2D 主干提示词完全不受影响；append-only 增量见 ai/board-prompt.js 末尾）。
   return {
     mode: want3d ? '3d' : '2d',
-    prompt: want3d ? (BOARD3D_SYSTEM_PROMPT + BOARD3D_VERIFY_ADDENDUM) : BOARD_SYSTEM_PROMPT,
+    prompt: want3d ? (BOARD3D_SYSTEM_PROMPT + BOARD3D_VERIFY_ADDENDUM + BOARD3D_MOVE_ADDENDUM) : BOARD_SYSTEM_PROMPT,
   };
 }
 

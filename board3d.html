@@ -98,7 +98,7 @@
   <script src="js/store.js"></script>
 
   <script type="module">
-    import { Board3D, createBoard3DExecutor } from './js/board3d.js';
+    import { Board3D, createBoard3DExecutor, describeMeasure3D, build3DReadback, build3DCorrectMsg } from './js/board3d.js';
     import { DEMO_CUBE, DEMO_PYRAMID, DEMOS } from './js/board3d-demos.js';
 
     const params = new URLSearchParams(location.search);
@@ -203,21 +203,7 @@
       aiLog.scrollTop = aiLog.scrollHeight;
     }
 
-    // 把 verify3d 的机器判定结果格式化成一行 ✔/✘ 摘要（与 2D read-back 的自检展示同构）。
-    // 判定完全由 createBoard3DExecutor 给出，这里只做展示，不掺入任何 2D 执行器逻辑。
-    function describeVerify3D(v) {
-      if (!v.ok) return '✘ ' + (v.label || '自检') + '：测量失败（' + (v.error || '未知原因') + '）';
-      const unit = v.kind === 'angle' ? '°' : '';
-      const head = (v.pass ? '✔ ' : '✘ ') + (v.label || '自检') + ' = ' + v.value + unit;
-      if (v.mode === 'range' && Array.isArray(v.expectRange)) {
-        return head + '（应在 [' + v.expectRange[0] + ',' + v.expectRange[1] + ']' + unit
-          + (v.pass ? '）' : '，越界）');
-      }
-      if (v.mode === 'none') return head + '（未给期望值，判不通过）';
-      const tol = v.tol + (v.rtol ? '+' + v.rtol + '·|E|' : '');
-      return head + '（预期 ' + v.expect + unit + '，容差 ' + tol + unit
-        + (v.pass ? '）' : '，偏差 ' + v.delta + unit + '）');
-    }
+    // describeMeasure3D 由 js/board3d.js 提供（与 read-back 闭环共用同一份格式化逻辑，避免漂移）。
 
     async function aiSend3d() {
       const text = aiInput.value.trim();
@@ -243,11 +229,18 @@
         if (Array.isArray(data.commands) && data.commands.length) {
           let okCount = 0;
           const errs = [];
-          const verifyRows = [];
+          const measures = [];   // 本轮 measure3d / verify3d 的回读对象，供 read-back 闭环汇总
           for (const cmd of data.commands) {
             const r = exe.execute([cmd]);
             const row = r[0];
-            if (row && row.op === 'verify3d') verifyRows.push(row);
+            if (row && (row.op === 'measure3d' || row.op === 'verify3d')) {
+              // 把执行器的回读结果整理成 describeMeasure3D / build3DReadback 需要的扁平字段（含 of，便于读数展示）
+              measures.push({
+                op: row.op, kind: cmd.kind, of: cmd.of, value: row.value, pass: row.pass,
+                expect: row.expect, tol: row.tol, rtol: row.rtol, mode: row.mode,
+                expectRange: row.expectRange, delta: row.delta, label: row.label,
+              });
+            }
             if (row && row.ok) {
               // measure3d / verify3d 是纯读数（临时自检），不写进持久化的作图命令；
               // clear / remove3d 属于状态变更，仍按序重放才能还原画板。
@@ -258,16 +251,82 @@
               errs.push((cmd.op || '?') + '(' + row.error + ')');
             }
           }
-          if (verifyRows.length) {
-            const passCount = verifyRows.filter((v) => v.pass).length;
-            appendLog('ai', '自检 ' + passCount + '/' + verifyRows.length
-              + (passCount === verifyRows.length ? ' 全部通过 ✔' : ' 存在失败项 ✘'));
-            for (const v of verifyRows) {
-              appendLog(v.pass ? 'verify-pass' : 'verify-fail', '  ' + describeVerify3D(v));
-            }
-          }
           if (errs.length) appendLog('ai', '已执行 ' + okCount + ' 条，' + errs.length + ' 条失败：' + errs.join('；'));
           setStatus('AI 已作图 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }));
+
+          // ---- read-back 闭环（对标大角几何 MCP 式「读画板状态后改图」）----
+          // verify3d 已由执行器按 expect/tol/expectRange/rtol 自动判定：全部通过即机器确认符合意图，跳过二次 LLM 调用。
+          // 有失败项（或只有裸 measure3d）时进入「定向修正 → 复跑首轮原始 verify3d → 机器判定收敛」的多轮循环：
+          //   1) 修正提示带上【已通过项，请勿重画】diff 清单，明确禁止 clear 重画已通过的部分；
+          //   2) 修正轮过滤 clear / measure3d / verify3d（防误清画板、防临时读数重复堆积），优先用 move3d 就地改坐标 / remove3d 删错重建；
+          //   3) 修正后复跑首轮原始的 verify3d 命令（transient，重跑只读当前画板、不落文档），用机器判定是否收敛；
+          //   4) 失败项没有减少就提前收手，最多 MAX_FIX_ROUNDS 轮，避免无限请求 LLM。
+          const MAX_FIX_ROUNDS = 2;
+          const origVerifies = data.commands.filter((c) => c && c.op === 'verify3d');
+          let rb = build3DReadback(measures);
+          if (rb) {
+            appendLog('ai', '自检结果：');
+            rb.text.split('\n').forEach((line) => appendLog(line.startsWith('✔') ? 'verify-pass' : 'verify-fail', '  ' + line));
+            if (rb.allPassed) {
+              appendLog('ai', `已自检 ${measures.filter((m) => m.op === 'verify3d').length} 项，全部符合预期`);
+            } else {
+              // 只有裸 measure3d（没有断言）时无法机器复检，用 Infinity 占位保证只修正一轮
+              let prevFailCount = rb.failed.length || Infinity;
+              for (let round = 1; round <= MAX_FIX_ROUNDS && rb && !rb.allPassed; round++) {
+                try {
+                  const fixMsg = build3DCorrectMsg(rb, { round, maxRounds: MAX_FIX_ROUNDS });
+                  const vres = await fetch((window.CFG && window.CFG.boardAiEndpoint) || '/api/ai/board', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: fixMsg, mode: '3d', context: exe.describe() }),
+                  });
+                  const vdata = await vres.json().catch(() => ({}));
+                  if (!vres.ok || vdata.ok === false || !Array.isArray(vdata.commands)) break;
+                  // 修正轮只收增量命令：clear 会清空画板、measure3d/verify3d 会重复堆读数，一律过滤
+                  const fixCmds = vdata.commands.filter((c) => c && c.op && !['clear', 'measure3d', 'verify3d'].includes(c.op));
+                  if (fixCmds.length !== vdata.commands.length) appendLog('ai', '（已忽略修正轮里的 clear / measure3d / verify3d 命令）');
+                  if (!fixCmds.length) { appendLog('ai', '（自检修正：AI 判定无需修改）'); break; }
+                  let fixOk = 0;
+                  const fixErrs = [];
+                  for (const cmd of fixCmds) {
+                    const fr = exe.execute([cmd]);
+                    const frow = fr[0];
+                    if (frow && frow.ok) {
+                      if (cmd.op !== 'measure3d' && cmd.op !== 'verify3d') currentCmds.push(cmd);
+                      fixOk++;
+                    } else if (frow) {
+                      fixErrs.push((cmd.op || '?') + '(' + frow.error + ')');
+                    }
+                  }
+                  if (fixErrs.length) appendLog('ai', `自检修正有 ${fixErrs.length} 条失败：` + fixErrs.join('；'));
+                  if (fixOk) appendLog('ai', `（第 ${round} 轮自动自检并修正 ${fixOk} 处）`);
+                  setStatus('AI 已修正 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }));
+                  // 没有断言可复跑（只有裸 measure3d）：修正一轮即止
+                  if (!origVerifies.length) break;
+                  // 复跑首轮原始 verify3d（transient，不进文档）：先清旧读数，再按当前画板重新机器判定
+                  const recheck = exe.execute(origVerifies);
+                  rb = build3DReadback(recheck.map((row, i) => ({
+                    op: 'verify3d', kind: origVerifies[i].kind, of: origVerifies[i].of, value: row.value,
+                    pass: row.pass, expect: row.expect, tol: row.tol, rtol: row.rtol,
+                    mode: row.mode, expectRange: row.expectRange, delta: row.delta, label: row.label,
+                  })));
+                  if (!rb) break;
+                  appendLog('ai', `第 ${round} 轮复检：`);
+                  rb.text.split('\n').forEach((line) => appendLog(line.startsWith('✔') ? 'verify-pass' : 'verify-fail', '  ' + line));
+                  if (rb.allPassed) { appendLog('ai', '已收敛：全部断言符合预期'); break; }
+                  const failCount = rb.failed.length || Infinity; // 无失败项但未 allPassed：视为无改善
+                  if (failCount >= prevFailCount) {
+                    appendLog('ai', '（复检未见改善，已停止自动修正；请参照上方 ✘ 读数手动调整）');
+                    break;
+                  }
+                  prevFailCount = failCount;
+                } catch (ve) {
+                  console.warn('自检闭环失败（不影响已出图）', ve);
+                  break;
+                }
+              }
+            }
+          }
         }
         if (data.message) {
           appendLog('ai', data.message);
