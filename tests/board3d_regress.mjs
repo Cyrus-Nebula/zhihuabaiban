@@ -9,13 +9,24 @@
  *   - moves()/applyMoves() 坐标往返一致（持久化）
  *   - verify3d 声明式自检断言三态判定与健壮性（用例 10）
  *
- * 运行：node tests/board3d_regress.mjs
- * 注意：js/board3d.js 顶层会 import three；本测试仅用于加载模块，
- *       所有空间计算由假 board 记录，不触碰真实渲染。node_modules/three 已被 .gitignore 排除。
+ * 运行：node tests/board3d_regress.mjs（干净 clone 即可，无需 npm install）
+ * 说明：js/board3d.js 顶层 `import 'three'` 在浏览器由 board3d.html 的 importmap 解析；
+ *       Node 无 importmap，故这里用 node:module 的 register() 挂一个仅作用于本进程的
+ *       resolve hook（tests/three-loader.mjs），把 'three' 指到仓库内 libs/three/ 的 vendor
+ *       副本。线上代码一行未改，无外部网络请求、无 node_modules 依赖；用例 12 守护该链路。
+ *
+ *       注意：register() 必须在加载 board3d.js 之前生效，所以下面用顶层 await 动态 import，
+ *       不要改回静态 import（静态依赖在 register 执行前就已完成解析）。
+ *       本测试仅用于加载模块，所有空间计算由假 board 记录，不触碰真实渲染。
  */
 
-import { createBoard3DExecutor, lineEndpoints, polygonTriangles, workPlaneForDrag, describeMeasure3D, build3DReadback, build3DCorrectMsg } from '../js/board3d.js';
-import { DEMO_CUBE, DEMO_PYRAMID } from '../js/board3d-demos.js';
+import { register } from 'node:module';
+import { existsSync, readFileSync } from 'node:fs';
+
+register(new URL('./three-loader.mjs', import.meta.url).href, import.meta.url);
+
+const { createBoard3DExecutor, lineEndpoints, polygonTriangles, workPlaneForDrag, describeMeasure3D, build3DReadback, build3DCorrectMsg } = await import('../js/board3d.js');
+const { DEMO_CUBE, DEMO_PYRAMID } = await import('../js/board3d-demos.js');
 
 let passed = 0;
 let failed = 0;
@@ -452,6 +463,24 @@ console.log('— read-back 闭环纯函数：describeMeasure3D / build3DReadback
   assert(/move3d/.test(msg) && /remove3d/.test(msg), 'build3DCorrectMsg 指导 move3d / remove3d 定向修正');
   assert(/禁止 clear/.test(msg), 'build3DCorrectMsg 明令禁止 clear 重画');
   assert(build3DCorrectMsg(null) === '', 'build3DCorrectMsg(null) 返回空串');
+}
+
+console.log('— 用例 12：离线自包含守护（干净 clone / 零 npm 依赖）—');
+{
+  const vendorThree = new URL('../libs/three/three.module.min.js', import.meta.url);
+  const vendorOrbit = new URL('../libs/three/OrbitControls.js', import.meta.url);
+  assert(existsSync(vendorThree) && readFileSync(vendorThree).length > 100_000,
+    '本地 vendor three.module.min.js 存在且完整（>100KB）');
+  assert(existsSync(vendorOrbit) && /from 'three'/.test(readFileSync(vendorOrbit, 'utf8')),
+    '本地 vendor OrbitControls.js 存在且仍以裸说明符 three 引用内核');
+  const resolved = import.meta.resolve('three');
+  assert(/\/libs\/three\/three\.module\.min\.js$/.test(resolved),
+    "resolve('three') 命中仓库内 vendor（不依赖 node_modules / 外网）");
+  const THREE = await import('three');
+  assert(String(THREE.REVISION) === '160', `vendor Three.js 版本 r${THREE.REVISION} 与 importmap 约定 r160 一致`);
+  const html3d = readFileSync(new URL('../board3d.html', import.meta.url), 'utf8');
+  assert(/"three"\s*:\s*"\.\/libs\/three\/three\.module\.min\.js"/.test(html3d),
+    'board3d.html 的 importmap 与 loader 指向同一份本地 vendor');
 }
 
 console.log(`\n结果：通过 ${passed}，失败 ${failed}`);

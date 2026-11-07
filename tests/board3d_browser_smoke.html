@@ -151,8 +151,9 @@
       /id="btnReset"/.test(html) && /viewReset\(\)/.test(html));
     check('board3d.html 内置 3D 命令执行器与 mode:3d AI 面板',
       /createBoard3DExecutor/.test(html) && /mode:\s*'3d'/.test(html));
+    // 用例 30 已把展示层统一为 describeMeasure3D（与 read-back 闭环共用），此处断言同步跟进
     check('board3d.html AI 面板展示 verify3d ✔/✘ 自检摘要',
-      /describeVerify3D/.test(html) && /verify-pass/.test(html) && /verify-fail/.test(html));
+      /describeMeasure3D/.test(html) && /verify-pass/.test(html) && /verify-fail/.test(html));
     check('board3d.html 把 measure3d / verify3d 纯读数排除出持久化命令',
       /currentCmds\.push\(cmd\)/.test(html) && /cmd\.op !== 'measure3d'/.test(html) && /cmd\.op !== 'verify3d'/.test(html));
     const promptJs = await fetch('/ai/board-prompt.js').then((r) => r.text());
