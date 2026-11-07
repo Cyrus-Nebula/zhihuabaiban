@@ -1,0 +1,379 @@
+/* ============================================================================
+ * unslop.css — 首页（landing）视觉工艺层
+ *
+ * 依据 heydamir/unslop by Damir Sokolovsky (@heydamir), CC BY 4.0
+ *   https://github.com/heydamir/unslop
+ * 按 SKILL.md 的 Audit → Direction → 九轮 Passes 执行（Polish mode）。
+ *
+ * 作用域严格限定在 body.landing，不影响 board / board3d / editor / admin 等
+ * 共用 css/style.css 的其它页面。css/style.css 与所有 js/ 文件均未改动。
+ * 区块、顺序、文案、DOM id、脚本、功能全部保持原样。
+ *
+ * Direction（从产品本身推导，不套设计趋势）
+ *   Product   开源免费的在线动态几何画板，给学几何的人用：AI 一句话作图、拖拽验证
+ *   Character precise, quiet, patient（精确、克制、耐心）
+ *   World     坐标纸与绘图仪器 → 冷灰 ink 中性色阶
+ *   Moments   「模板与案例」「我的画板」里的真实几何图形（产品自身产出）+ 输入框聚焦态
+ *   Signature 章节标题前的一条短刻度线（drawing tick），全站仅此一处
+ * ==========================================================================*/
+
+/* ---------------------------------------------------------------------------
+ * Pass 0 · Design tokens
+ * 沿用项目已有品牌紫与 Manrope 字体；把「洒在框架上的颜色」收回成
+ * 单一中性色阶 + 一个克制使用的 accent。
+ * -------------------------------------------------------------------------*/
+body.landing {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --raised: #eef1f6;
+  --border: rgba(17, 24, 39, .09);
+  --text: #111827;
+  --secondary: #4b5565;
+  --muted: #6b7487;
+
+  --primary: #4c3dbe;              /* 品牌紫加深，保证白字 ≥4.5:1 */
+  --primary-hover: #4233ad;
+  --primary-soft: #f2f1fc;
+  --primary-soft-border: #dcd8f3;
+  --primary-ink: #4335ad;          /* accent 作为文字/墨色时用更深的同色 */
+
+  --radius: 12px;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --ease: cubic-bezier(.22, 1, .36, 1);
+  --dur-micro: 160ms;
+  --dur-surface: 240ms;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .05);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, .06);
+}
+
+/* ---------------------------------------------------------------------------
+ * Pass 1 · Spacing
+ * 所有 gap / padding 收回 4px 网格；同类元素等高同距。
+ * -------------------------------------------------------------------------*/
+body.landing .site-nav        { gap: 16px; height: 64px; padding: 0 24px; }
+body.landing .site-brand      { gap: 8px; }
+body.landing .site-links      { gap: 4px; margin-left: 12px; }
+body.landing .hero            { padding: 96px 24px 64px; }
+body.landing .hero-sub        { margin-top: 16px; }
+body.landing .hero-ai         { margin-top: 24px; padding: 20px 20px 12px; }
+body.landing .hero-ai-bar     { margin-top: 12px; gap: 8px; }
+body.landing .hero-actions    { margin-top: 24px; gap: 12px; }
+body.landing .hero-warn       { margin-top: 24px; }
+body.landing .section         { padding: 80px 24px; }
+body.landing .qs-panel        { padding: 24px; }
+body.landing .qs-head         { margin-bottom: 16px; }
+body.landing .steps           { gap: 16px; }
+body.landing .step            { padding: 20px 16px; }
+body.landing .tpl-grid        { gap: 16px; }
+body.landing .file-grid       { gap: 16px; }
+body.landing .about-card      { padding: 24px; }
+body.landing .site-footer     { margin-top: 48px; padding: 24px 24px 32px; }
+
+/* ---------------------------------------------------------------------------
+ * Pass 2 · Color
+ * 去渐变文字 / 渐变 logo / 毛玻璃 / 紫色发光；深度改由中性表面与 hairline 承担。
+ * -------------------------------------------------------------------------*/
+body.landing .site-nav::before {
+  background: var(--panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* logo 圆规保留形状，渐变填充改为单色实色（unslop: 渐变 logo 不算品牌资产） */
+body.landing .site-logo > path:first-of-type,
+body.landing .site-logo path[fill^="url("] { fill: var(--primary); }
+
+/* 渐变文字 → 纯色 */
+body.landing .hero-title {
+  background: none;
+  -webkit-text-fill-color: var(--text);
+  color: var(--text);
+  font-weight: 500;
+  letter-spacing: -.02em;   /* 60px display 允许 -0.02em */
+}
+body.landing .hero-sub { color: var(--secondary); }
+
+/* 中性阴影；focus 用 accent hairline，不用彩色光晕 */
+body.landing .hero-ai          { box-shadow: var(--shadow-2); }
+body.landing .hero-ai:focus-within {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-2);
+}
+body.landing .qs-panel         { box-shadow: var(--shadow-2); }
+body.landing .hero-action:hover { box-shadow: var(--shadow-1); }
+body.landing .step:hover       { box-shadow: var(--shadow-1); }
+body.landing .tpl-card:hover   { box-shadow: var(--shadow-2); }
+body.landing .file-card:hover  { box-shadow: var(--shadow-2); }
+body.landing .fab-help:hover {
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: var(--shadow-1);
+}
+
+/* 计数：紫色发光圆点 → 安静的等宽数字 */
+body.landing .step-no {
+  width: auto; height: auto;
+  background: none; color: var(--muted);
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 12px;
+}
+
+/* 会员徽章：金色渐变 → 极淡同色 */
+body.landing .auth-vip {
+  background: var(--primary-soft);
+  color: var(--primary-ink);
+  border: 1px solid var(--primary-soft-border);
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* 卡片角标：去毛玻璃、去彩色底 */
+body.landing .file-badge {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  border: 1px solid var(--border);
+  background: var(--panel); color: var(--secondary);
+  font-weight: 500;
+}
+body.landing .file-badge.mode-2d,
+body.landing .file-badge.mode-3d { background: var(--panel); color: var(--secondary); }
+
+/* 缩略图底色保持中性：让里面的真实几何图形成为唯一的色彩承载处 */
+body.landing .tpl-thumb,
+body.landing .file-thumb { background: #fbfcfe; }
+
+/* ---------------------------------------------------------------------------
+ * Pass 3 · Icons
+ * 统一 18px / 1.5 描边；图标取文字的 muted 角色，不再自带品牌色。
+ * （＋ 是原有文案字符，按「内容不变」保留）
+ * -------------------------------------------------------------------------*/
+body.landing .hero-action svg,
+body.landing .hero-ai-img svg,
+body.landing .hero-ai-send svg {
+  width: 18px; height: 18px;
+  stroke-width: 1.5;
+}
+body.landing .hero-action svg { color: var(--muted); }
+
+/* ---------------------------------------------------------------------------
+ * Pass 4 · Copy
+ * 审计结论：现有文案无感叹号、无问候式标题、无 hype 词、无 emoji 标签、
+ * 无不可核验的宣称、无假数据 —— 本轮不动一个字（unslop: 不为改而改）。
+ * -------------------------------------------------------------------------*/
+
+/* ---------------------------------------------------------------------------
+ * Pass 5 · Type
+ * 层级由字号与颜色承担，字重统一收到 400/500（wordmark 允许 600）。
+ * 保留项目自带 Manrope；数字与 meta 用等宽 + tabular-nums。
+ * -------------------------------------------------------------------------*/
+body.landing .site-name,
+body.landing .site-cta,
+body.landing .section-title,
+body.landing .step h3,
+body.landing .tpl-title,
+body.landing .file-name,
+body.landing .panel-title,
+body.landing .btn,
+body.landing .site-links a.active,
+body.landing .skip-link,
+body.landing .fab-help,
+body.landing .file-badge,
+body.landing .qs-close { font-weight: 500; }
+
+body.landing .site-name           { font-weight: 600; }   /* wordmark */
+body.landing .step-no             { font-weight: 500; }
+body.landing .hero-action-text strong,
+body.landing .banner-info strong  { font-weight: 600; }
+
+body.landing .step-no,
+body.landing .muted,
+body.landing .tpl-author,
+body.landing .file-time,
+body.landing .ai-model,
+body.landing .section-head .muted { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------------------
+ * Pass 6 · Layout
+ * 区块与顺序保持原样（unslop: "Keep the sections and their order"）。
+ * 导航收敛为：logo + 原有链接 + 一个实心按钮，登录改为安静的文字链接。
+ * 三个画板按钮是并列的功能入口（非 CTA 堆叠），保持同级，不删不减。
+ * -------------------------------------------------------------------------*/
+body.landing .auth-anchor .btn {
+  background: transparent;
+  border-color: transparent;
+  color: var(--secondary);
+  font-weight: 500;
+}
+body.landing .auth-anchor .btn:hover {
+  color: var(--primary);
+  border-color: transparent;
+}
+body.landing .auth-anchor #authBtn.is-user {
+  background: var(--primary-soft);
+  color: var(--primary-ink);
+  border-color: var(--primary-soft-border);
+}
+
+/* ---------------------------------------------------------------------------
+ * Pass 7 · Details
+ * 半径按尺寸分级（不再万物皆 pill）；active 用表面台阶 + hairline；
+ * hover 只做颜色/表面变化，不做位移与彩色阴影。
+ * -------------------------------------------------------------------------*/
+body.landing .site-cta          { border-radius: 8px; }
+body.landing .nav-toggle        { border-radius: 10px; }
+body.landing .fab-help          { border-radius: 10px; }
+body.landing .hero-ai-send      { border-radius: 8px; }
+body.landing .hero-ai-img       { border-radius: 8px; }
+body.landing .tpl-cat {
+  border-radius: 6px;
+  background: var(--raised);
+  border-color: var(--border);
+  color: var(--secondary);
+}
+/* 6 张模板卡各一个紫色实心按钮 = accent 被摊薄；降为次要按钮，
+   把唯一的强调色留给顶栏「新建画板」这一处主操作 */
+body.landing .tpl-card .btn-primary {
+  background: var(--raised);
+  border-color: var(--border);
+  color: var(--text);
+}
+body.landing .tpl-card .btn-primary:hover {
+  background: var(--panel);
+  border-color: var(--primary);
+  color: var(--primary-ink);
+}
+body.landing .file-open-layer span { border-radius: 6px; }
+
+body.landing .site-links a.active {
+  color: var(--primary-ink);
+  background: var(--primary-soft);
+  font-weight: 500;
+}
+
+body.landing .hero-action:hover {
+  background: var(--panel);
+  border-color: var(--border);
+  box-shadow: var(--shadow-1);
+  transform: none;
+}
+body.landing .step:hover        { border-color: var(--border); transform: none; }
+body.landing .tpl-card:hover    { border-color: var(--border); transform: none; }
+body.landing .file-card:hover   { border-color: var(--border); transform: none; }
+body.landing .hero-ai-send:hover:not(:disabled) { transform: none; }
+
+/* 按压反馈统一到 0.98（unslop: press scale 0.97–0.98） */
+body.landing .btn:not(:disabled):active,
+body.landing .hero-action:active,
+body.landing .hero-ai-send:not(:disabled):active,
+body.landing .hero-ai-img:active,
+body.landing .qs-close:active,
+body.landing .nav-toggle:active,
+body.landing .fab-help:active { transform: scale(.98); }
+
+/* Signature：章节标题前的短刻度线，全站仅此一处 */
+body.landing .section-title::before {
+  content: "";
+  display: inline-block;
+  width: 16px; height: 2px;
+  background: var(--primary);
+  vertical-align: middle;
+  margin-right: 12px;
+  transform: translateY(-2px);
+}
+
+/* ---------------------------------------------------------------------------
+ * Pass 8 · Visuals
+ * 7 个漂浮装饰（点阵网格 / 圆 / 环 / 三角 / 方块 / 模糊色斑 / 圆点）全部移除：
+ * 它们不说明产品（unslop: "Decorative filler goes"），且改为纯装饰之外的
+ * 新装饰同样禁止。首页保持安静留白；产品自身产出的几何缩略图作为唯一 moment。
+ * 不新增 hero 场景图 —— 按 Polish mode，更大的视觉想法写进报告当建议。
+ * -------------------------------------------------------------------------*/
+body.landing .hero-decor { display: none; }
+
+/* ---------------------------------------------------------------------------
+ * Pass 9 · Motion
+ * 去掉 transition:all、hover 位移、800ms 模糊大幅入场；
+ * 统一一条 easing，悬停 160ms / 入场 320ms，stagger 40ms。
+ * -------------------------------------------------------------------------*/
+body.landing .btn,
+body.landing .hero-ai,
+body.landing .hero-ai-img,
+body.landing .hero-ai-send,
+body.landing .hero-action,
+body.landing .step,
+body.landing .tpl-card,
+body.landing .file-card,
+body.landing .fab-help,
+body.landing .nav-toggle,
+body.landing .qs-close {
+  transition:
+    color var(--dur-micro) var(--ease),
+    background-color var(--dur-micro) var(--ease),
+    border-color var(--dur-micro) var(--ease),
+    box-shadow var(--dur-micro) var(--ease);
+}
+
+body.landing [data-reveal] {
+  opacity: 0;
+  transform: translateY(8px);
+  filter: none;
+  /* 元素同时带 data-reveal 与可交互状态，过渡合并写全，避免入场动画覆盖 hover */
+  transition:
+    opacity 320ms var(--ease),
+    transform 320ms var(--ease),
+    color var(--dur-micro) var(--ease),
+    background-color var(--dur-micro) var(--ease),
+    border-color var(--dur-micro) var(--ease),
+    box-shadow var(--dur-micro) var(--ease);
+}
+body.landing [data-reveal].revealed { opacity: 1; transform: none; filter: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  body.landing [data-reveal] { opacity: 1; transform: none; filter: none; transition: none; }
+}
+
+/* ---------------------------------------------------------------------------
+ * 响应式：原 style.css 的断点值仍生效，这里只补齐被本层高特异性覆盖的部分
+ * -------------------------------------------------------------------------*/
+@media (max-width: 1024px) {
+  body.landing .hero { padding-top: 64px; }
+}
+
+@media (max-width: 860px) {
+  body.landing .site-nav { padding: 0 16px; gap: 8px; }
+  /* 全屏菜单：毛玻璃 → 纯色实底 */
+  body.landing .site-links {
+    background: var(--panel);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    gap: 8px;
+  }
+  body.landing .site-links a {
+    font-weight: 500;
+    transition:
+      opacity var(--dur-surface) var(--ease),
+      transform var(--dur-surface) var(--ease),
+      color var(--dur-micro) var(--ease),
+      background-color var(--dur-micro) var(--ease);
+  }
+  body.landing .site-links.open a:nth-child(1) { transition-delay: 40ms; }
+  body.landing .site-links.open a:nth-child(2) { transition-delay: 80ms; }
+  body.landing .site-links.open a:nth-child(3) { transition-delay: 120ms; }
+  body.landing .site-links.open a:nth-child(4) { transition-delay: 160ms; }
+}
+
+@media (max-width: 640px) {
+  body.landing .site-nav  { gap: 8px; }
+  body.landing .hero      { padding: 48px 16px 48px; }
+  body.landing .section   { padding: 48px 16px; }
+  body.landing .qs-panel  { padding: 16px; }
+  body.landing .hero-title { letter-spacing: 0; }  /* 小屏不用负字距 */
+}
+
+/* ---------------------------------------------------------------------------
+ * 依据 unslop by Damir Sokolovsky (@heydamir), CC BY 4.0 — 保留此署名
+ * https://github.com/heydamir/unslop
+ * -------------------------------------------------------------------------*/
