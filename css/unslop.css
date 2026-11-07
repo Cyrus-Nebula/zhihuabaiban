@@ -374,6 +374,54 @@ body.landing [data-reveal].revealed { opacity: 1; transform: none; filter: none;
 }
 
 /* ---------------------------------------------------------------------------
+ * Pass 6 补充 · 顶栏账号区去重叠（线上反馈修复）
+ *
+ * 原 css/style.css:1299 把 .auth-vip 绝对定位到用户胶囊右上角
+ * (top:-7px / right:-4px)，与 .auth-name 横向压叠 25px、纵向 8px，
+ * 10 位账号编号的末尾被浅色徽章盖住，看起来像渲染错位。
+ * 这里让徽章回到正常流、收成安静的细边小标记；账号编号改等宽数字并降为
+ * 次要墨色；头像圆点去掉渐变。DOM、文案、js、共用 style.css 均不改动。
+ * -------------------------------------------------------------------------*/
+body.landing .auth-anchor { gap: 6px; }
+
+body.landing .auth-anchor .auth-vip {
+  position: static;
+  margin-left: 0;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--primary-ink);
+  border: 1px solid var(--primary-soft-border);
+  border-radius: 5px;
+}
+/* auth.js 用 b.hidden = true 控制显隐（属性），而原样式只写了 .hidden 类，
+   被 .auth-vip{display:inline-flex} 覆盖，导致非会员也常驻「会员」标签。 */
+body.landing .auth-anchor .auth-vip[hidden] { display: none; }
+
+body.landing .auth-anchor .btn.is-user .auth-name {
+  font-variant-numeric: tabular-nums;
+  color: var(--secondary);
+  letter-spacing: .01em;
+}
+
+body.landing .auth-anchor .avatar-dot {
+  background: var(--primary);
+  font-weight: 500;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 窄屏：账号区收紧，避免与汉堡菜单争宽度；会员信息仍在账号下拉「会员中心」里可查 */
+@media (max-width: 640px) {
+  body.landing .auth-anchor { gap: 4px; }
+  body.landing .auth-anchor .btn.is-user { padding-right: 8px; }
+  body.landing .auth-anchor .auth-vip { display: none; }
+}
+
+/* ---------------------------------------------------------------------------
  * 依据 unslop by Damir Sokolovsky (@heydamir), CC BY 4.0 — 保留此署名
  * https://github.com/heydamir/unslop
  * -------------------------------------------------------------------------*/
