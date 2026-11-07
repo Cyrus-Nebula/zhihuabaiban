@@ -27,6 +27,20 @@
  *   angle     {id,points:[A,B,C]}              角（B为顶点）
  *   label     {target,text}                    设置/修改标签
  *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?}  样式
+ *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
+ *   transform {id,of,type,by?|angle?|center?|axis?}  几何变换：把 of 元素平移/旋转/反射成一份新副本（以 id 命名），
+ *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?)；支持 point/segment/line/ray/polygon/circle
+ *   animate    {id|ids,pingpong?,speed?}             动画：让指定滑动条（id 或 ids，或 "__all__"）自动连续改值，依赖它的几何实时播放；speed: slow/normal/fast，pingpong:true 往复。仅前端播放，不进文档
+ *
+ * 本文件职责（命令协议执行）：measure 命令回读几何量，并经 execute 结果透传 value（见 case 'measure'），
+ *   画板上生成的临时灰色读数不进注册表/文档（transient）。
+ * 其余分工：
+ *   - 协议新增几何变换 op（reflect/rotate/translate）与 animate 命令：已完成（见 transform / animate 分支）。
+ *   - read-back 闭环（测量→与预期不符则自动修正）：已在 js/board.js 的 aiSend() 前端驱动——执行命令后收集
+ *     measure 的 value，回传给 LLM 二次核对并自动补发修正命令（对标大角几何 MCP 式读画板状态后改图）。
+ *     本文件提供 clearMeasures() 供闭环在每轮自检前清掉上一轮的临时读数，避免堆积。
+ * TODO(下一步): 1) 打磨自动修正策略（放宽/收紧"不符"判定阈值、支持多轮收敛、修正前先 diff 再改）；
+ *   2) 前端可视化：在 AI 面板更清晰地呈现自检读数/修正动作（如"已自检：∠AHB=90.0° ✔ 已修正 1 处"）。
  *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
@@ -215,6 +229,7 @@ export function createExecutor(board) {
   const registry = new Map();    // id -> JXG 元素
   const plainPoints = new Set(); // 可通过 moves 覆盖坐标的自由点
   const sliders = new Set();     // 滑动条 id（值随 moves 一起持久化）
+  const measureEls = [];         // 上一轮自检的临时读数文本，clearMeasures() 清掉，避免堆积
 
   function resolve(ref) {
     if (typeof ref === 'number') return ref;
@@ -255,6 +270,92 @@ export function createExecutor(board) {
       if (el.label && typeof el.label.setText === 'function') el.label.setText(String(text));
       else if (typeof el.setLabelText === 'function') el.setLabelText(String(text));
     } catch (_) { /* 个别元素类型没有标签，忽略 */ }
+  }
+
+  /** 三点夹角（度），B 为顶点；用于 measure kind=angle 自检 */
+  function angleDeg(A, B, C) {
+    const ux = A.X() - B.X(), uy = A.Y() - B.Y();
+    const vx = C.X() - B.X(), vy = C.Y() - B.Y();
+    const dot = ux * vx + uy * vy;
+    const la = Math.hypot(ux, uy), lb = Math.hypot(vx, vy);
+    if (la < 1e-9 || lb < 1e-9) return NaN;
+    let c = dot / (la * lb);
+    c = Math.max(-1, Math.min(1, c));
+    return Math.acos(c) * 180 / Math.PI;
+  }
+
+  /** 在 x 处求表达式（JSXGraph 语法）的数值；优先用 JessieCode 编译，失败回退到受限算术求值 */
+  function evalExprAt(expr, x) {
+    const s = String(expr || '');
+    if (board.jc && typeof board.jc.snippet === 'function') {
+      try {
+        const fn = board.jc.snippet(s, true, 'x', false);
+        const v = Number(fn(Number(x)));
+        if (Number.isFinite(v)) return v;
+      } catch (_) { /* 回退 */ }
+    }
+    try {
+      const js = s.replace(/\^/g, '**')
+        .replace(/\bpi\b/gi, '(' + Math.PI + ')')
+        .replace(/\be\b/gi, '(' + Math.E + ')');
+      return Number(Function('x', 'return (' + js + ');')(Number(x)));
+    } catch (_) { return NaN; }
+  }
+
+  /** 画一个临时测量读数文本（灰色小字，带 ✓；不进注册表/文档，verify 用） */
+  function measureReadout(text, pos) {
+    return board.create('text', [pos[0], pos[1], text], {
+      name: '', withLabel: false, display: 'internal',
+      fontSize: 11, color: '#555', strokeColor: '#555',
+    });
+  }
+
+  /** 点 (x,y) 关于过 p1、p2 两点的直线的对称点坐标 */
+  function reflectAcrossLine(x, y, p1, p2) {
+    const x1 = p1[0], y1 = p1[1], x2 = p2[0], y2 = p2[1];
+    const dx = x2 - x1, dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12) return [x, y]; // 两点重合退化：当关于该点对称处理
+    const t = ((x - x1) * dx + (y - y1) * dy) / len2;
+    const px = x1 + t * dx, py = y1 + t * dy; // 在直线上的投影
+    return [2 * px - x, 2 * py - y];
+  }
+
+  /** 解析几何变换命令，返回映射函数 (x,y) => [x', y']（translate / rotate / reflect） */
+  function transformFn(cmd, resolve) {
+    const type = String(cmd.type || '').toLowerCase();
+    // center 既可以是点 id，也可以是 [x,y] 坐标（省缺原点）
+    const centerOf = (c) => {
+      if (c == null) return [0, 0];
+      if (Array.isArray(c) && c.length >= 2) return [Number(c[0]) || 0, Number(c[1]) || 0];
+      const el = resolve(c); // 点 id：取其实时坐标
+      return [el.X(), el.Y()];
+    };
+    if (type === 'translate') {
+      const by = Array.isArray(cmd.by) ? cmd.by : (Array.isArray(cmd.vector) ? cmd.vector : [0, 0]);
+      const dx = Number(by[0]) || 0, dy = Number(by[1]) || 0;
+      return (x, y) => [x + dx, y + dy];
+    }
+    if (type === 'rotate') {
+      const th = (Number(cmd.angle) || 0) * Math.PI / 180;
+      const [cx, cy] = centerOf(cmd.center);
+      const cos = Math.cos(th), sin = Math.sin(th);
+      return (x, y) => {
+        const rx = x - cx, ry = y - cy;
+        return [cx + (rx * cos - ry * sin), cy + (rx * sin + ry * cos)];
+      };
+    }
+    if (type === 'reflect') {
+      if (cmd.axis != null) {
+        const ax = resolve(cmd.axis); // 直线/线段 id：取它的两个端点定轴
+        const p1 = [ax.point1.X(), ax.point1.Y()];
+        const p2 = [ax.point2.X(), ax.point2.Y()];
+        return (x, y) => reflectAcrossLine(x, y, p1, p2);
+      }
+      const [cx, cy] = centerOf(cmd.center); // 关于点中心对称（省缺原点）
+      return (x, y) => [2 * cx - x, 2 * cy - y];
+    }
+    throw new Error('transform.type 只能是 translate / rotate / reflect');
   }
 
   function build(cmd) {
@@ -421,6 +522,101 @@ export function createExecutor(board) {
         el.setAttribute(a);
         return null;
       }
+      case 'measure': {
+        // 测量/验证命令（AI 自检回读，对标大角几何 MCP 式读画板状态）。
+        // kind: 'distance'(|AB|) | 'angle'(∠ABC 度，中点是顶点) | 'evaluate'(代数式/函数在 x 处的值)。
+        // 画板上生成一个灰色 ✓ 临时读数（不进注册表/文档），并把数值经 execute 结果回传，
+        // 供未来后端 read-back 闭环做自动修正。kind 不合法则报错由外层捕获。
+        const kind = String(cmd.kind || 'distance').toLowerCase();
+        if (kind === 'distance') {
+          const a = resolve(cmd.of && cmd.of[0]);
+          const b = resolve(cmd.of && cmd.of[1]);
+          const value = Math.hypot(b.X() - a.X(), b.Y() - a.Y());
+          const el = measureReadout('✓ 距离 = ' + value.toFixed(2), [(a.X() + b.X()) / 2 + 0.4, (a.Y() + b.Y()) / 2 + 0.4]);
+          measureEls.push(el);
+          return { __measure: true, el, value };
+        }
+        if (kind === 'angle') {
+          const A = resolve(cmd.of && cmd.of[0]);
+          const B = resolve(cmd.of && cmd.of[1]);
+          const C = resolve(cmd.of && cmd.of[2]);
+          const value = angleDeg(A, B, C);
+          const el = measureReadout('✓ ∠ = ' + (Number.isFinite(value) ? value.toFixed(1) + '°' : '?'), [B.X() + 0.4, B.Y() + 0.4]);
+          measureEls.push(el);
+          return { __measure: true, el, value };
+        }
+        if (kind === 'evaluate') {
+          const value = evalExprAt(cmd.expr, cmd.x);
+          const at = cmd.x != null ? ' @ x=' + cmd.x : '';
+          const el = measureReadout('✓ ' + (cmd.label || String(cmd.expr)) + at + ' = ' + (Number.isFinite(value) ? value.toFixed(3) : '?'),
+            Array.isArray(cmd.at) ? cmd.at : [Number(cmd.x) || 0, (Number.isFinite(value) ? value : 0) + 0.6]);
+          measureEls.push(el);
+          return { __measure: true, el, value };
+        }
+        throw new Error('measure.kind 只能是 distance / angle / evaluate');
+      }
+      case 'transform': {
+        // 几何变换 op（本轮新增，对标"几何变换"作图）：把源元素按 type 做平移/旋转/反射，
+        // 生成一份以 cmd.id 命名的新副本。此前只能靠"坐标数值化手算"兜底（易错），现由执行器
+        // 在运行期读取源元素坐标后计算并落点——AI 只需声明"对谁做哪种变换"，无需手算坐标。
+        //   translate: {type:'translate', by:[dx,dy]}                               平移向量
+        //   rotate:    {type:'rotate', angle:角度(度), center:'O'|[x,y]（省缺绕原点）}  旋转
+        //   reflect:   {type:'reflect', axis:'l1'（直线/线段 id，关于该线对称）}
+        //                       | {center:'O'|[x,y]（关于该点中心对称，省缺原点）}
+        // 支持 point / segment / line / ray / polygon / circle；副本为静态落点（不随源拖拽实时
+        // 联动），但回放/保存时按命令重建，行为稳定。type 非法时抛错由外层捕获。
+        const src = resolve(cmd.of);
+        if (!src) throw new Error('transform.of 引用的元素不存在');
+        const f = transformFn(cmd, resolve);
+        const et = src.elType;
+        if (et === 'point') {
+          const [nx, ny] = f(src.X(), src.Y());
+          const pt = board.create('point', [nx, ny], { ...POINT_STYLE, ...opt });
+          applyLabel(pt, cmd.label);
+          return pt;
+        }
+        if (et === 'circle') {
+          const [cx, cy] = f(src.center.X(), src.center.Y());
+          const r = typeof src.Radius === 'function' ? src.Radius() : 1;
+          return board.create('circle', [[cx, cy], r], opt);
+        }
+        if (et === 'polygon') {
+          const coords = (src.vertices || []).map((v) => { const [x, y] = f(v.X(), v.Y()); return [x, y]; });
+          if (coords.length < 2) throw new Error('多边形顶点数不足，无法变换');
+          return board.create('polygon', coords, opt);
+        }
+        if (['segment', 'arrow', 'line', 'axis', 'ray'].includes(et)) {
+          const p1 = src.point1, p2 = src.point2;
+          if (!p1 || !p2) throw new Error('该对象无可用的两个端点，无法变换');
+          const [x1, y1] = f(p1.X(), p1.Y());
+          const [x2, y2] = f(p2.X(), p2.Y());
+          if (et === 'line' || et === 'axis') return board.create('line', [[x1, y1], [x2, y2]], opt);
+          if (et === 'ray') return board.create('line', [[x1, y1], [x2, y2]], { ...opt, straightFirst: false, straightLast: true });
+          return board.create('segment', [[x1, y1], [x2, y2]], opt);
+        }
+        throw new Error('transform 暂不支持 elType=' + et + '（目前支持 point/segment/line/polygon/circle）');
+      }
+      case 'animate': {
+        // 动画命令（本轮新增，对标大角几何「滑动条 + 自动播放」）：
+        // 让指定滑动条(id 或 ids，或 "__all__")自动连续改值，依赖它的点/圆/曲线随之实时重算，
+        // 形成可讲解的动态演示。执行器只做校验并返回目标，真正的播放由前端按既有动画引擎驱动
+        // （见 js/board.js 的 animPlayTargets）。不注册任何画板元素、不进文档/历史。
+        //   {"op":"animate","id":"a"}                 播放单个滑动条
+        //   {"op":"animate","ids":["a","b"]}          同时播放多个
+        //   {"op":"animate","ids":"__all__"}          播放全部滑动条
+        //   {"op":"animate","id":"a","pingpong":true,"speed":"normal"}  往复 / 速度(slow|normal|fast)
+        const ids = cmd.ids != null
+          ? (Array.isArray(cmd.ids) ? cmd.ids : [cmd.ids])
+          : (cmd.id != null ? [cmd.id] : []);
+        if (!ids.length) throw new Error('animate 必须指定 id 或 ids');
+        const bad = ids.filter((id) => {
+          const el = registry.get(id);
+          return !(el && el.elType === 'slider');
+        });
+        if (bad.length) throw new Error('animate 目标不是滑动条或不存在：' + bad.join(', '));
+        const speed = ['slow', 'normal', 'fast'].includes(cmd.speed) ? cmd.speed : 'normal';
+        return { ids: ids.filter((id) => registry.has(id)), pingpong: cmd.pingpong === true, speed };
+      }
       default:
         throw new Error('未知命令 op: ' + cmd.op);
     }
@@ -454,9 +650,20 @@ export function createExecutor(board) {
     for (const cmd of Array.isArray(commands) ? commands : []) {
       if (!cmd || typeof cmd !== 'object') continue;
       try {
-        if (cmd.op === 'clear') { clearAll(); out.push({ ok: true, op: 'clear' }); continue; }
-        const el = build(cmd);
-        if (cmd.id) {
+      if (cmd.op === 'clear') { clearAll(); out.push({ ok: true, op: 'clear' }); continue; }
+      const built = build(cmd);
+      // 测量命令：build 已在画板生成临时读数文本（副作用），数值经 value 回传；不进注册表/文档
+      if (cmd.op === 'measure') {
+        out.push({ ok: true, op: 'measure', id: cmd.id || null, value: built && built.__measure ? built.value : NaN });
+        continue;
+      }
+      if (cmd.op === 'animate') {
+        // 动画是纯前端动作（驱动既有滑动条播放），不注册画板元素；把目标回传给前端去启动播放
+        out.push({ ok: true, op: 'animate', ids: (built && built.ids) || [], pingpong: !!(built && built.pingpong), speed: (built && built.speed) || 'normal' });
+        continue;
+      }
+      const el = built;
+      if (cmd.id) {
           if (registry.has(cmd.id)) throw new Error(`id「${cmd.id}」重复定义`);
           if (el) registry.set(cmd.id, el);
           // 坐标被别的对象驱动的点是依赖点，不能再当成可拖拽的自由点保存坐标
@@ -469,6 +676,14 @@ export function createExecutor(board) {
       }
     }
     return out;
+  }
+
+  /** 清掉上一轮自检留下的临时读数文本（read-back 闭环在每轮自检前调用，避免堆积） */
+  function clearMeasures() {
+    for (const el of measureEls) {
+      try { board.removeObject(el); } catch (_) { /* 忽略 */ }
+    }
+    measureEls.length = 0;
   }
 
   /** 当前画板元素摘要（作为 AI 的上下文）；滑动条带出当前值，方便 AI 接着改 */
@@ -527,5 +742,5 @@ export function createExecutor(board) {
     if (restoredSlider) { try { board.update(); } catch (_) { /* 忽略 */ } }
   }
 
-  return { execute, describe, moves, applyMoves, clearAll, remove, registry, has: (id) => registry.has(id) };
+  return { execute, describe, moves, applyMoves, clearAll, remove, clearMeasures, registry, has: (id) => registry.has(id) };
 }
