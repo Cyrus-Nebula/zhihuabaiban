@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { axisTickSpec } from './board3d-axis.js';
 
 const CFG = window.DAJIAO_CONFIG || {};
 const DEG = Math.PI / 180;
@@ -44,6 +45,13 @@ let scene, camera, renderer, orbit, transform, raycaster, group, gridHelper, axe
 let stage, canvas;
 const pointer = new THREE.Vector2();
 
+// 叠加层（HTML，跟随 3D 锚点）：坐标轴刻度数值 + Label3D 文字标注
+let overlayLayer = null;
+let tickGroup = null;
+const axisTickLabels = [];                 // [{ el, pos: THREE.Vector3 }]
+const labelOverlays = new Map();           // id -> { el, obj }
+const _proj = new THREE.Vector3();
+
 // ============================================================
 // 初始化
 // ============================================================
@@ -78,6 +86,9 @@ function init() {
 
   group = new THREE.Group();
   scene.add(group);
+
+  ensureOverlayLayer();
+  buildAxisTicks();
 
   orbit = new OrbitControls(camera, renderer.domElement);
   orbit.enableDamping = true;
@@ -132,7 +143,10 @@ function loadFile() {
     doc = { v: 1, bg: saved.bg, axes: saved.axes, grid: saved.grid, objects: [] };
   }
   applyView();
-  doc.objects.forEach(addMeshForObj);
+  doc.objects.forEach((o) => {
+    if (o.type === 'label') addLabelOverlay(o);
+    else addMeshForObj(o);
+  });
   setSaveStatus('就绪');
 }
 
@@ -140,6 +154,7 @@ function cloneObj(o) {
   return {
     id: o.id || genId(),
     type: o.type,
+    text: o.text || (o.type === 'label' ? '标注' : ''),
     color: o.color || '#4f6bed',
     opacity: o.opacity == null ? 1 : o.opacity,
     pos: (o.pos || [0, 0, 0]).slice(),
@@ -263,6 +278,7 @@ function selectObject(mesh) {
 function deselect() {
   selected = null; selectedMesh = null;
   transform.detach();
+  labelOverlays.forEach(({ el }) => el.classList.remove('sel'));
   document.getElementById('inspectorEmpty').classList.remove('hidden');
   document.getElementById('inspectorBody').classList.add('hidden');
 }
@@ -276,12 +292,23 @@ function renderInspector() {
   if (!selected) return;
   document.getElementById('inspectorEmpty').classList.add('hidden');
   document.getElementById('inspectorBody').classList.remove('hidden');
-  document.getElementById('insp-type').textContent = SHAPE_DEFS[selected.type].name;
+  const isLabel = selected.type === 'label';
+  document.getElementById('insp-type').textContent = isLabel ? '标注文字' : SHAPE_DEFS[selected.type].name;
+  // 标注没有旋转/缩放/透明度概念：折叠这些行，改显文字行
+  const showGrp = (grp, on) => document.querySelectorAll(`#inspectorBody [data-grp="${grp}"]`).forEach((el) => el.classList.toggle('hidden', !on));
+  showGrp('rot', !isLabel);
+  showGrp('scale', !isLabel);
+  showGrp('opacity', !isLabel);
+  showGrp('text', isLabel);
   const set = (k, i, v) => { const el = document.querySelector(`#inspectorBody [data-k="${k}"][data-i="${i}"]`); if (el) el.value = v; };
   set('pos', 0, round(selected.pos[0])); set('pos', 1, round(selected.pos[1])); set('pos', 2, round(selected.pos[2]));
+  const colEl = document.querySelector('#inspectorBody [data-k="color"]'); if (colEl) colEl.value = selected.color;
+  if (isLabel) {
+    const tEl = document.querySelector('#inspectorBody [data-k="text"]'); if (tEl) tEl.value = selected.text || '';
+    return;
+  }
   set('rot', 0, round(selected.rot[0])); set('rot', 1, round(selected.rot[1])); set('rot', 2, round(selected.rot[2]));
   set('scale', 0, round(selected.scale[0])); set('scale', 1, round(selected.scale[1])); set('scale', 2, round(selected.scale[2]));
-  const colEl = document.querySelector('#inspectorBody [data-k="color"]'); if (colEl) colEl.value = selected.color;
   const opEl = document.querySelector('#inspectorBody [data-k="opacity"]'); if (opEl) opEl.value = selected.opacity;
   // 类型专属参数
   const extra = document.getElementById('inspExtra');
@@ -319,6 +346,7 @@ function applyView() {
   document.body.style.background = BG_CSS[doc.bg] || BG_CSS.white;
   if (gridHelper) gridHelper.visible = doc.grid;
   if (axesHelper) axesHelper.visible = doc.axes;
+  if (tickGroup) tickGroup.visible = doc.axes;
   // 同步 UI
   const ax = document.getElementById('set-axis'); if (ax) ax.checked = doc.axes;
   const gr = document.getElementById('set-grid'); if (gr) gr.checked = doc.grid;
@@ -345,7 +373,11 @@ function bindUI() {
 
   // 几何体面板
   document.getElementById('palette').querySelectorAll('.b3d-shape').forEach((btn) => {
-    btn.addEventListener('click', () => addShape(btn.dataset.shape));
+    btn.addEventListener('click', () => {
+      const s = btn.dataset.shape;
+      if (s === 'label') addLabel();
+      else addShape(s);
+    });
   });
 
   // 设置气泡
@@ -394,7 +426,8 @@ function bindUI() {
 function onInspectorInput(e) {
   const el = e.target;
   const k = el.dataset.k; if (!k || !selected) return;
-  if (k === 'color') { selected.color = el.value; const m = meshes.get(selected.id); if (m) m.material.color.set(el.value); scheduleSave(); return; }
+  if (k === 'text') { selected.text = el.value; const lo = labelOverlays.get(selected.id); if (lo) lo.el.textContent = selected.text; scheduleSave(); return; }
+  if (k === 'color') { selected.color = el.value; const m = meshes.get(selected.id); if (m) m.material.color.set(el.value); const lo = labelOverlays.get(selected.id); if (lo) lo.el.style.color = selected.color; scheduleSave(); return; }
   if (k === 'opacity') { selected.opacity = parseFloat(el.value); const m = meshes.get(selected.id); if (m) { m.material.opacity = selected.opacity; m.material.transparent = selected.opacity < 1; } scheduleSave(); return; }
   const i = parseInt(el.dataset.i, 10);
   const v = parseFloat(el.value); if (!Number.isFinite(v)) return;
@@ -406,7 +439,16 @@ function onInspectorInput(e) {
 }
 
 function deleteSelected() {
-  if (!selected || !selectedMesh) return;
+  if (!selected) return;
+  if (selected.type === 'label') {
+    const lo = labelOverlays.get(selected.id);
+    if (lo) { lo.el.remove(); labelOverlays.delete(selected.id); }
+    doc.objects = doc.objects.filter((o) => o.id !== selected.id);
+    deselect();
+    scheduleSave();
+    return;
+  }
+  if (!selectedMesh) return;
   const id = selected.id;
   transform.detach();
   group.remove(selectedMesh);
@@ -432,6 +474,119 @@ function resetView() {
   camera.position.set(6, 5, 8);
   orbit.target.set(0, 0, 0);
   orbit.update();
+}
+
+// ============================================================
+// 叠加层：坐标轴刻度 + Label3D 文字标注（HTML 跟随 3D 锚点）
+// ============================================================
+function ensureOverlayLayer() {
+  if (overlayLayer) return;
+  overlayLayer = document.createElement('div');
+  overlayLayer.id = 'b3d-overlay';
+  overlayLayer.className = 'b3d-overlay';
+  if (stage) stage.appendChild(overlayLayer);
+}
+
+/** 构建坐标轴刻度：每 1 单位次刻度短线 + 每 5 单位主刻度（更长 + 数值标注）。 */
+function buildAxisTicks() {
+  if (tickGroup) {
+    scene.remove(tickGroup);
+    tickGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  }
+  axisTickLabels.forEach((t) => t.el.remove());
+  axisTickLabels.length = 0;
+  tickGroup = new THREE.Group();
+  const AXIS_LEN = 5; // 与 AxesHelper(5) 一致
+  const axes = [
+    { dir: new THREE.Vector3(1, 0, 0), color: 0xe5484d },
+    { dir: new THREE.Vector3(0, 1, 0), color: 0x30a46c },
+    { dir: new THREE.Vector3(0, 0, 1), color: 0x3b82f6 },
+  ];
+  const TICK_MINOR = 0.12, TICK_MAJOR = 0.30;
+  for (const a of axes) {
+    // 轴线垂直方向（用于画刻度短线，避免与轴平行）
+    const up = Math.abs(a.dir.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const perp = new THREE.Vector3().crossVectors(a.dir, up).normalize();
+    for (const tk of axisTickSpec(AXIS_LEN)) {
+      const len = tk.major ? TICK_MAJOR : TICK_MINOR;
+      const c = a.dir.clone().multiplyScalar(tk.value);
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        c.clone().addScaledVector(perp, -len / 2),
+        c.clone().addScaledVector(perp, len / 2),
+      ]);
+      tickGroup.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: a.color })));
+      if (tk.major && tk.value !== 0) {
+        const el = document.createElement('div');
+        el.className = 'b3d-tick-label';
+        el.textContent = String(tk.value);
+        el.style.color = '#' + a.color.toString(16).padStart(6, '0');
+        overlayLayer.appendChild(el);
+        axisTickLabels.push({ el, pos: c.clone() });
+      }
+    }
+  }
+  scene.add(tickGroup);
+}
+
+/** 新增一个 Label3D 文字标注（锚定在 3D 空间一点，跟随视角）。 */
+function addLabel(text = '标注', pos) {
+  const obj = {
+    id: genId(), type: 'label', text: text || '标注', color: '#1f2937', opacity: 1,
+    pos: (pos || [0, 0, 0]).slice(), rot: [0, 0, 0], scale: [1, 1, 1], p: {},
+  };
+  doc.objects.push(obj);
+  addLabelOverlay(obj);
+  hideHint();
+  selectLabel(obj);
+  scheduleSave();
+  return obj;
+}
+
+function addLabelOverlay(obj) {
+  if (!overlayLayer) ensureOverlayLayer();
+  const el = document.createElement('div');
+  el.className = 'b3d-label3d';
+  el.textContent = obj.text || '标注';
+  el.style.color = obj.color || '#1f2937';
+  el.addEventListener('pointerdown', (e) => { e.stopPropagation(); selectLabel(obj); });
+  overlayLayer.appendChild(el);
+  labelOverlays.set(obj.id, { el, obj });
+}
+
+function selectLabel(obj) {
+  if (selectedMesh) setHighlight(selectedMesh, false);
+  selected = obj; selectedMesh = null;
+  transform.detach();
+  labelOverlays.forEach(({ el }, id) => el.classList.toggle('sel', id === obj.id));
+  renderInspector();
+}
+
+/** 把世界坐标投影到画布像素（用于叠加层定位）。 */
+function projectToScreen(worldPos) {
+  _proj.copy(worldPos).project(camera);
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (_proj.x * 0.5 + 0.5) * rect.width,
+    y: (-_proj.y * 0.5 + 0.5) * rect.height,
+    visible: _proj.z < 1 && _proj.z > -1,
+  };
+}
+
+/** 每帧刷新叠加层：坐标轴刻度数值 + Label3D 标注。 */
+function updateOverlays() {
+  if (!overlayLayer) return;
+  const ticksOn = doc.axes && tickGroup && tickGroup.visible;
+  for (const t of axisTickLabels) {
+    if (!ticksOn) { t.el.style.display = 'none'; continue; }
+    const s = projectToScreen(t.pos);
+    if (s.visible) { t.el.style.display = 'block'; t.el.style.left = s.x + 'px'; t.el.style.top = s.y + 'px'; }
+    else t.el.style.display = 'none';
+  }
+  labelOverlays.forEach(({ el, obj }) => {
+    const s = projectToScreen(new THREE.Vector3(obj.pos[0], obj.pos[1], obj.pos[2]));
+    if (s.visible) { el.style.display = 'block'; el.style.left = s.x + 'px'; el.style.top = s.y + 'px'; }
+    else el.style.display = 'none';
+  });
 }
 
 // ============================================================
@@ -471,6 +626,7 @@ function animate() {
   requestAnimationFrame(animate);
   if (orbit) orbit.update();
   sortTransparentByDepth();
+  updateOverlays();
   if (renderer) renderer.render(scene, camera);
 }
 
