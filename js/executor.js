@@ -26,8 +26,11 @@
  *   text      {id,x,y,bind:{kind,of}}          动态测量文本（kind: distance/length/radius/angle/value）
  *   angle     {id,points:[A,B,C]}              角（B为顶点）
  *   label     {target,text}                    设置/修改标签
- *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?}  样式
+ *   style     {target,color?,strokeColor?,fillColor?,strokeWidth?,dash?,fill?,opacity?,fillOpacity?,labelColor?,labelSize?,hidden?}  样式
+ *             （细粒度：描边/填色可分设；opacity 0~1 整体透明，fillOpacity 单管填充；labelColor/labelSize 改标签文字）
  *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
+ *   verify    {kind,of|expr,expect?,tol?,rtol?,expectRange?:[lo,hi],label?}  声明式自检断言：在 measure 三种求值之上加机器判定
+ *             （expect + tol(默认0.05) 或 rtol 相对容差；expectRange 区间），execute 回传 pass:true/false/null；pass:false 触发前端修正轮
  *   transform {id,of,type,by?|angle?|center?|axis?}  几何变换：把 of 元素平移/旋转/反射成一份新副本（以 id 命名），
  *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?)；支持 point/segment/line/ray/polygon/circle
  *   animate    {id|ids,pingpong?,speed?}             动画：让指定滑动条（id 或 ids，或 "__all__"）自动连续改值，依赖它的几何实时播放；speed: slow/normal/fast，pingpong:true 往复。仅前端播放，不进文档
@@ -41,6 +44,16 @@
  *     本文件提供 clearMeasures() 供闭环在每轮自检前清掉上一轮的临时读数，避免堆积。
  * TODO(下一步): 1) 打磨自动修正策略（放宽/收紧"不符"判定阈值、支持多轮收敛、修正前先 diff 再改）；
  *   2) 前端可视化：在 AI 面板更清晰地呈现自检读数/修正动作（如"已自检：∠AHB=90.0° ✔ 已修正 1 处"）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-07 第二轮）：
+ *   (1) 新增 verify 声明式自检断言：把 measure 的 distance/angle/evaluate 求值抽成 measureValue()，
+ *       叠加 expect/tol/rtol/expectRange 机器判定并回传 pass；此前注释声称 read-back 闭环已落地，
+ *       实际 aiSend() 未接入，本轮在 js/board.js 补齐（verify pass:false → 一次【自检回读】修正轮，不递归）。
+ *   (2) style 细粒度样式（兑现上一轮 TODO 交接项）：opacity/fillOpacity/strokeColor/fillColor/labelColor/labelSize；
+ *       标签是独立 text 对象，单独 setAttribute。measure/verify 临时读数按 pass 着色（绿✓/红✗/灰·）。
+ * TODO(下一步·本轮之后): 1) 多轮收敛（连续 2~3 轮 verify→修正，带上限与改动 diff，避免反复横跳）；
+ *   2) 把 expect 扩展到"关系断言"（AB⊥BC、A 在圆上、三点共线），贴近大角几何符号自检；
+ *   3) 自检状态条可视化（"已自检 2 项，✘ 1 项，已修正 1 处"）。
  *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
@@ -302,12 +315,54 @@ export function createExecutor(board) {
     } catch (_) { return NaN; }
   }
 
-  /** 画一个临时测量读数文本（灰色小字，带 ✓；不进注册表/文档，verify 用） */
-  function measureReadout(text, pos) {
+  /** 画一个临时测量读数文本（不进注册表/文档；按 pass 着色：绿✓/红✗/灰·） */
+  function measureReadout(text, pos, pass) {
+    const color = pass === false ? '#C62828' : pass === true ? '#2E7D32' : '#555';
     return board.create('text', [pos[0], pos[1], text], {
       name: '', withLabel: false, display: 'internal',
-      fontSize: 11, color: '#555', strokeColor: '#555',
+      fontSize: 11, color, strokeColor: color,
     });
+  }
+
+  /** measure / verify 共用的求值：返回 {value, kind, unit, at}；kind 非法抛错由外层捕获 */
+  function measureValue(cmd) {
+    const kind = String(cmd.kind || 'distance').toLowerCase();
+    if (kind === 'distance') {
+      const a = resolve(cmd.of && cmd.of[0]);
+      const b = resolve(cmd.of && cmd.of[1]);
+      return { value: Math.hypot(b.X() - a.X(), b.Y() - a.Y()), kind, unit: '',
+        at: [(a.X() + b.X()) / 2 + 0.4, (a.Y() + b.Y()) / 2 + 0.4] };
+    }
+    if (kind === 'angle') {
+      const A = resolve(cmd.of && cmd.of[0]);
+      const B = resolve(cmd.of && cmd.of[1]);
+      const C = resolve(cmd.of && cmd.of[2]);
+      return { value: angleDeg(A, B, C), kind, unit: '°', at: [B.X() + 0.4, B.Y() + 0.4] };
+    }
+    if (kind === 'evaluate') {
+      const value = evalExprAt(cmd.expr, cmd.x);
+      return { value, kind, unit: '',
+        at: Array.isArray(cmd.at) ? cmd.at : [Number(cmd.x) || 0, (Number.isFinite(value) ? value : 0) + 0.6] };
+    }
+    throw new Error('kind 只能是 distance / angle / evaluate');
+  }
+
+  /** verify 期望值机器判定：expect(+tol/rtol) 点判定 / expectRange:[lo,hi] 区间；没给期望字段则只回读 */
+  function judgeMeasure(value, cmd) {
+    const tol = num(cmd.tol, num(cmd.atol, 0.05));
+    const rtol = Number(cmd.rtol);
+    if (Array.isArray(cmd.expectRange) && cmd.expectRange.length >= 2) {
+      const lo = Number(cmd.expectRange[0]), hi = Number(cmd.expectRange[1]);
+      const a = Math.min(lo, hi), b = Math.max(lo, hi);
+      return { pass: Number.isFinite(value) && value >= a - tol && value <= b + tol, expected: `[${a}, ${b}]` };
+    }
+    if (cmd.expect != null || cmd.expected != null) {
+      const e = Number(cmd.expect != null ? cmd.expect : cmd.expected);
+      if (!Number.isFinite(e)) return { pass: false, expected: null };
+      const t = Number.isFinite(rtol) ? Math.max(tol, Math.abs(e) * rtol) : tol;
+      return { pass: Number.isFinite(value) && Math.abs(value - e) <= t, expected: e };
+    }
+    return { pass: null, expected: null }; // 无期望值：只回读，不判定（等价 measure）
   }
 
   /** 点 (x,y) 关于过 p1、p2 两点的直线的对称点坐标 */
@@ -514,46 +569,66 @@ export function createExecutor(board) {
       case 'style': {
         const el = resolve(cmd.target);
         const a = {};
+        const clamp01 = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null; };
         if (cmd.color) { a.strokeColor = cmd.color; a.highlightStrokeColor = cmd.color; a.fillColor = cmd.color; }
+        // 细粒度：单独指定描边/填色，覆盖 color 里的对应项
+        if (cmd.strokeColor) { a.strokeColor = cmd.strokeColor; a.highlightStrokeColor = cmd.strokeColor; }
+        if (cmd.fillColor) a.fillColor = cmd.fillColor;
         if (cmd.strokeWidth != null) a.strokeWidth = num(cmd.strokeWidth, 2);
         if (cmd.dash != null) a.dash = num(cmd.dash, 0);
-        if (cmd.fill) { a.fillColor = cmd.color || '#C7D2FE'; a.fillOpacity = 0.25; }
+        if (cmd.fill) { a.fillColor = cmd.color || cmd.fillColor || '#C7D2FE'; a.fillOpacity = 0.25; }
+        // 透明度 0~1：opacity 同时管描边与填充，fillOpacity 可再单独覆盖填充
+        if (cmd.opacity != null) {
+          const o = clamp01(cmd.opacity);
+          if (o != null) { a.strokeOpacity = o; a.fillOpacity = o; }
+        }
+        if (cmd.fillOpacity != null) {
+          const o = clamp01(cmd.fillOpacity);
+          if (o != null) a.fillOpacity = o;
+        }
         if (cmd.hidden != null) a.visible = !cmd.hidden;
         el.setAttribute(a);
+        // JSXGraph 的标签是独立 text 对象，颜色/字号要单独设（不是图元自身的属性）
+        if (el.label && typeof el.label.setAttribute === 'function' &&
+            (cmd.labelColor != null || cmd.labelSize != null || cmd.labelOpacity != null)) {
+          const la = {};
+          if (cmd.labelColor != null) la.strokeColor = String(cmd.labelColor);
+          if (cmd.labelSize != null) {
+            const s = Number(cmd.labelSize);
+            if (Number.isFinite(s) && s > 0) la.fontSize = s;
+          }
+          if (cmd.labelOpacity != null) {
+            const o = clamp01(cmd.labelOpacity);
+            if (o != null) la.strokeOpacity = o;
+          }
+          try { el.label.setAttribute(la); } catch (_) { /* 个别元素标签不可改，忽略 */ }
+        }
         return null;
       }
       case 'measure': {
-        // 测量/验证命令（AI 自检回读，对标大角几何 MCP 式读画板状态）。
-        // kind: 'distance'(|AB|) | 'angle'(∠ABC 度，中点是顶点) | 'evaluate'(代数式/函数在 x 处的值)。
-        // 画板上生成一个灰色 ✓ 临时读数（不进注册表/文档），并把数值经 execute 结果回传，
-        // 供未来后端 read-back 闭环做自动修正。kind 不合法则报错由外层捕获。
-        const kind = String(cmd.kind || 'distance').toLowerCase();
-        if (kind === 'distance') {
-          const a = resolve(cmd.of && cmd.of[0]);
-          const b = resolve(cmd.of && cmd.of[1]);
-          const value = Math.hypot(b.X() - a.X(), b.Y() - a.Y());
-          const el = measureReadout('✓ 距离 = ' + value.toFixed(2), [(a.X() + b.X()) / 2 + 0.4, (a.Y() + b.Y()) / 2 + 0.4]);
-          measureEls.push(el);
-          return { __measure: true, el, value };
-        }
-        if (kind === 'angle') {
-          const A = resolve(cmd.of && cmd.of[0]);
-          const B = resolve(cmd.of && cmd.of[1]);
-          const C = resolve(cmd.of && cmd.of[2]);
-          const value = angleDeg(A, B, C);
-          const el = measureReadout('✓ ∠ = ' + (Number.isFinite(value) ? value.toFixed(1) + '°' : '?'), [B.X() + 0.4, B.Y() + 0.4]);
-          measureEls.push(el);
-          return { __measure: true, el, value };
-        }
-        if (kind === 'evaluate') {
-          const value = evalExprAt(cmd.expr, cmd.x);
-          const at = cmd.x != null ? ' @ x=' + cmd.x : '';
-          const el = measureReadout('✓ ' + (cmd.label || String(cmd.expr)) + at + ' = ' + (Number.isFinite(value) ? value.toFixed(3) : '?'),
-            Array.isArray(cmd.at) ? cmd.at : [Number(cmd.x) || 0, (Number.isFinite(value) ? value : 0) + 0.6]);
-          measureEls.push(el);
-          return { __measure: true, el, value };
-        }
-        throw new Error('measure.kind 只能是 distance / angle / evaluate');
+        // 测量/自检回读（对标大角几何 MCP 式读画板状态）：求值交给 measureValue，
+        // 生成临时读数文本（不进注册表/文档），数值经 execute 结果透传给前端闭环。
+        const m = measureValue(cmd);
+        const name = cmd.label || (m.kind === 'distance' ? '距离' : m.kind === 'angle' ? '∠' : String(cmd.expr || m.kind));
+        const shown = Number.isFinite(m.value) ? m.value.toFixed(m.kind === 'angle' ? 1 : 2) + m.unit : '?';
+        const el = measureReadout('✓ ' + name + ' = ' + shown, m.at);
+        measureEls.push(el);
+        return { __measure: true, el, value: m.value };
+      }
+      case 'verify': {
+        // 声明式自检断言：在 measure 的 distance/angle/evaluate 求值之上加期望值机器判定。
+        //   expect + tol(绝对容差，默认 0.05) / rtol(相对容差) → 点判定
+        //   expectRange:[lo,hi] → 区间判定
+        // 不给期望字段则 pass:null（只回读，等价 measure）。pass:false 由 js/board.js 的
+        // read-back 闭环自动发起一轮修正，AI 收【自检回读】只发修正命令（见提示词例6/例7）。
+        const m = measureValue(cmd);
+        const j = judgeMeasure(m.value, cmd);
+        const name = cmd.label || (m.kind === 'distance' ? '距离' : m.kind === 'angle' ? '∠' : String(cmd.expr || m.kind));
+        const shown = Number.isFinite(m.value) ? m.value.toFixed(m.kind === 'angle' ? 1 : 3) + m.unit : '?';
+        const mark = j.pass === true ? '✓' : j.pass === false ? '✗' : '·';
+        const el = measureReadout(mark + ' ' + name + ' = ' + shown + (j.expected != null ? ' / 期望 ' + j.expected : ''), m.at, j.pass);
+        measureEls.push(el);
+        return { __verify: true, el, value: m.value, kind: m.kind, pass: j.pass, expected: j.expected };
       }
       case 'transform': {
         // 几何变换 op（本轮新增，对标"几何变换"作图）：把源元素按 type 做平移/旋转/反射，
@@ -652,9 +727,18 @@ export function createExecutor(board) {
       try {
       if (cmd.op === 'clear') { clearAll(); out.push({ ok: true, op: 'clear' }); continue; }
       const built = build(cmd);
-      // 测量命令：build 已在画板生成临时读数文本（副作用），数值经 value 回传；不进注册表/文档
-      if (cmd.op === 'measure') {
-        out.push({ ok: true, op: 'measure', id: cmd.id || null, value: built && built.__measure ? built.value : NaN });
+      // 测量/自检断言命令：build 已在画板生成临时读数文本（副作用），数值（及 pass）回传；不进注册表/文档
+      if (cmd.op === 'measure' || cmd.op === 'verify') {
+        const isVerify = cmd.op === 'verify';
+        out.push({
+          ok: true, op: cmd.op, id: cmd.id || null,
+          value: built && built.value,
+          ...(isVerify ? {
+            kind: built && built.kind,
+            pass: built && built.__verify ? built.pass : null,
+            expected: built && built.expected,
+          } : {}),
+        });
         continue;
       }
       if (cmd.op === 'animate') {

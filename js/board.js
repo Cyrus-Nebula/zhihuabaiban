@@ -2441,20 +2441,78 @@ async function aiSend() {
       pushUndo();
       let okCount = 0;
       const errs = [];
+      const readings = [];   // measure / verify 回读值，供 read-back 闭环判定
+      // 自检读数与动画是临时动作，不该进文档（重放时只需重建几何，不必再算一遍读数）
+      const isTransient = (op) => op === 'measure' || op === 'verify' || op === 'animate';
       for (const cmd of data.commands) {
         const r = executor.execute([cmd]);
-        if (r[0] && r[0].ok) {
+        const res = r[0];
+        if (res && res.ok) {
           if (cmd.op === 'clear') doc.commands = [];
-          doc.commands.push(cmd);
+          if (!isTransient(cmd.op)) doc.commands.push(cmd);
           okCount++;
-        } else if (r[0]) {
-          errs.push(`${cmd.op || '?'}(${r[0].error})`);
+          if ((cmd.op === 'measure' || cmd.op === 'verify') && Number.isFinite(res.value)) {
+            readings.push({ op: cmd.op, kind: cmd.kind, label: cmd.label, value: res.value,
+              pass: cmd.op === 'verify' ? res.pass : null, expected: res.expected });
+          }
+        } else if (res) {
+          errs.push(`${cmd.op || '?'}(${res.error})`);
         }
         await sleep(90);
       }
       if (errs.length) appendLog('ai', `已执行 ${okCount} 条命令，${errs.length} 条失败：` + errs.join('；'));
       saveNow();
       refreshObjects();
+
+      // ---- 自检回读闭环（对标大角几何：读画板状态 → 判定 → 自动修正）----
+      // verify 带机器判定 pass；只有明确 pass:false 才发起一轮二次 LLM 修正，
+      // 纯 measure 只在面板展示读数，不额外消耗一次调用。修正轮不再触发自检，避免递归。
+      if (readings.length) {
+        const summary = readings.map((x, i) => {
+          const name = x.label || `${x.kind || x.op}${readings.length > 1 ? i + 1 : ''}`;
+          const v = Number(x.value).toFixed(x.kind === 'angle' ? 1 : 3) + (x.kind === 'angle' ? '°' : '');
+          const judge = x.pass === true ? ' ✔ 符合预期'
+            : x.pass === false ? ` ✘ 偏离预期${x.expected != null ? '(' + x.expected + ')' : ''}` : '';
+          return `${name} = ${v}${judge}`;
+        }).join('；');
+        appendLog('ai', '【自检】' + summary);
+        if (readings.some((x) => x.pass === false)) {
+          try {
+            const fixRes = await fetch(CFG.boardAiEndpoint || '/api/ai/board', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message: '【自检回读】' + summary + '。请只输出让图形符合预期的修正命令（改错的那一处 / 重算取错的交点），'
+                  + '符合则输出空 commands；不要重复画已画好的部分，也不要再发 measure / verify。',
+                model,
+                context: executor.describe(),
+                history: chatHistory.slice(-10),
+              }),
+            });
+            const fixData = await fixRes.json().catch(() => ({}));
+            const fixCmds = Array.isArray(fixData.commands) ? fixData.commands : [];
+            if (fixCmds.length) {
+              executor.clearMeasures();   // 清掉上一轮临时读数，避免堆积
+              let fixed = 0;
+              for (const c of fixCmds) {
+                const rr = executor.execute([c]);
+                if (rr[0] && rr[0].ok) {
+                  if (c.op === 'clear') doc.commands = [];
+                  if (!isTransient(c.op)) doc.commands.push(c);
+                  fixed++;
+                }
+                await sleep(90);
+              }
+              appendLog('ai', `已自检并自动修正 ${fixed} 处。`);
+              saveNow();
+              refreshObjects();
+            }
+            if (fixData.message) appendLog('ai', fixData.message);
+          } catch (e2) {
+            appendLog('ai', '自检修正未完成：' + e2.message);
+          }
+        }
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
