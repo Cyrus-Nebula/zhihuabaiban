@@ -3,350 +3,145 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>立体画板（独立自主 3D）</title>
+  <title>立体画板 · 智绘几何</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="stylesheet" href="css/style.css" />
-  <style>
-    html, body { margin: 0; height: 100%; }
-    .b3d-layout { display: flex; flex-direction: column; height: 100vh; }
-    .b3d-topbar {
-      display: flex; align-items: center; gap: 10px; padding: 8px 14px;
-      background: #fff; border-bottom: 1px solid #e7ebf1; flex: 0 0 auto;
-    }
-    .b3d-topbar .back {
-      border: 1px solid #d8dee9; background: #f4f6fb; border-radius: 8px;
-      padding: 6px 12px; cursor: pointer; font-size: 14px;
-    }
-    .b3d-topbar .doc-name {
-      flex: 1; border: 1px solid transparent; border-radius: 8px; padding: 6px 10px;
-      font-size: 15px; max-width: 320px;
-    }
-    .b3d-topbar .doc-name:focus { border-color: #c7d2fe; outline: none; background: #fbfcff; }
-    .b3d-views { display: flex; gap: 6px; }
-    .b3d-views button {
-      border: 1px solid #d8dee9; background: #f4f6fb; border-radius: 8px;
-      padding: 6px 10px; cursor: pointer; font-size: 13px; color: #334155;
-    }
-    .b3d-views button:hover { background: #e9edf6; }
-    .b3d-views select {
-      border: 1px solid #d8dee9; background: #f4f6fb; border-radius: 8px;
-      padding: 6px 8px; cursor: pointer; font-size: 13px; color: #334155;
-    }
-    .b3d-status { font-size: 13px; color: #64748b; min-width: 84px; text-align: right; }
-    .b3d-host { position: relative; flex: 1 1 auto; min-height: 0; }
-    .b3d-hint {
-      position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #64748b;
-      background: rgba(255,255,255,.8); padding: 6px 10px; border-radius: 8px; pointer-events: none;
-    }
-    /* AI 面板（3D 分支：直接调后端 3D 命令协议，不经过 2D 执行器） */
-    .b3d-ai { flex: 0 0 auto; border-top: 1px solid #e7ebf1; background: #fff; display: flex; flex-direction: column; }
-    .b3d-ai-log { max-height: 160px; overflow-y: auto; padding: 8px 14px; font-size: 13px; line-height: 1.5; }
-    .b3d-ai-log .ai-msg { margin: 2px 0; white-space: pre-wrap; }
-    .b3d-ai-log .ai-msg.user { color: #1d4ed8; }
-    .b3d-ai-log .ai-msg.ai { color: #334155; }
-    .b3d-ai-log .ai-msg.err { color: #dc2626; }
-    .b3d-ai-log .ai-msg.verify-pass { color: #15803d; }
-    .b3d-ai-log .ai-msg.verify-fail { color: #c2410c; }
-    .b3d-ai-bar { display: flex; gap: 8px; padding: 8px 14px; }
-    .b3d-ai-bar input { flex: 1; border: 1px solid #d8dee9; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
-    .b3d-ai-bar button { border: 1px solid #c7d2fe; background: #eef2ff; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 14px; color: #3730a3; }
-    .b3d-ai-bar button:disabled { opacity: .6; cursor: default; }
-  </style>
-
-  <!-- 本地 vendor 的 Three.js（不依赖任何外部 CDN / 大角 SDK） -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "./libs/three/three.module.min.js"
-    }
-  }
-  </script>
 </head>
-<body>
-  <div class="b3d-layout">
-    <div class="b3d-topbar">
-      <button class="back" id="btnBack">← 返回</button>
-      <input id="docName" class="doc-name" title="画板名称" />
-      <div class="b3d-views">
-        <select id="demoPick" title="切换演示场景">
-          <option value="cube">正方体</option>
-          <option value="pyramid">四棱锥</option>
-        </select>
-        <button data-view="iso">等轴</button>
-        <button data-view="front">正视</button>
-        <button data-view="top">俯视</button>
-        <button data-view="side">侧视</button>
-        <button id="btnReset">重置视角</button>
-        <button id="btnSave">保存</button>
-      </div>
-      <span class="b3d-status" id="saveStatus">就绪</span>
-    </div>
-    <div class="b3d-host" id="board3dHost">
-      <div class="b3d-hint">拖拽彩色小球可移动顶点（默认沿水平工作面；正视/侧视自动切换为面向视角的平面）；空白处拖动旋转视角，滚轮缩放，右键平移。</div>
-    </div>
-    <div class="b3d-ai">
-      <div class="b3d-ai-log" id="aiLog"></div>
-      <div class="b3d-ai-bar">
-        <input id="aiInput" placeholder="用中文描述立体几何，例如：画一个棱长为 3 的正方体" />
-        <button id="aiSend">生成</button>
-      </div>
+<body class="board3d-page">
+  <!-- 登录墙：未登录时覆盖整个画板页，登录后自动消失（见页脚网关脚本） -->
+  <div class="login-wall" id="loginWall">
+    <div class="login-wall-card">
+      <a class="site-brand login-wall-brand" href="index.html">
+        <img src="favicon.svg" alt="" width="28" height="28" />
+        <span class="site-name">智绘几何</span>
+      </a>
+      <h2 class="login-wall-title">请登录后使用立体画板</h2>
+      <p class="login-wall-sub">立体几何作图与云端同步需要登录账号。账号免费注册，密码以加盐哈希存储。</p>
+      <button id="wallLogin" class="btn btn-primary" type="button">登录 / 注册</button>
     </div>
   </div>
 
-  <!-- 全局配置与本地存储（经典脚本，提供 window.DAJIAO_CONFIG / window.Store） -->
+  <header class="topbar board3d-topbar">
+    <a class="btn ghost" href="index.html">← 返回</a>
+    <input id="doc-name" class="doc-name" type="text" value="未命名立体画板" maxlength="50" />
+    <span id="save-status" class="save-status">就绪</span>
+    <span class="flex-spacer"></span>
+    <div class="settings-wrap">
+      <button id="btn-settings" class="btn" type="button" title="画板设置（坐标轴 / 网格 / 背景）">⚙ 设置</button>
+      <div id="settings-pop" class="settings-pop hidden" role="dialog" aria-label="画板设置">
+        <div class="settings-title">画板设置</div>
+        <label class="settings-row" for="set-axis">
+          <span>坐标轴</span>
+          <input type="checkbox" id="set-axis" class="switch" />
+        </label>
+        <label class="settings-row" for="set-grid">
+          <span>网格</span>
+          <input type="checkbox" id="set-grid" class="switch" />
+        </label>
+        <div class="settings-row">
+          <span>背景</span>
+          <div class="seg-bg" id="set-bg">
+            <button type="button" data-bg="white" class="bg-swatch bg-white" title="白色"></button>
+            <button type="button" data-bg="beige" class="bg-swatch bg-beige" title="米色（护眼）"></button>
+            <button type="button" data-bg="dark" class="bg-swatch bg-dark" title="深色"></button>
+          </div>
+        </div>
+        <div class="settings-note">设置自动保存在本机浏览器</div>
+      </div>
+    </div>
+    <button id="btn-reset-view" class="btn" type="button" title="重置视角">⟳ 视角</button>
+    <button id="btn-export" class="btn" type="button" title="导出工程文件（.json）">导出</button>
+  </header>
+
+  <div class="board3d-main">
+    <!-- 左侧：几何体面板 -->
+    <aside class="b3d-palette" id="palette">
+      <div class="b3d-palette-title">添加几何体</div>
+      <button class="b3d-shape" data-shape="box" type="button">立方体</button>
+      <button class="b3d-shape" data-shape="sphere" type="button">球体</button>
+      <button class="b3d-shape" data-shape="cylinder" type="button">圆柱</button>
+      <button class="b3d-shape" data-shape="cone" type="button">圆锥</button>
+      <button class="b3d-shape" data-shape="pyramid" type="button">四棱锥</button>
+      <button class="b3d-shape" data-shape="prism" type="button">三棱柱</button>
+      <button class="b3d-shape" data-shape="tetra" type="button">正四面体</button>
+      <button class="b3d-shape" data-shape="plane" type="button">平面</button>
+      <button class="b3d-shape" data-shape="line" type="button">线段</button>
+      <button class="b3d-shape" data-shape="point" type="button">点</button>
+      <div class="b3d-palette-tip">点击添加 · 拖拽旋转 · 滚轮缩放</div>
+    </aside>
+
+    <!-- 中央：3D 画布 -->
+    <div class="b3d-stage" id="stage">
+      <canvas id="b3d-canvas"></canvas>
+      <div class="b3d-hint" id="b3dHint">点击左侧几何体添加到画布；空白处拖拽旋转视角，滚轮缩放</div>
+      <div class="b3d-gizmo-modes" id="gizmoModes">
+        <button data-mode="translate" class="active" type="button" title="移动">移动</button>
+        <button data-mode="rotate" type="button" title="旋转">旋转</button>
+        <button data-mode="scale" type="button" title="缩放">缩放</button>
+      </div>
+    </div>
+
+    <!-- 右侧：属性面板 -->
+    <aside class="b3d-inspector" id="inspector">
+      <div class="b3d-inspector-empty" id="inspectorEmpty">
+        <strong>未选中对象</strong>
+        <span>点击画布中的几何体以查看 / 编辑属性</span>
+      </div>
+      <div id="inspectorBody" class="b3d-inspector-body hidden">
+        <div class="b3d-insp-head">
+          <span id="insp-type">几何体</span>
+          <button id="insp-delete" class="btn btn-danger btn-sm" type="button">删除</button>
+        </div>
+        <div class="b3d-field"><label>位置 X</label><input type="number" step="0.1" data-k="pos" data-i="0" /></div>
+        <div class="b3d-field"><label>位置 Y</label><input type="number" step="0.1" data-k="pos" data-i="1" /></div>
+        <div class="b3d-field"><label>位置 Z</label><input type="number" step="0.1" data-k="pos" data-i="2" /></div>
+        <div class="b3d-field"><label>旋转 X°</label><input type="number" step="1" data-k="rot" data-i="0" /></div>
+        <div class="b3d-field"><label>旋转 Y°</label><input type="number" step="1" data-k="rot" data-i="1" /></div>
+        <div class="b3d-field"><label>旋转 Z°</label><input type="number" step="1" data-k="rot" data-i="2" /></div>
+        <div class="b3d-field"><label>缩放 X</label><input type="number" step="0.1" min="0.05" data-k="scale" data-i="0" /></div>
+        <div class="b3d-field"><label>缩放 Y</label><input type="number" step="0.1" min="0.05" data-k="scale" data-i="1" /></div>
+        <div class="b3d-field"><label>缩放 Z</label><input type="number" step="0.1" min="0.05" data-k="scale" data-i="2" /></div>
+        <div class="b3d-field b3d-color"><label>颜色</label><input type="color" data-k="color" /></div>
+        <div class="b3d-field"><label>透明度</label><input type="range" min="0.1" max="1" step="0.05" data-k="opacity" /></div>
+        <div class="b3d-field-extra" id="inspExtra"></div>
+      </div>
+    </aside>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- 登录墙网关：订阅 Auth 状态，未登录时显示全屏遮罩，登录后自动消失 -->
+  <script>
+    (function () {
+      var wall = document.getElementById('loginWall');
+      function sync() {
+        if (!wall) return;
+        if (window.Auth && window.Auth.user) wall.classList.add('hidden');
+        else wall.classList.remove('hidden');
+      }
+      if (window.Auth) window.Auth.onChange(sync);
+      document.addEventListener('click', function (e) {
+        if (e.target && e.target.id === 'wallLogin') { e.preventDefault(); if (window.Auth) window.Auth.openLogin(); }
+      });
+      sync();
+    })();
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
   <script src="js/config.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/models.js"></script>
+  <script src="js/auth.js"></script>
 
-  <script type="module">
-    import { Board3D, createBoard3DExecutor, describeMeasure3D, build3DReadback, build3DCorrectMsg } from './js/board3d.js';
-    import { DEMO_CUBE, DEMO_PYRAMID, DEMOS } from './js/board3d-demos.js';
-
-    const params = new URLSearchParams(location.search);
-    const fileId0 = params.get('id');
-    let file = fileId0 ? Store.get(fileId0) : null;
-
-    const host = document.getElementById('board3dHost');
-    const nameInput = document.getElementById('docName');
-    const saveStatus = document.getElementById('saveStatus');
-
-    const board = new Board3D(host);
-    const exe = createBoard3DExecutor(board);
-
-    let currentCmds = [];   // 当前画板的「作图命令」（不含拖拽后的坐标微调，微调存 moves）
-
-    function setStatus(text) { saveStatus.textContent = text; }
-
-    // ---------- 默认演示（回归用例「画正方体 / 四棱锥」）----------
-    // 演示场景说明已抽到 js/board3d-demos.js，浏览器与无头回归测试共用同一事实源。
-    const DEMO_MAP = { cube: DEMO_CUBE, pyramid: DEMO_PYRAMID };
-
-    function load(commands, movesArr) {
-      exe.execute([{ op: 'clear' }]);
-      const res = exe.execute(commands);
-      const failed = res.filter((r) => !r.ok);
-      if (failed.length) console.warn('部分命令执行失败：', failed);
-      if (Array.isArray(movesArr) && movesArr.length) exe.applyMoves(movesArr);
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
     }
-
-    // 演示场景选择：?demo=pyramid 可直达四棱锥；默认正方体
-    const demoParam = (params.get('demo') || 'cube').toLowerCase();
-    const initDemoKey = DEMO_MAP[demoParam] ? demoParam : 'cube';
-
-    function loadDemo(key) {
-      currentCmds = DEMO_MAP[key] || DEMO_CUBE;
-      load(currentCmds);
-      setStatus('演示：' + (DEMOS[key] ? DEMOS[key].name : '正方体'));
-    }
-
-    if (file && file.content && Array.isArray(file.content.cmds)) {
-      nameInput.value = file.name;
-      currentCmds = file.content.cmds;
-      load(currentCmds, file.content.moves);
-      setStatus('已载入');
-    } else {
-      nameInput.value = file ? file.name : '立体画板（演示）';
-      loadDemo(initDemoKey);
-    }
-
-    // ---------- 保存（新建或更新本地文件）----------
-    let fileRef = file; // 可能为 null（全新演示，尚未保存）
-    let saveTimer = null;
-
-    function doSave() {
-      const content = { cmds: currentCmds, moves: exe.moves() };
-      const name = (nameInput.value || '').trim() || '立体画板';
-      if (!fileRef) fileRef = Store.create(name, '3d');
-      else Store.rename(fileRef.id, name);
-      Store.saveContent(fileRef.id, content);
-      if (!fileId0) {
-        // 首次保存后把地址栏换成带 id，避免刷新后丢引用
-        const url = new URL(location.href);
-        url.searchParams.set('id', fileRef.id);
-        history.replaceState(null, '', url);
-      }
-      setStatus('已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }));
-    }
-
-    function scheduleSave() {
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(doSave, 800);
-      setStatus('自动保存中…');
-    }
-    board.onChange = scheduleSave;
-
-    document.getElementById('btnSave').addEventListener('click', doSave);
-    nameInput.addEventListener('change', scheduleSave);
-    document.getElementById('btnReset').addEventListener('click', () => board.viewReset());
-    document.querySelectorAll('.b3d-views button[data-view]').forEach((b) => {
-      b.addEventListener('click', () => board.viewPreset(b.dataset.view));
-    });
-    const demoPick = document.getElementById('demoPick');
-    demoPick.value = initDemoKey;
-    demoPick.addEventListener('change', () => {
-      board.clear();           // 清空当前（演示）内容
-      loadDemo(demoPick.value);
-      fileRef = null;          // 演示场景未关联任何已保存文件
-    });
-    document.getElementById('btnBack').addEventListener('click', () => { location.href = 'index.html'; });
-
-    // ---------- 3D 分支 AI 面板（直接走后端 3D 命令协议，不经过 2D 执行器）----------
-    const aiInput = document.getElementById('aiInput');
-    const aiLog = document.getElementById('aiLog');
-    const aiSendBtn = document.getElementById('aiSend');
-    const aiHistory = [];
-
-    function appendLog(role, text) {
-      const div = document.createElement('div');
-      div.className = 'ai-msg ' + role;
-      div.textContent = text;
-      aiLog.appendChild(div);
-      aiLog.scrollTop = aiLog.scrollHeight;
-    }
-
-    // describeMeasure3D 由 js/board3d.js 提供（与 read-back 闭环共用同一份格式化逻辑，避免漂移）。
-
-    async function aiSend3d() {
-      const text = aiInput.value.trim();
-      if (!text) return;
-      appendLog('user', text);
-      aiHistory.push({ role: 'user', content: text });
-      aiInput.value = '';
-      aiSendBtn.disabled = true;
-      aiSendBtn.textContent = '生成中…';
-      try {
-        const res = await fetch((window.CFG && window.CFG.boardAiEndpoint) || '/api/ai/board', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: text,
-            mode: '3d',            // 显式声明 3D，确保后端切到 BOARD3D_SYSTEM_PROMPT
-            context: exe.describe(),
-            history: aiHistory.slice(-10),
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + res.status));
-        if (Array.isArray(data.commands) && data.commands.length) {
-          let okCount = 0;
-          const errs = [];
-          const measures = [];   // 本轮 measure3d / verify3d 的回读对象，供 read-back 闭环汇总
-          for (const cmd of data.commands) {
-            const r = exe.execute([cmd]);
-            const row = r[0];
-            if (row && (row.op === 'measure3d' || row.op === 'verify3d')) {
-              // 把执行器的回读结果整理成 describeMeasure3D / build3DReadback 需要的扁平字段（含 of，便于读数展示）
-              measures.push({
-                op: row.op, kind: cmd.kind, of: cmd.of, value: row.value, pass: row.pass,
-                expect: row.expect, tol: row.tol, rtol: row.rtol, mode: row.mode,
-                expectRange: row.expectRange, delta: row.delta, label: row.label,
-              });
-            }
-            if (row && row.ok) {
-              // measure3d / verify3d 是纯读数（临时自检），不写进持久化的作图命令；
-              // clear / remove3d 属于状态变更，仍按序重放才能还原画板。
-              if (cmd.op === 'clear') currentCmds = [];
-              else if (cmd.op !== 'measure3d' && cmd.op !== 'verify3d') currentCmds.push(cmd);
-              okCount++;
-            } else if (row) {
-              errs.push((cmd.op || '?') + '(' + row.error + ')');
-            }
-          }
-          if (errs.length) appendLog('ai', '已执行 ' + okCount + ' 条，' + errs.length + ' 条失败：' + errs.join('；'));
-          setStatus('AI 已作图 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }));
-
-          // ---- read-back 闭环（对标大角几何 MCP 式「读画板状态后改图」）----
-          // verify3d 已由执行器按 expect/tol/expectRange/rtol 自动判定：全部通过即机器确认符合意图，跳过二次 LLM 调用。
-          // 有失败项（或只有裸 measure3d）时进入「定向修正 → 复跑首轮原始 verify3d → 机器判定收敛」的多轮循环：
-          //   1) 修正提示带上【已通过项，请勿重画】diff 清单，明确禁止 clear 重画已通过的部分；
-          //   2) 修正轮过滤 clear / measure3d / verify3d（防误清画板、防临时读数重复堆积），优先用 move3d 就地改坐标 / remove3d 删错重建；
-          //   3) 修正后复跑首轮原始的 verify3d 命令（transient，重跑只读当前画板、不落文档），用机器判定是否收敛；
-          //   4) 失败项没有减少就提前收手，最多 MAX_FIX_ROUNDS 轮，避免无限请求 LLM。
-          const MAX_FIX_ROUNDS = 2;
-          const origVerifies = data.commands.filter((c) => c && c.op === 'verify3d');
-          let rb = build3DReadback(measures);
-          if (rb) {
-            appendLog('ai', '自检结果：');
-            rb.text.split('\n').forEach((line) => appendLog(line.startsWith('✔') ? 'verify-pass' : 'verify-fail', '  ' + line));
-            if (rb.allPassed) {
-              appendLog('ai', `已自检 ${measures.filter((m) => m.op === 'verify3d').length} 项，全部符合预期`);
-            } else {
-              // 只有裸 measure3d（没有断言）时无法机器复检，用 Infinity 占位保证只修正一轮
-              let prevFailCount = rb.failed.length || Infinity;
-              for (let round = 1; round <= MAX_FIX_ROUNDS && rb && !rb.allPassed; round++) {
-                try {
-                  const fixMsg = build3DCorrectMsg(rb, { round, maxRounds: MAX_FIX_ROUNDS });
-                  const vres = await fetch((window.CFG && window.CFG.boardAiEndpoint) || '/api/ai/board', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: fixMsg, mode: '3d', context: exe.describe() }),
-                  });
-                  const vdata = await vres.json().catch(() => ({}));
-                  if (!vres.ok || vdata.ok === false || !Array.isArray(vdata.commands)) break;
-                  // 修正轮只收增量命令：clear 会清空画板、measure3d/verify3d 会重复堆读数，一律过滤
-                  const fixCmds = vdata.commands.filter((c) => c && c.op && !['clear', 'measure3d', 'verify3d'].includes(c.op));
-                  if (fixCmds.length !== vdata.commands.length) appendLog('ai', '（已忽略修正轮里的 clear / measure3d / verify3d 命令）');
-                  if (!fixCmds.length) { appendLog('ai', '（自检修正：AI 判定无需修改）'); break; }
-                  let fixOk = 0;
-                  const fixErrs = [];
-                  for (const cmd of fixCmds) {
-                    const fr = exe.execute([cmd]);
-                    const frow = fr[0];
-                    if (frow && frow.ok) {
-                      if (cmd.op !== 'measure3d' && cmd.op !== 'verify3d') currentCmds.push(cmd);
-                      fixOk++;
-                    } else if (frow) {
-                      fixErrs.push((cmd.op || '?') + '(' + frow.error + ')');
-                    }
-                  }
-                  if (fixErrs.length) appendLog('ai', `自检修正有 ${fixErrs.length} 条失败：` + fixErrs.join('；'));
-                  if (fixOk) appendLog('ai', `（第 ${round} 轮自动自检并修正 ${fixOk} 处）`);
-                  setStatus('AI 已修正 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }));
-                  // 没有断言可复跑（只有裸 measure3d）：修正一轮即止
-                  if (!origVerifies.length) break;
-                  // 复跑首轮原始 verify3d（transient，不进文档）：先清旧读数，再按当前画板重新机器判定
-                  const recheck = exe.execute(origVerifies);
-                  rb = build3DReadback(recheck.map((row, i) => ({
-                    op: 'verify3d', kind: origVerifies[i].kind, of: origVerifies[i].of, value: row.value,
-                    pass: row.pass, expect: row.expect, tol: row.tol, rtol: row.rtol,
-                    mode: row.mode, expectRange: row.expectRange, delta: row.delta, label: row.label,
-                  })));
-                  if (!rb) break;
-                  appendLog('ai', `第 ${round} 轮复检：`);
-                  rb.text.split('\n').forEach((line) => appendLog(line.startsWith('✔') ? 'verify-pass' : 'verify-fail', '  ' + line));
-                  if (rb.allPassed) { appendLog('ai', '已收敛：全部断言符合预期'); break; }
-                  const failCount = rb.failed.length || Infinity; // 无失败项但未 allPassed：视为无改善
-                  if (failCount >= prevFailCount) {
-                    appendLog('ai', '（复检未见改善，已停止自动修正；请参照上方 ✘ 读数手动调整）');
-                    break;
-                  }
-                  prevFailCount = failCount;
-                } catch (ve) {
-                  console.warn('自检闭环失败（不影响已出图）', ve);
-                  break;
-                }
-              }
-            }
-          }
-        }
-        if (data.message) {
-          appendLog('ai', data.message);
-          aiHistory.push({ role: 'assistant', content: data.message });
-        }
-      } catch (e) {
-        appendLog('err', '⚠️ ' + e.message);
-      } finally {
-        aiSendBtn.disabled = false;
-        aiSendBtn.textContent = '生成';
-      }
-    }
-    aiSendBtn.addEventListener('click', aiSend3d);
-    aiInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend3d(); }
-    });
-
-    // 调试 / 跨页复用：把画板实例挂到 window，便于控制台与后续 AI 分支调用
-    window.__board3d = board;
-    window.__board3dExecutor = exe;
+  }
   </script>
+  <script type="module" src="js/board3d.js"></script>
 </body>
 </html>

@@ -2,49 +2,19 @@
 (function () {
   const CFG = window.DAJIAO_CONFIG || {};
 
-  // ---------- 打开地址：3D 默认走自研画板（新旧路径并存）----------
-  // 2D 一律 board.html（逻辑不变）；3D 默认 board3d.html（本地 Three.js，不依赖 appId / 大角 SDK）。
-  // 旧路径 editor.html 完整保留，两种情形自动回退，保证历史数据不被破坏：
-  //   1) 历史工程文件：content 存在但不是自研 3D 格式（缺 cmds 数组）→ 按大角 SDK 工程交给旧编辑器
-  //   2) 显式开关：工作台 URL 加 ?engine=sdk，或 localStorage['b3d.engine'] === 'sdk' 可整体回退
-  //      （?engine=self 则强制自研、忽略 localStorage；但不覆盖第 1 条的历史数据保护）
-  // 硬约束：js/editor.js、editor.html、js/config.js 的 appId 与大角 SDK 引用一律不动。
-  const B3D_ENGINE_KEY = 'b3d.engine';
-
-  function isNative3DContent(content) {
-    return !!(content && typeof content === 'object' && Array.isArray(content.cmds));
-  }
-
-  function legacy3DRequested() {
-    try {
-      const engine = new URLSearchParams(location.search).get('engine');
-      if (engine === 'sdk') return true;
-      if (engine === 'self') return false;
-      return localStorage.getItem(B3D_ENGINE_KEY) === 'sdk';
-    } catch (e) {
-      return false;
-    }
-  }
-
-  function resolve3dPage(f) {
-    // 历史数据保护优先：不是自研 3D 格式就仍由旧编辑器打开，避免旧工程「打不开」
-    if (f && f.content && !isNative3DContent(f.content)) return 'editor.html';
-    if (legacy3DRequested()) return 'editor.html';
-    return 'board3d.html';
-  }
-
+  // 打开地址：3D 走自研立体画板（路线B，不依赖大角 SDK），2D 走自建画板
   function openUrl(f) {
-    const page = f.mode === '3d' ? resolve3dPage(f) : 'board.html';
+    const page = f.mode === '3d' ? 'board3d.html' : 'board.html';
     return page + '?id=' + encodeURIComponent(f.id);
   }
   window.openBoardUrl = openUrl; // 供 landing.js 复用
-  window.__b3dRoute = { isNative3DContent, legacy3DRequested, resolve3dPage }; // 便于控制台核对 / 回归测试
 
-  // ---------- 配置状态（appId 只影响 3D） ----------
+  // ---------- 配置状态 ----------
+  // 立体画板已升级为自研引擎（路线B，基于 Three.js），不再依赖大角 SDK，
+  // 因此无需配置 appId；旧 banner 始终隐藏。
   function refreshConfigWarn() {
-    const ok = CFG.appId && CFG.appId !== 'YOUR_APP_ID';
     const warn = document.getElementById('configWarn');
-    if (warn) warn.hidden = !!ok;
+    if (warn) warn.hidden = true;
   }
 
   // ---------- 文件列表渲染（卡片网格 + 命令缩略图） ----------
@@ -200,20 +170,6 @@
       });
 
       ops.append(btnOpen, btnExport, btnDel);
-
-      // 新旧路径并存：3D 文件额外提供旧版（大角 SDK / editor.html）入口，
-      // 便于打开历史工程或在自研画板异常时回退；appId 与 SDK 引用本身不作任何改动。
-      if (f.mode === '3d') {
-        const btnLegacy = document.createElement('button');
-        btnLegacy.className = 'btn btn-ghost btn-sm';
-        btnLegacy.textContent = '旧版打开';
-        btnLegacy.title = '用大角几何 SDK 编辑器打开（需 appId）。3D 默认已切换为不依赖外站的自研画板，此入口仅用于历史工程与回退。';
-        btnLegacy.addEventListener('click', () => {
-          location.href = 'editor.html?id=' + encodeURIComponent(f.id);
-        });
-        ops.appendChild(btnLegacy);
-      }
-
       card.append(thumb, info, ops);
       box.appendChild(card);
     });

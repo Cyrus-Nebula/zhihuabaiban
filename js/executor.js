@@ -26,54 +26,7 @@
  *   text      {id,x,y,bind:{kind,of}}          动态测量文本（kind: distance/length/radius/angle/value）
  *   angle     {id,points:[A,B,C]}              角（B为顶点）
  *   label     {target,text}                    设置/修改标签
- *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?,opacity?,fillColor?,labelColor?,labelSize?}  样式
- *                                                               后四个为细粒度样式（本轮新增）：
- *                                                               opacity 0~1 整体不透明度（描边+填充）、
- *                                                               fillColor 独立填充色、labelColor 标签文字色、
- *                                                               labelSize 标签字号(px)；省略则完全沿用旧行为
- *   move      {id,x,y} | {id,to:[x,y]} | {id,v}   增量修正（本轮新增）：把已存在的自由点移到新坐标、
- *                                                或把滑动条 id 的当前值改为 v；不新建图元、不改 id、不进注册表。
- *                                                自检闭环据此只改未通过断言相关的那一处，避免 clear 重画整张图
- *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
- *   verify    {kind,of|expr/x,expect?,tol?,rtol?,expectRange?,label?}   自检断言：复用 measure 的回读值，
- *                                                           叠加「期望值」自动判定 pass(✔/✘) 并透传 delta。期望值三种写法：
- *                                                           expect+tol 绝对容差 / expect+rtol 相对容差 / expectRange:[lo,hi] 区间容差；
- *                                                           画板生成带色临时读数，不进注册表/文档。read-back 闭环据此做定向修正（见 js/board.js）
- *   transform {id,of,type,by?|angle?|center?|axis?}  几何变换：把 of 元素平移/旋转/反射成一份新副本（以 id 命名），
- *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?)；支持 point/segment/line/ray/polygon/circle
- *   animate    {id|ids,pingpong?,speed?}             动画：让指定滑动条（id 或 ids，或 "__all__"）自动连续改值，依赖它的几何实时播放；speed: slow/normal/fast，pingpong:true 往复。仅前端播放，不进文档
- *
- * 本文件职责（命令协议执行）：measure 命令回读几何量，并经 execute 结果透传 value（见 case 'measure'），
- *   画板上生成的临时灰色读数不进注册表/文档（transient）。
- * 其余分工：
- *   - 协议新增几何变换 op（reflect/rotate/translate）与 animate 命令：已完成（见 transform / animate 分支）。
- *   - read-back 闭环（测量→与预期不符则自动修正）：已在 js/board.js 的 aiSend() 前端驱动——执行命令后收集
- *     measure 的 value，回传给 LLM 二次核对并自动补发修正命令（对标大角几何 MCP 式读画板状态后改图）。
- *     本文件提供 clearMeasures() 供闭环在每轮自检前清掉上一轮的临时读数，避免堆积。
- *
- * 本轮增量（自检断言 verify）：此前「与预期不符」全靠 LLM 肉眼比对 measure 的裸数值，模型容易放过偏差。
- *   现新增声明式 verify 命令——AI 在规划阶段就把关键量的期望值写进命令，执行器用 computeMeasure() 得到实测值
- *   后按 tol 自动算出 pass/delta，measure 与 verify 共用同一套测量函数，避免两套判定漂移。
- *   js/board.js 的 read-back 闭环据此：全部断言通过时跳过二次 LLM 调用；有失败项时把「预期/实测/偏差」
- *   精确回传给 LLM 做定向修正，并在 AI 面板显示 ✔/✘ 自检摘要。
- * 本轮增量（verify 增强 · 期望值三态）：在绝对容差 expect+tol 之上，新增两种期望值写法——
- *   expect+rtol（相对容差，pass⇔|实测-预期|≤tol+rtol·|预期|，贴合 math.isclose，适合大数量级）与
- *   expectRange:[lo,hi]（区间容差，pass⇔lo≤实测≤hi，覆盖"≈π""落在象限内"等模糊意图）。
- *   三者互斥：给了 expectRange 走区间模式；否则走 expect(+tol/rtol) 模式；二者都缺判不通过。
- *   board.js 的 describeMeasure/read-back 闭环同步支持 range 与 rtol 两种展示，allPassed 仍以 pass 为准。
- * 本轮增量（增量修正 move + 细粒度样式 + 自检闭环多轮收敛）：
- *   1) 新增 move 增量修正命令（见 case 'move' 与 execute() 的 move 特判）：此前提示词让 AI「移动点/改坐标」，
- *      但 point 对同 id 会报「重复定义」，自检修正实际改不动图。move 就地改点坐标/滑动条值，不新建图元。
- *   2) style 分支新增 opacity / fillColor / labelColor / labelSize 四个可选字段（见 case 'style'），
- *      与 ai/board-prompt.js 两处「命令清单追加登记项」、docs/AI作图回归用例清单.md 用例 35~42 同步；
- *      tests/executor_style_regress.mjs 用 mock board 无头覆盖 move / 新旧 style 字段与向后兼容。
- *   3) read-back 闭环升级为「定向修正 → 复跑原 verify → 机器判定收敛」多轮循环（js/board.js aiSend()），
- *      修正轮过滤 clear/measure/verify、提示词带「已通过项请勿重画」diff 清单；本文件无需额外改动。
- * TODO(下一步): 1) [本轮已完成] move 增量修正；2) [本轮已完成] style 细粒度样式；
- *   3) [本轮已完成] 自动修正多轮收敛 + diff 感知（不再重画已通过部分）；
- *   4) 给 style 补 opacity 的逐元素独立控制（strokeOpacity / fillOpacity 分开）与 labelFont / labelOffset；
- *   5) AI 面板把 ✔/✘ 读数做成可折叠的自检清单（当前已按行展示）；
- *   6) 把「分段裁剪」从 UI 工具（js/tools.js 的 trim）升级为 AI 可直接下发的原生命令（目前 AI 只能靠 arc/glider 绕）。
+ *   style     {target,color?,strokeWidth?,dash?,fill?,hidden?}  样式
  *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
@@ -262,7 +215,6 @@ export function createExecutor(board) {
   const registry = new Map();    // id -> JXG 元素
   const plainPoints = new Set(); // 可通过 moves 覆盖坐标的自由点
   const sliders = new Set();     // 滑动条 id（值随 moves 一起持久化）
-  const measureEls = [];         // 上一轮自检的临时读数文本，clearMeasures() 清掉，避免堆积
 
   function resolve(ref) {
     if (typeof ref === 'number') return ref;
@@ -303,124 +255,6 @@ export function createExecutor(board) {
       if (el.label && typeof el.label.setText === 'function') el.label.setText(String(text));
       else if (typeof el.setLabelText === 'function') el.setLabelText(String(text));
     } catch (_) { /* 个别元素类型没有标签，忽略 */ }
-  }
-
-  /** 三点夹角（度），B 为顶点；用于 measure kind=angle 自检 */
-  function angleDeg(A, B, C) {
-    const ux = A.X() - B.X(), uy = A.Y() - B.Y();
-    const vx = C.X() - B.X(), vy = C.Y() - B.Y();
-    const dot = ux * vx + uy * vy;
-    const la = Math.hypot(ux, uy), lb = Math.hypot(vx, vy);
-    if (la < 1e-9 || lb < 1e-9) return NaN;
-    let c = dot / (la * lb);
-    c = Math.max(-1, Math.min(1, c));
-    return Math.acos(c) * 180 / Math.PI;
-  }
-
-  /** 在 x 处求表达式（JSXGraph 语法）的数值；优先用 JessieCode 编译，失败回退到受限算术求值 */
-  function evalExprAt(expr, x) {
-    const s = String(expr || '');
-    if (board.jc && typeof board.jc.snippet === 'function') {
-      try {
-        const fn = board.jc.snippet(s, true, 'x', false);
-        const v = Number(fn(Number(x)));
-        if (Number.isFinite(v)) return v;
-      } catch (_) { /* 回退 */ }
-    }
-    try {
-      const js = s.replace(/\^/g, '**')
-        .replace(/\bpi\b/gi, '(' + Math.PI + ')')
-        .replace(/\be\b/gi, '(' + Math.E + ')');
-      return Number(Function('x', 'return (' + js + ');')(Number(x)));
-    } catch (_) { return NaN; }
-  }
-
-  /** 画一个临时测量读数文本（灰色小字；color 可选，verify 断言用绿/橙区分 ✔/✘；不进注册表/文档） */
-  function measureReadout(text, pos, color) {
-    const c = color || '#555';
-    return board.create('text', [pos[0], pos[1], text], {
-      name: '', withLabel: false, display: 'internal',
-      fontSize: 11, color: c, strokeColor: c,
-    });
-  }
-
-  /**
-   * 计算一次几何/代数测量，返回 {kind, value, pos, title}。
-   * measure（裸回读）与 verify（带期望值断言）共用这一套算法，避免两套判定漂移。
-   * kind: distance(|AB|) / angle(∠ABC，中点是顶点，单位度) / evaluate(表达式在 x 处的值)。
-   */
-  function computeMeasure(cmd) {
-    const kind = String(cmd.kind || 'distance').toLowerCase();
-    if (kind === 'distance') {
-      const a = resolve(cmd.of && cmd.of[0]);
-      const b = resolve(cmd.of && cmd.of[1]);
-      const value = Math.hypot(b.X() - a.X(), b.Y() - a.Y());
-      return { kind, value, pos: [(a.X() + b.X()) / 2 + 0.4, (a.Y() + b.Y()) / 2 + 0.4], title: '距离' };
-    }
-    if (kind === 'angle') {
-      const A = resolve(cmd.of && cmd.of[0]);
-      const B = resolve(cmd.of && cmd.of[1]);
-      const C = resolve(cmd.of && cmd.of[2]);
-      const value = angleDeg(A, B, C);
-      return { kind, value, pos: [B.X() + 0.4, B.Y() + 0.4], title: '∠' + (Array.isArray(cmd.of) ? cmd.of.join('') : '') };
-    }
-    if (kind === 'evaluate') {
-      const value = evalExprAt(cmd.expr, cmd.x);
-      return {
-        kind, value,
-        pos: Array.isArray(cmd.at) ? cmd.at : [Number(cmd.x) || 0, (Number.isFinite(value) ? value : 0) + 0.6],
-        title: cmd.label || String(cmd.expr),
-      };
-    }
-    throw new Error('measure.kind 只能是 distance / angle / evaluate');
-  }
-
-  /** 点 (x,y) 关于过 p1、p2 两点的直线的对称点坐标 */
-  function reflectAcrossLine(x, y, p1, p2) {
-    const x1 = p1[0], y1 = p1[1], x2 = p2[0], y2 = p2[1];
-    const dx = x2 - x1, dy = y2 - y1;
-    const len2 = dx * dx + dy * dy;
-    if (len2 < 1e-12) return [x, y]; // 两点重合退化：当关于该点对称处理
-    const t = ((x - x1) * dx + (y - y1) * dy) / len2;
-    const px = x1 + t * dx, py = y1 + t * dy; // 在直线上的投影
-    return [2 * px - x, 2 * py - y];
-  }
-
-  /** 解析几何变换命令，返回映射函数 (x,y) => [x', y']（translate / rotate / reflect） */
-  function transformFn(cmd, resolve) {
-    const type = String(cmd.type || '').toLowerCase();
-    // center 既可以是点 id，也可以是 [x,y] 坐标（省缺原点）
-    const centerOf = (c) => {
-      if (c == null) return [0, 0];
-      if (Array.isArray(c) && c.length >= 2) return [Number(c[0]) || 0, Number(c[1]) || 0];
-      const el = resolve(c); // 点 id：取其实时坐标
-      return [el.X(), el.Y()];
-    };
-    if (type === 'translate') {
-      const by = Array.isArray(cmd.by) ? cmd.by : (Array.isArray(cmd.vector) ? cmd.vector : [0, 0]);
-      const dx = Number(by[0]) || 0, dy = Number(by[1]) || 0;
-      return (x, y) => [x + dx, y + dy];
-    }
-    if (type === 'rotate') {
-      const th = (Number(cmd.angle) || 0) * Math.PI / 180;
-      const [cx, cy] = centerOf(cmd.center);
-      const cos = Math.cos(th), sin = Math.sin(th);
-      return (x, y) => {
-        const rx = x - cx, ry = y - cy;
-        return [cx + (rx * cos - ry * sin), cy + (rx * sin + ry * cos)];
-      };
-    }
-    if (type === 'reflect') {
-      if (cmd.axis != null) {
-        const ax = resolve(cmd.axis); // 直线/线段 id：取它的两个端点定轴
-        const p1 = [ax.point1.X(), ax.point1.Y()];
-        const p2 = [ax.point2.X(), ax.point2.Y()];
-        return (x, y) => reflectAcrossLine(x, y, p1, p2);
-      }
-      const [cx, cy] = centerOf(cmd.center); // 关于点中心对称（省缺原点）
-      return (x, y) => [2 * cx - x, 2 * cy - y];
-    }
-    throw new Error('transform.type 只能是 translate / rotate / reflect');
   }
 
   function build(cmd) {
@@ -576,207 +410,16 @@ export function createExecutor(board) {
         else if (typeof el.setLabel === 'function') el.setLabel(t);
         return null;
       }
-      case 'move': {
-        // 增量修正命令（本轮新增，对标大角几何「MCP 式读取画板状态后修改图形」）：
-        // 把已存在的自由点/滑动条改到新的数值，不新建图元、不改 id、不破坏依赖关系。
-        // 此前自检闭环提示 AI「移动点/改坐标」，但 point 对同 id 会报「重复定义」，修正实际改不动图；
-        // 有了 move，AI 才能只改未通过断言相关的那一处，而不必 clear 重画整张图。
-        //   {"op":"move","id":"A","x":0,"y":2.6}  移动自由点
-        //   {"op":"move","id":"A","to":[0,2.6]}   等价写法
-        //   {"op":"move","id":"a","v":2}          改滑动条当前值（依赖它的几何实时联动）
-        const el = resolve(cmd.id);
-        if (sliders.has(cmd.id)) {
-          const v = num(cmd.v, NaN);
-          if (!Number.isFinite(v)) throw new Error('move 滑动条需要数值 v');
-          if (typeof el.setValue !== 'function') throw new Error('该滑动条不支持 setValue');
-          el.setValue(v);
-        } else {
-          const to = Array.isArray(cmd.to) ? cmd.to : [cmd.x, cmd.y];
-          const x = num(to[0], NaN), y = num(to[1], NaN);
-          if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('move 需要 x/y 或 to:[x,y] 数值坐标');
-          const COORDS_BY_USER = 1; // JXG.COORDS_BY_USER，避免依赖全局
-          if (typeof el.setPosition === 'function') el.setPosition(COORDS_BY_USER, [x, y]);
-          else if (typeof el.moveTo === 'function') el.moveTo([x, y]);
-          else throw new Error('move 目标不是可移动的点：' + cmd.id);
-        }
-        try { board.update(); } catch (_) { /* 刷新失败不致命，下一帧也会重算 */ }
-        return null;
-      }
       case 'style': {
-        // 细粒度样式（本轮新增，对标大角几何「生产级成品度」）：
-        //   opacity     整体不透明度 0~1，同时作用于描边与填充；越界自动夹到 [0,1]
-        //   fillColor   单独指定填充色，与描边色 color 解耦（红边浅红底成为可能）
-        //   labelColor  标签文字颜色（只改 label，不动几何）
-        //   labelSize   标签字号（像素）
-        // 四个字段全部可选，省略时行为与旧版完全一致，保证向后兼容。
-        // 本分支与 ai/board-prompt.js「# 细粒度样式」登记项一一对应，改字段要两边同步。
         const el = resolve(cmd.target);
         const a = {};
         if (cmd.color) { a.strokeColor = cmd.color; a.highlightStrokeColor = cmd.color; a.fillColor = cmd.color; }
         if (cmd.strokeWidth != null) a.strokeWidth = num(cmd.strokeWidth, 2);
         if (cmd.dash != null) a.dash = num(cmd.dash, 0);
         if (cmd.fill) { a.fillColor = cmd.color || '#C7D2FE'; a.fillOpacity = 0.25; }
-        if (cmd.fillColor != null) a.fillColor = String(cmd.fillColor); // 覆盖 color 带来的同色填充
-        if (cmd.opacity != null) {
-          const o = Number(cmd.opacity);
-          if (Number.isFinite(o)) {
-            const clamped = Math.max(0, Math.min(1, o));
-            a.strokeOpacity = clamped;
-            a.fillOpacity = clamped; // 与 fill:true 的默认 0.25 冲突时以显式 opacity 为准
-          }
-        }
         if (cmd.hidden != null) a.visible = !cmd.hidden;
-        if (Object.keys(a).length) el.setAttribute(a);
-        // 标签是独立的 JXG.Text：文字颜色用 strokeColor、字号用 fontSize，不能塞进几何元素的 setAttribute
-        const lab = el && el.label;
-        if (lab && typeof lab.setAttribute === 'function' && (cmd.labelColor != null || cmd.labelSize != null)) {
-          const la = {};
-          if (cmd.labelColor != null) la.strokeColor = String(cmd.labelColor);
-          if (cmd.labelSize != null) {
-            const fs = num(cmd.labelSize, 0);
-            if (fs > 0) la.fontSize = fs;
-          }
-          if (Object.keys(la).length) lab.setAttribute(la);
-        }
+        el.setAttribute(a);
         return null;
-      }
-      case 'measure': {
-        // 测量/自检回读（对标大角几何 MCP 式读画板状态）：只给数值，不判定对错。
-        // 与 verify 共用 computeMeasure()；读数不进注册表/文档，数值经 execute 结果回传给前端闭环。
-        const m = computeMeasure(cmd);
-        let body;
-        if (m.kind === 'angle') body = '✓ ∠ = ' + (Number.isFinite(m.value) ? m.value.toFixed(1) + '°' : '?');
-        else if (m.kind === 'evaluate') body = '✓ ' + m.title + (cmd.x != null ? ' @ x=' + cmd.x : '') + ' = ' + (Number.isFinite(m.value) ? m.value.toFixed(3) : '?');
-        else body = '✓ 距离 = ' + (Number.isFinite(m.value) ? m.value.toFixed(2) : '?');
-        const el = measureReadout(body, m.pos);
-        measureEls.push(el);
-        return { __measure: true, el, value: m.value };
-      }
-      case 'verify': {
-        // 声明式自检断言：在 measure 的实测值上叠加「期望值」自动判定 pass，不再依赖 LLM 肉眼比对裸数值。
-        // AI 在第 2 步规划时就把关键量的预期写进命令；失败项会被 read-back 闭环精确回传做定向修正（见 js/board.js）。
-        //   {"op":"verify","id":"v1","kind":"angle","of":["A","H","B"],"expect":90,"tol":0.5,"label":"高线垂直"}
-        //   {"op":"verify","id":"v2","kind":"distance","of":["A","H"],"expect":4,"tol":0.05}
-        //   {"op":"verify","id":"v3","kind":"evaluate","expr":"3-(x-2)^2","x":2,"expect":3,"label":"顶点函数值"}
-        // 期望值三种写法（本轮增强，覆盖"约等于/落在区间内"的模糊意图）：
-        //   · expect + tol        ：绝对容差，pass ⇔ |实测-预期| ≤ tol（最常用；tol 缺省按量纲取 0.5°/0.05）
-        //   · expect + rtol       ：相对容差，pass ⇔ |实测-预期| ≤ tol + rtol·|预期|（贴合 math.isclose 语义，
-        //                            适合预期本身很大的量，如坐标量级在千位的欧氏距离）
-        //   · expectRange:[lo,hi]  ：区间容差，pass ⇔ lo ≤ 实测 ≤ hi（"π≈3.14""落在象限内""约等于 2 左右"用）
-        //   互斥：给了 expectRange 走区间模式；否则走 expect(+tol/rtol) 模式；二者都缺判不通过。
-        const m = computeMeasure(cmd);
-        const value = m.value;
-        const unit = m.kind === 'angle' ? '°' : '';
-        const digits = m.kind === 'evaluate' ? 3 : (m.kind === 'angle' ? 1 : 2);
-        const fmt = (v) => Number.isFinite(v) ? v.toFixed(digits) : '?';
-
-        const range = Array.isArray(cmd.expectRange) ? cmd.expectRange.map(Number) : null;
-        const hasRange = !!range && range.length === 2 && Number.isFinite(range[0]) && Number.isFinite(range[1]);
-        const expect = Number(cmd.expect != null ? cmd.expect : cmd.expected);
-        const expectFinite = Number.isFinite(expect);
-        const tolRaw = Number(cmd.tol != null ? cmd.tol : cmd.tolerance);
-        const tol = Number.isFinite(tolRaw) && tolRaw >= 0 ? tolRaw : (m.kind === 'angle' ? 0.5 : 0.05);
-        const rtolRaw = Number(cmd.rtol != null ? cmd.rtol : cmd.relativeTol);
-        const rtol = Number.isFinite(rtolRaw) && rtolRaw >= 0 ? rtolRaw : 0;
-
-        let pass, delta, mode, infoExpect, infoTol;
-        if (hasRange) {
-          mode = 'range';
-          const lo = Math.min(range[0], range[1]);
-          const hi = Math.max(range[0], range[1]);
-          pass = Number.isFinite(value) && value >= lo && value <= hi;
-          delta = NaN; // 区间模式无单一偏差
-          infoExpect = '[' + fmt(lo) + ',' + fmt(hi) + ']';
-          infoTol = '';
-        } else if (expectFinite) {
-          mode = rtol > 0 ? 'rtol' : 'abs';
-          delta = Number.isFinite(value) ? value - expect : NaN;
-          const abse = Number.isFinite(delta) ? Math.abs(delta) : Infinity;
-          const bound = tol + rtol * Math.abs(expect); // 绝对+相对组合容差
-          pass = abse <= bound;
-          infoExpect = fmt(expect);
-          infoTol = rtol > 0 ? (fmt(tol) + '+' + rtol + '·|E|') : String(tol);
-        } else {
-          mode = 'none';
-          pass = false; delta = NaN; infoExpect = '?'; infoTol = '';
-        }
-
-        const label = String(cmd.label || m.title || '自检');
-        const body = (pass ? '✔ ' : '✘ ') + label + ' = ' + fmt(value) + unit
-          + (mode === 'range'
-              ? ('（应在 ' + infoExpect + unit + (pass ? '）' : '，越界）'))
-              : ('（预期 ' + infoExpect + unit + (infoTol ? ('，容差 ' + infoTol + unit) : '')
-                + (pass ? '）' : ('，偏差 ' + fmt(delta) + unit + '）'))));
-        const el = measureReadout(body, m.pos, pass ? '#15803D' : '#C2410C');
-        measureEls.push(el);
-        return {
-          __measure: true, __verify: true, el, value,
-          expect: expectFinite ? expect : NaN,
-          expectRange: hasRange ? [range[0], range[1]] : undefined,
-          rtol, tol, pass, delta, mode, label,
-        };
-      }
-      case 'transform': {
-        // 几何变换 op（本轮新增，对标"几何变换"作图）：把源元素按 type 做平移/旋转/反射，
-        // 生成一份以 cmd.id 命名的新副本。此前只能靠"坐标数值化手算"兜底（易错），现由执行器
-        // 在运行期读取源元素坐标后计算并落点——AI 只需声明"对谁做哪种变换"，无需手算坐标。
-        //   translate: {type:'translate', by:[dx,dy]}                               平移向量
-        //   rotate:    {type:'rotate', angle:角度(度), center:'O'|[x,y]（省缺绕原点）}  旋转
-        //   reflect:   {type:'reflect', axis:'l1'（直线/线段 id，关于该线对称）}
-        //                       | {center:'O'|[x,y]（关于该点中心对称，省缺原点）}
-        // 支持 point / segment / line / ray / polygon / circle；副本为静态落点（不随源拖拽实时
-        // 联动），但回放/保存时按命令重建，行为稳定。type 非法时抛错由外层捕获。
-        const src = resolve(cmd.of);
-        if (!src) throw new Error('transform.of 引用的元素不存在');
-        const f = transformFn(cmd, resolve);
-        const et = src.elType;
-        if (et === 'point') {
-          const [nx, ny] = f(src.X(), src.Y());
-          const pt = board.create('point', [nx, ny], { ...POINT_STYLE, ...opt });
-          applyLabel(pt, cmd.label);
-          return pt;
-        }
-        if (et === 'circle') {
-          const [cx, cy] = f(src.center.X(), src.center.Y());
-          const r = typeof src.Radius === 'function' ? src.Radius() : 1;
-          return board.create('circle', [[cx, cy], r], opt);
-        }
-        if (et === 'polygon') {
-          const coords = (src.vertices || []).map((v) => { const [x, y] = f(v.X(), v.Y()); return [x, y]; });
-          if (coords.length < 2) throw new Error('多边形顶点数不足，无法变换');
-          return board.create('polygon', coords, opt);
-        }
-        if (['segment', 'arrow', 'line', 'axis', 'ray'].includes(et)) {
-          const p1 = src.point1, p2 = src.point2;
-          if (!p1 || !p2) throw new Error('该对象无可用的两个端点，无法变换');
-          const [x1, y1] = f(p1.X(), p1.Y());
-          const [x2, y2] = f(p2.X(), p2.Y());
-          if (et === 'line' || et === 'axis') return board.create('line', [[x1, y1], [x2, y2]], opt);
-          if (et === 'ray') return board.create('line', [[x1, y1], [x2, y2]], { ...opt, straightFirst: false, straightLast: true });
-          return board.create('segment', [[x1, y1], [x2, y2]], opt);
-        }
-        throw new Error('transform 暂不支持 elType=' + et + '（目前支持 point/segment/line/polygon/circle）');
-      }
-      case 'animate': {
-        // 动画命令（本轮新增，对标大角几何「滑动条 + 自动播放」）：
-        // 让指定滑动条(id 或 ids，或 "__all__")自动连续改值，依赖它的点/圆/曲线随之实时重算，
-        // 形成可讲解的动态演示。执行器只做校验并返回目标，真正的播放由前端按既有动画引擎驱动
-        // （见 js/board.js 的 animPlayTargets）。不注册任何画板元素、不进文档/历史。
-        //   {"op":"animate","id":"a"}                 播放单个滑动条
-        //   {"op":"animate","ids":["a","b"]}          同时播放多个
-        //   {"op":"animate","ids":"__all__"}          播放全部滑动条
-        //   {"op":"animate","id":"a","pingpong":true,"speed":"normal"}  往复 / 速度(slow|normal|fast)
-        const ids = cmd.ids != null
-          ? (Array.isArray(cmd.ids) ? cmd.ids : [cmd.ids])
-          : (cmd.id != null ? [cmd.id] : []);
-        if (!ids.length) throw new Error('animate 必须指定 id 或 ids');
-        const bad = ids.filter((id) => {
-          const el = registry.get(id);
-          return !(el && el.elType === 'slider');
-        });
-        if (bad.length) throw new Error('animate 目标不是滑动条或不存在：' + bad.join(', '));
-        const speed = ['slow', 'normal', 'fast'].includes(cmd.speed) ? cmd.speed : 'normal';
-        return { ids: ids.filter((id) => registry.has(id)), pingpong: cmd.pingpong === true, speed };
       }
       default:
         throw new Error('未知命令 op: ' + cmd.op);
@@ -811,34 +454,9 @@ export function createExecutor(board) {
     for (const cmd of Array.isArray(commands) ? commands : []) {
       if (!cmd || typeof cmd !== 'object') continue;
       try {
-      if (cmd.op === 'clear') { clearAll(); out.push({ ok: true, op: 'clear' }); continue; }
-      const built = build(cmd);
-      // 测量/断言命令：build 已在画板生成临时读数文本（副作用），数值经 value 回传；不进注册表/文档
-      // verify 额外透传 pass/expect/tol/delta/label，供前端 read-back 闭环精确判定与定向修正。
-      if (cmd.op === 'measure' || cmd.op === 'verify') {
-        const row = { ok: true, op: cmd.op, id: cmd.id || null, value: built && built.__measure ? built.value : NaN };
-        if (cmd.op === 'verify') {
-          row.pass = !!(built && built.pass);
-          row.expect = built ? built.expect : NaN;
-          row.tol = built ? built.tol : NaN;
-          row.delta = built ? built.delta : NaN;
-          row.label = (built && built.label) || '';
-        }
-        out.push(row);
-        continue;
-      }
-      if (cmd.op === 'animate') {
-        // 动画是纯前端动作（驱动既有滑动条播放），不注册画板元素；把目标回传给前端去启动播放
-        out.push({ ok: true, op: 'animate', ids: (built && built.ids) || [], pingpong: !!(built && built.pingpong), speed: (built && built.speed) || 'normal' });
-        continue;
-      }
-      if (cmd.op === 'move') {
-        // 增量修正：build 返回 null，且 cmd.id 是已注册元素，绝不能再走 registry.set（会误报「重复定义」/把值写成 null）
-        out.push({ ok: true, op: 'move', id: cmd.id || null });
-        continue;
-      }
-      const el = built;
-      if (cmd.id) {
+        if (cmd.op === 'clear') { clearAll(); out.push({ ok: true, op: 'clear' }); continue; }
+        const el = build(cmd);
+        if (cmd.id) {
           if (registry.has(cmd.id)) throw new Error(`id「${cmd.id}」重复定义`);
           if (el) registry.set(cmd.id, el);
           // 坐标被别的对象驱动的点是依赖点，不能再当成可拖拽的自由点保存坐标
@@ -851,14 +469,6 @@ export function createExecutor(board) {
       }
     }
     return out;
-  }
-
-  /** 清掉上一轮自检留下的临时读数文本（read-back 闭环在每轮自检前调用，避免堆积） */
-  function clearMeasures() {
-    for (const el of measureEls) {
-      try { board.removeObject(el); } catch (_) { /* 忽略 */ }
-    }
-    measureEls.length = 0;
   }
 
   /** 当前画板元素摘要（作为 AI 的上下文）；滑动条带出当前值，方便 AI 接着改 */
@@ -917,5 +527,5 @@ export function createExecutor(board) {
     if (restoredSlider) { try { board.update(); } catch (_) { /* 忽略 */ } }
   }
 
-  return { execute, describe, moves, applyMoves, clearAll, remove, clearMeasures, registry, has: (id) => registry.has(id) };
+  return { execute, describe, moves, applyMoves, clearAll, remove, registry, has: (id) => registry.has(id) };
 }

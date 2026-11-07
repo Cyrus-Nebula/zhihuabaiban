@@ -1,974 +1,476 @@
 /**
- * 独立自主 3D 画板内核（路线A 的替代品，不依赖大角几何 SDK / appId）
- *
- * - 渲染：Three.js（本地 vendor，经 board3d.html 的 importmap 引用 libs/three/）
- * - 相机：PerspectiveCamera + OrbitControls 式轨道/缩放/平移
- * - 参考系：X/Y/Z 坐标轴（带刻度与字母标签）+ XZ 平面网格
- * - 图元：point3d / segment3d / line3d / polygon3d / sphere3d / circle3d /
- *         cylinder3d / cone3d / text3d / label3d
- * - 测量：measure3d（distance 两点距离 / angle 三点夹角，纯计算、不污染画板）
- * - 自检：verify3d（在 measure3d 同一回读值上叠加期望值/容差，机器判定 pass，纯读数）
- * - 交互：点可拖拽——屏幕射线反投影到「工作面」（默认过点当前高度的水平面；
- *         正视/侧视等视线接近水平时自动切换为面向相机的平面，避免求交退化），
- *         依赖该点的线段/面/体随之实时联动（动态几何）
- * - 视角：重置 / 正视 / 俯视 / 侧视 / 等轴
- * - 渲染稳健性：多边形面顶点更新后重算包围体，半透明面 depthWrite:false 缓解 z-fighting
- *
- * 命令执行器 createBoard3DExecutor 与 js/executor.js（2D/JSXGraph）平行，
- * 互不混用——3D 命令以数字坐标为真值，不引入滑动条/交点筛选等 2D 概念。
- *
- * 设计约定（与 2D 对齐）：
- *   - 点默认可拖拽；fixed:true 则锁定
- *   - id 简短大写字母（A/B/C…）；其余字母+数字（s1/c1…）
- *   - 被引用的元素必须先定义（按依赖顺序执行）
+ * 立体画板（路线B · 自研，不依赖大角几何 SDK）
+ * 基于 Three.js（CDN ESM），提供几何体建模、拾取选择、属性编辑、
+ * 坐标轴/网格/背景切换、本地 + 云端（Supabase）持久化。
  */
-
 import * as THREE from 'three';
-import { OrbitControls } from '../libs/three/OrbitControls.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
-const COLORS = {
-  axisX: '#e5484d', axisY: '#30a46c', axisZ: '#3b82f6',
-  grid: '#d8dee9', point: '#3E44D9', line: '#1f2937',
-  face: '#a5b4fc', sphere: '#0ea5e9', circle: '#7c3aed',
-  cylinder: '#f59e0b', cone: '#ef4444', text: '#111827',
+const CFG = window.DAJIAO_CONFIG || {};
+const DEG = Math.PI / 180;
+const SETTINGS_KEY = 'zhihui_3d_settings';
+
+// ---------- 几何体定义 ----------
+const SHAPE_DEFS = {
+  box:      { name: '立方体',   params: { w: { d: 2,   l: '宽' }, h: { d: 2,   l: '高' }, d: { d: 2,   l: '深' } }, geo: (p) => new THREE.BoxGeometry(p.w, p.h, p.d) },
+  sphere:   { name: '球体',     params: { r: { d: 1.2, l: '半径' } }, geo: (p) => new THREE.SphereGeometry(p.r, 40, 28) },
+  cylinder: { name: '圆柱',     params: { rt: { d: 1, l: '上半径' }, rb: { d: 1, l: '下半径' }, h: { d: 2.4, l: '高' } }, geo: (p) => new THREE.CylinderGeometry(p.rt, p.rb, p.h, 48) },
+  cone:     { name: '圆锥',     params: { r: { d: 1, l: '半径' }, h: { d: 2.4, l: '高' } }, geo: (p) => new THREE.ConeGeometry(p.r, p.h, 48) },
+  pyramid:  { name: '四棱锥',   params: { s: { d: 2, l: '底边长' }, h: { d: 2.4, l: '高' } }, geo: (p) => new THREE.ConeGeometry(p.s * 0.7, p.h, 4) },
+  prism:    { name: '三棱柱',   params: { r: { d: 1, l: '半径' }, h: { d: 2.4, l: '高' } }, geo: (p) => new THREE.CylinderGeometry(p.r, p.r, p.h, 3) },
+  tetra:    { name: '正四面体', params: { s: { d: 2, l: '棱长' } }, geo: (p) => new THREE.TetrahedronGeometry(p.s) },
+  plane:    { name: '平面',     params: { w: { d: 3, l: '宽' }, h: { d: 3, l: '高' } }, geo: (p) => new THREE.PlaneGeometry(p.w, p.h) },
+  line:     { name: '线段',     params: { x1: { d: -1.5 }, y1: { d: 0 }, z1: { d: 0 }, x2: { d: 1.5 }, y2: { d: 0 }, z2: { d: 0 } }, geo: lineGeo },
+  point:    { name: '点',       params: { s: { d: 0.18, l: '大小' } }, geo: (p) => new THREE.SphereGeometry(p.s, 16, 12) },
 };
 
-const AXIS_LEN = 7;     // 主轴长度（单位：坐标格）
-const TICK = 1;         // 刻度间隔
-const LINE_RADIUS = AXIS_LEN * 2; // 直线裁剪到该半径的球（覆盖整个参考系，近似无限直线）
+const BG_COLORS = { white: 0xf5f7fb, beige: 0xf3ecdd, dark: 0x1a1d24 };
+const BG_CSS    = { white: '#f5f7fb', beige: '#f3ecdd', dark: '#1a1d24' };
 
-/** 用 canvas 纹理做始终朝向相机的文字标签（Sprite），避免再 vendored 一个 CSS2DRenderer */
-function makeLabelSprite(text, opts = {}) {
-  const color = opts.color || COLORS.text;
-  const fontPx = opts.font || 44;
-  const pad = 10;
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  const font = `bold ${fontPx}px "Segoe UI", system-ui, sans-serif`;
-  ctx.font = font;
-  const w = Math.ceil(ctx.measureText(text).width) + pad * 2;
-  const h = fontPx + pad * 2;
-  canvas.width = w; canvas.height = h;
-  ctx.font = font;
-  ctx.fillStyle = color;
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  ctx.fillText(text, pad, h / 2 + 1);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.minFilter = THREE.LinearFilter;
-  tex.needsUpdate = true;
-  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
-  const sp = new THREE.Sprite(mat);
-  const scale = opts.scale || 0.012; // 世界单位 / 像素
-  sp.scale.set(w * scale, h * scale, 1);
-  sp.renderOrder = 999;
-  return sp;
-}
+let fileId = null;
+let fileName = '未命名立体画板';
+// 文件内容（持久化结构）：{ v, bg, axes, grid, objects:[...] }
+let doc = { v: 1, bg: 'white', axes: true, grid: true, objects: [] };
 
-/** 把一根单位圆柱（沿 +Y，高 1，半径 1）摆到 a→b 之间并拉伸长度 */
-function orientCylinder(mesh, a, b) {
-  const dir = new THREE.Vector3().subVectors(b, a);
-  const len = dir.length();
-  mesh.position.copy(a).add(b).multiplyScalar(0.5);
-  if (len > 1e-6) {
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-    mesh.scale.set(1, len, 1);
-  } else {
-    mesh.scale.set(1, 1e-4, 1);
-  }
-}
+// 运行时：mesh <-> obj 双向引用
+const meshes = new Map(); // id -> mesh
+let selected = null;      // 当前选中的 obj（与 mesh.userData.obj 同一引用）
+let selectedMesh = null;
 
-/**
- * 过 a、b 两点的无限直线，被「球心在原点、半径为 radius」的球裁剪后的两端点。
- * 纯几何、无副作用，可被无头测试直接验证；替代原先「中点 + 固定 4 单位」的有限长近似，
- * 让直线真正撑满整个参考系（近似无限直线），且在拖拽 a/b 时端点随参考系边界实时更新。
- *
- * 解 |a + t·d|² = radius²（其中 d = b - a）→ (d·d)t² + 2(a·d)t + (a·a - r²) = 0；
- * 判别式 = (a·d)² - (d·d)(a·a - r²) = |d|²r² - |a×d|² ≥ 0，根恒为实数。
- * 当 a、b 重合（d 为零向量、无法定方向）时返回 null。
- *
- * @param {THREE.Vector3|{x,y,z}} a 直线上一点
- * @param {THREE.Vector3|{x,y,z}} b 直线上另一点
- * @param {number} radius 裁剪球半径
- * @returns {[THREE.Vector3, THREE.Vector3]|null}
- */
-export function lineEndpoints(a, b, radius) {
-  const ax = a.x, ay = a.y, az = a.z;
-  const dx = b.x - ax, dy = b.y - ay, dz = b.z - az;
-  const dd = dx * dx + dy * dy + dz * dz;
-  if (dd < 1e-12) return null; // 两点重合，方向未定义
-  const ad = ax * dx + ay * dy + az * dz;   // a·d
-  const aa = ax * ax + ay * ay + az * az;   // a·a
-  const disc = ad * ad - dd * (aa - radius * radius);
-  const sq = Math.sqrt(Math.max(0, disc));
-  const t1 = (-ad - sq) / dd;
-  const t2 = (-ad + sq) / dd;
-  const at = (t) => new THREE.Vector3(ax + dx * t, ay + dy * t, az + dz * t);
-  return [at(t1), at(t2)];
-}
+// Three 运行时
+let scene, camera, renderer, orbit, transform, raycaster, group, gridHelper, axesHelper;
+let stage, canvas;
+const pointer = new THREE.Vector2();
 
-/**
- * 三角扇把一个（可非平面）多边形拆成三角形，返回扁平顶点数组 [x,y,z,…]。
- * 纯计算、不依赖 Three.js，供 createPolygon3D 与无头回归共用同一事实源。
- * n 个顶点 → n-2 个三角形 → (n-2)*9 个数字。
- */
-export function polygonTriangles(pts) {
-  const verts = [];
-  for (let i = 1; i < pts.length - 1; i++) {
-    const p0 = pts[0], p1 = pts[i], p2 = pts[i + 1];
-    verts.push(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
-  }
-  return verts;
-}
+// ============================================================
+// 初始化
+// ============================================================
+function init() {
+  stage = document.getElementById('stage');
+  canvas = document.getElementById('b3d-canvas');
+  if (!stage || !canvas) return;
 
-/**
- * 依据相机视线方向选择拖拽「工作面」，避免射线与平面近乎平行时求交退化。
- *
- * 背景：工作面固定为水平面（法线 0,1,0）时，射线与平面求交的分母 = |视线·法线| = |dir.y|。
- * 正视 (0,0,-1) / 侧视 (-1,0,0) 下该值为 0：射线与水平面平行，交点被推到极远处
- * （实测拖拽 90px 会把顶点瞬移到 ±14 的相机位置），拖拽完全不可用。
- *
- * 规则（threshold 默认 0.25）：
- *  - |dir.y| >= threshold：保留水平面，拖拽保持「高度守恒」（既有语义与回归不变）
- *  - |dir.y| <  threshold：切换为「面向相机的平面」，法线取单位视线方向，
- *    此时 n·dir = 1，求交最稳定；点在该屏幕平面内随鼠标移动
- *
- * 平面方程 normal·x + constant = 0（可直接喂给 THREE.Plane.set），故 constant = -normal·point。
- *
- * @param {{x:number,y:number,z:number}} viewDir 相机视线方向（不必单位化）
- * @param {{x:number,y:number,z:number}} point 被拖拽点当前坐标（平面过该点）
- * @param {number} threshold |dir.y| 低于此值即判定「视线接近水平」
- * @returns {{normal:number[], constant:number, horizontal:boolean}}
- */
-export function workPlaneForDrag(viewDir, point, threshold = 0.25) {
-  const vx = viewDir.x, vy = viewDir.y, vz = viewDir.z;
-  const len = Math.hypot(vx, vy, vz) || 1;
-  const dy = Math.abs(vy / len);
-  if (dy >= threshold) {
-    return { normal: [0, 1, 0], constant: -point.y, horizontal: true };
-  }
-  const n = [vx / len, vy / len, vz / len];
-  return {
-    normal: n,
-    constant: -(n[0] * point.x + n[1] * point.y + n[2] * point.z),
-    horizontal: false,
-  };
-}
-
-/**
- * 把一次 measure3d / verify3d 结果描述成可读串（read-back 闭环与 AI 面板自检摘要共用）。
- * 与 2D describeMeasure 同构：verify3d 透出「预期 / 实测 / 容差 / 偏差」，让 LLM 不必肉眼猜数值是否符合意图。
- * m 字段约定（执行器 verify3d / measure3d 的返回对象）：op('verify3d'|'measure3d') / kind('distance'|'angle') /
- * value / pass / expect / tol / rtol / mode / expectRange / delta / label / of。纯函数，不依赖 Three.js，可被无头测试直接验证。
- */
-export function describeMeasure3D(m) {
-  const v = m.value;
-  const unit = m.kind === 'angle' ? '°' : '';
-  const digits = m.kind === 'angle' ? 1 : 3;
-  const f = (x) => (Number.isFinite(x) ? x.toFixed(digits) : '?');
-  if (m.op === 'verify3d') {
-    const tag = m.pass ? '✔ 通过' : '✘ 未通过';
-    if (m.mode === 'range' && Array.isArray(m.expectRange)) {
-      return `${tag}｜${m.label || '自检'}：实测 ${f(v)}${unit}，应在 [${f(m.expectRange[0])}, ${f(m.expectRange[1])}]${unit}`
-        + (m.pass ? '' : '，越界');
-    }
-    const tolTxt = m.rtol ? `，容差 ${f(m.tol)}+${m.rtol}·|E|${unit}` : (m.tol != null ? `，容差 ${f(m.tol)}${unit}` : '');
-    return `${tag}｜${m.label || '自检'}：实测 ${f(v)}${unit}，预期 ${f(m.expect)}${unit}${tolTxt}`
-      + (m.pass ? '' : `，偏差 ${f(m.delta)}${unit}`);
-  }
-  if (!Number.isFinite(v)) return '?';
-  if (m.kind === 'angle') return `∠${Array.isArray(m.of) ? m.of.join('') : ''} = ${v.toFixed(1)}°`;
-  return `|${Array.isArray(m.of) ? m.of.join('') : ''}| = ${v.toFixed(2)}`;
-}
-
-/**
- * 汇总一轮自检结果：text 送回 LLM / 面板展示；failed 机器判定未通过的断言；
- * allPassed 表示「本轮全部是 verify3d 断言且全部通过」——机器已确认符合意图，可跳过二次 LLM 调用。
- * 只要含裸 measure3d（无期望值），就必须交给 LLM 核对，不能省。纯函数，与 2D buildReadback 同构。
- * @param {Array} measures 本轮的 measure3d / verify3d 返回对象数组
- */
-export function build3DReadback(measures) {
-  if (!measures || !measures.length) return null;
-  const failed = measures.filter((m) => m.op === 'verify3d' && !m.pass);
-  return {
-    text: measures.map(describeMeasure3D).join('\n'),
-    failed,
-    allPassed: failed.length === 0 && measures.every((m) => m.op === 'verify3d' && m.pass),
-  };
-}
-
-/**
- * 构造「自检回读·修正轮」提示词（纯函数，便于无头测试）。
- * 与 2D 同构：带【未通过】清单 + 【已通过项请勿重画】diff 清单；要求只针对未通过项做增量修正，
- * 优先 move3d 就地改坐标，或 remove3d 删错元素后重建，禁止 clear 重画、禁止重复 measure3d/verify3d。
- * @param {{text:string,failed:Array}} rb build3DReadback 的返回值
- * @param {{round?:number,maxRounds?:number}} opts 轮次文案
- */
-export function build3DCorrectMsg(rb, { round = 1, maxRounds = 2 } = {}) {
-  if (!rb) return '';
-  const passedTxt = rb.text.split('\n').filter((l) => l.startsWith('✔')).join('\n');
-  const failHint = rb.failed.length
-    ? `\n【未通过断言，请重点修正】\n${rb.failed.map(describeMeasure3D).join('\n')}\n`
-    : '\n';
-  const diffHint = passedTxt
-    ? `\n【已通过项，请勿重画】下列断言已符合预期，修正时不要 clear、不要重复输出它们对应的作图命令：\n${passedTxt}\n`
-    : '';
-  return `【自检回读·第 ${round}/${maxRounds} 轮】你刚才的作图已实际在画板上执行，自检测量结果如下：\n${rb.text}\n${failHint}${diffHint}` +
-    `请核对几何关系是否符合用户意图（该垂直是否垂直、角/边长是否相等、半径/高度是否符合预期）。\n` +
-    `只针对未通过项输出增量修正命令：优先用 move3d 就地改坐标（{"op":"move3d","id":"A","x":..,"y":..,"z":..}），` +
-    `或删除并重建错误元素（先用 remove3d 删掉错误元素，再补发正确的 point3d/segment3d/...，remove3d 会级联释放该 id 供重建）；` +
-    `禁止 clear 重画整块画板、禁止重复已画好的部分、禁止输出 measure3d/verify3d 与任何解释文字。` +
-    `若已符合意图，只输出 {"message":"已自检，符合意图","commands":[]}。`;
-}
-
-export class Board3D {
-  constructor(container, opts = {}) {
-    this.container = container;
-    this.opts = opts;
-    this.entries = new Map();   // id -> {obj, type, deps, update, data}
-    this.points = new Map();    // id -> THREE.Vector3（点网格的实时 position 引用）
-    this.dragging = null;
-    this.workPlaneY = 0;
-    this.workPlaneHorizontal = true;
-    this.workPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    this.raycaster = new THREE.Raycaster();
-    this.pointer = new THREE.Vector2();
-    this._tmp = new THREE.Vector3();
-    this._init();
-  }
-
-  _init() {
-    const w = this.container.clientWidth || 800;
-    const h = this.container.clientHeight || 600;
-
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#f7f9fc');
-
-    this.camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 1000);
-    this._defaultCam = new THREE.Vector3(9, 7, 11);
-    this.camera.position.copy(this._defaultCam);
-
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setSize(w, h);
-    this.container.appendChild(this.renderer.domElement);
-
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
-    this.controls.target.set(0, 0, 0);
-
-    this._initLights();
-    this._initGrid();
-    this._initAxes();
-
-    this._bindEvents();
-    this._ro = new ResizeObserver(() => this.resize());
-    this._ro.observe(this.container);
-
-    this._animate = this._animate.bind(this);
-    this.renderer.setAnimationLoop(this._animate);
-  }
-
-  _initLights() {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-    dir.position.set(6, 12, 8);
-    this.scene.add(dir);
-    const dir2 = new THREE.DirectionalLight(0xffffff, 0.35);
-    dir2.position.set(-8, 4, -6);
-    this.scene.add(dir2);
-  }
-
-  _initGrid() {
-    const grid = new THREE.GridHelper(AXIS_LEN * 2, AXIS_LEN * 2, COLORS.grid, COLORS.grid);
-    grid.material.opacity = 0.6;
-    grid.material.transparent = true;
-    this.scene.add(grid);
-  }
-
-  _initAxes() {
-    const axesGroup = new THREE.Group();
-    const dirs = [
-      { dir: new THREE.Vector3(1, 0, 0), color: COLORS.axisX, name: 'X' },
-      { dir: new THREE.Vector3(0, 1, 0), color: COLORS.axisY, name: 'Y' },
-      { dir: new THREE.Vector3(0, 0, 1), color: COLORS.axisZ, name: 'Z' },
-    ];
-    for (const a of dirs) {
-      const arrow = new THREE.ArrowHelper(a.dir, new THREE.Vector3(0, 0, 0), AXIS_LEN, a.color, 0.35, 0.2);
-      axesGroup.add(arrow);
-      // 字母标签（轴末端外侧）
-      const label = makeLabelSprite(a.name, { color: a.color, font: 52, scale: 0.016 });
-      label.position.copy(a.dir).multiplyScalar(AXIS_LEN + 0.5);
-      axesGroup.add(label);
-      // 刻度 + 数字标签（含负方向）
-      for (let i = -AXIS_LEN; i <= AXIS_LEN; i += TICK) {
-        if (i === 0) continue;
-        const p = a.dir.clone().multiplyScalar(i);
-        const tick = new THREE.Mesh(
-          new THREE.BoxGeometry(0.04, 0.04, 0.04),
-          new THREE.MeshBasicMaterial({ color: a.color })
-        );
-        tick.position.copy(p);
-        axesGroup.add(tick);
-        const num = makeLabelSprite(String(i), { color: a.color, font: 30, scale: 0.009 });
-        num.position.copy(p).add(a.dir.clone().multiplyScalar(0.35));
-        axesGroup.add(num);
-      }
-    }
-    this.scene.add(axesGroup);
-  }
-
-  // ---------------- 图元工厂 ----------------
-  register(id, entry) {
-    this.entries.set(id, entry);
-    return entry;
-  }
-
-  createPoint3D(id, x, y, z, opts = {}) {
-    if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
-    const color = opts.color || COLORS.point;
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.13, 20, 16),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.05 })
-    );
-    mesh.position.set(x, y, z);
-    mesh.userData = { id, isPoint: true, fixed: !!opts.fixed };
-    const label = opts.label != null ? String(opts.label) : id;
-    if (label) {
-      const sp = makeLabelSprite(label, { scale: 0.011 });
-      sp.position.set(0.2, 0.2, 0);
-      mesh.add(sp);
-    }
-    this.scene.add(mesh);
-    this.points.set(id, mesh.position);
-    return this.register(id, { obj: mesh, type: 'point3d', deps: [], update: null, data: { x, y, z, fixed: !!opts.fixed } });
-  }
-
-  createSegment3D(id, fromId, toId, opts = {}) {
-    if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
-    const color = opts.color || COLORS.line;
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.035, 0.035, 1, 12),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.6 })
-    );
-    const entry = {
-      obj: mesh, type: 'segment3d', deps: [fromId, toId],
-      update: (posOf) => orientCylinder(mesh, posOf(fromId), posOf(toId)),
-    };
-    this.scene.add(mesh);
-    this.entries.set(id, entry);
-    entry.update((i) => this.points.get(i));
-    return entry;
-  }
-
-  // 直线：以两个已知点确定方向，裁剪到参考系球（LINE_RADIUS），近似无限直线
-  createLine3D(id, aId, bId, opts = {}) {
-    if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
-    const color = opts.color || COLORS.line;
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.03, 0.03, 1, 12),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.6 })
-    );
-    const entry = {
-      obj: mesh, type: 'line3d', deps: [aId, bId],
-      update: (posOf) => {
-        const a = posOf(aId), b = posOf(bId);
-        // 无限直线裁剪到参考系球（LINE_RADIUS）：端点随 a/b 拖拽与参考系边界实时更新
-        const ends = lineEndpoints(a, b, LINE_RADIUS);
-        const p1 = ends ? ends[0] : a;
-        const p2 = ends ? ends[1] : b;
-        orientCylinder(mesh, p1, p2);
-      },
-    };
-    this.scene.add(mesh);
-    this.entries.set(id, entry);
-    entry.update((i) => this.points.get(i));
-    return entry;
-  }
-
-  createPolygon3D(id, pointsIds, opts = {}) {
-    if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
-    const color = opts.color || COLORS.face;
-    const geo = new THREE.BufferGeometry();
-    const mesh = new THREE.Mesh(
-      geo,
-      new THREE.MeshStandardMaterial({
-        color, transparent: true, opacity: 0.32, side: THREE.DoubleSide, roughness: 0.85,
-        // 半透明面不写深度：多层 face 叠加时缓解 z-fighting 与透明混合顺序错乱
-        depthWrite: false,
-      })
-    );
-    const entry = {
-      obj: mesh, type: 'polygon3d', deps: [...pointsIds],
-      update: (posOf) => {
-        const pts = pointsIds.map(posOf).filter(Boolean);
-        if (pts.length < 3) return;
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(polygonTriangles(pts), 3));
-        geo.computeVertexNormals();
-        // 顶点随拖拽改变后必须重算包围体：Three.js 首次渲染会缓存 boundingSphere，
-        // 若不刷新，视锥剔除沿用旧球，拖到远处的面会被错误剔除而凭空消失。
-        geo.computeBoundingSphere();
-        geo.computeBoundingBox();
-        geo.attributes.position.needsUpdate = true;
-      },
-    };
-    this.scene.add(mesh);
-    this.entries.set(id, entry);
-    entry.update((i) => this.points.get(i));
-    return entry;
-  }
-
-  createSphere3D(id, centerId, radius, opts = {}) {
-    if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
-    const color = opts.color || COLORS.sphere;
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 32, 24),
-      new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.55, roughness: 0.35 })
-    );
-    const entry = {
-      obj: mesh, type: 'sphere3d', deps: [centerId],
-      update: (posOf) => { mesh.position.copy(posOf(centerId)); mesh.scale.setScalar(radius); },
-    };
-    this.scene.add(mesh);
-    this.entries.set(id, entry);
-    entry.update((i) => this.points.get(i));
-    return entry;
-  }
-
-  createCircle3D(id, centerId, radius, normal, opts = {}) {
-    if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
-    const color = opts.color || COLORS.circle;
-    const mesh = new THREE.Mesh(
-      new THREE.TorusGeometry(radius, Math.max(0.02, radius * 0.04), 12, 64),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.5 })
-    );
-    const n = normal ? new THREE.Vector3(normal[0], normal[1], normal[2]).normalize() : new THREE.Vector3(0, 1, 0);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n); // torus 轴沿 Z，转到法线方向
-    const entry = {
-      obj: mesh, type: 'circle3d', deps: [centerId],
-      update: (posOf) => { mesh.position.copy(posOf(centerId)); },
-    };
-    this.scene.add(mesh);
-    this.entries.set(id, entry);
-    entry.update((i) => this.points.get(i));
-    return entry;
-  }
-
-  createCylinder3D(id, baseId, topId, radius, opts = {}) {
-    if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
-    const color = opts.color || COLORS.cylinder;
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(1, 1, 1, 32),
-      new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.6, roughness: 0.4 })
-    );
-    const entry = {
-      obj: mesh, type: 'cylinder3d', deps: [baseId, topId],
-      update: (posOf) => {
-        const a = posOf(baseId), b = posOf(topId);
-        orientCylinder(mesh, a, b);
-        mesh.scale.x = mesh.scale.z = radius;
-      },
-    };
-    this.scene.add(mesh);
-    this.entries.set(id, entry);
-    entry.update((i) => this.points.get(i));
-    return entry;
-  }
-
-  createCone3D(id, apexId, baseId, radius, opts = {}) {
-    if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
-    const color = opts.color || COLORS.cone;
-    const mesh = new THREE.Mesh(
-      new THREE.ConeGeometry(1, 1, 32),
-      new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.6, roughness: 0.4 })
-    );
-    const entry = {
-      obj: mesh, type: 'cone3d', deps: [apexId, baseId],
-      update: (posOf) => {
-        const apex = posOf(apexId), base = posOf(baseId);
-        const dir = new THREE.Vector3().subVectors(apex, base);
-        const len = dir.length() || 1e-4;
-        mesh.position.copy(base).add(apex).multiplyScalar(0.5);
-        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-        mesh.scale.set(radius, len, radius);
-      },
-    };
-    this.scene.add(mesh);
-    this.entries.set(id, entry);
-    entry.update((i) => this.points.get(i));
-    return entry;
-  }
-
-  createText3D(id, x, y, z, text, opts = {}) {
-    if (this.entries.has(id)) throw new Error(`id「${id}」重复定义`);
-    const sp = makeLabelSprite(String(text), { color: opts.color || COLORS.text, scale: opts.scale || 0.014 });
-    sp.position.set(x, y, z);
-    this.scene.add(sp);
-    return this.register(id, { obj: sp, type: 'text3d', deps: [], update: null, data: { x, y, z, text } });
-  }
-
-  createLabel3D(targetId, text) {
-    const e = this.entries.get(targetId);
-    if (!e) throw new Error(`标注目标「${targetId}」不存在`);
-    const sp = makeLabelSprite(String(text), { scale: 0.011 });
-    sp.position.set(0.2, 0.2, 0);
-    e.obj.add(sp);
-    return e;
-  }
-
-  setStyle(targetId, opts = {}) {
-    const e = this.entries.get(targetId);
-    if (!e) throw new Error(`目标「${targetId}」不存在`);
-    if (opts.color) {
-      e.obj.traverse((o) => {
-        if (o.material) {
-          if (Array.isArray(o.material)) o.material.forEach((m) => (m.color && m.color.set(opts.color)));
-          else if (o.material.color) o.material.color.set(opts.color);
-        }
-      });
-    }
-    if (opts.opacity != null) {
-      e.obj.traverse((o) => {
-        if (o.material) {
-          const set = (m) => { m.transparent = true; m.opacity = opts.opacity; };
-          if (Array.isArray(o.material)) o.material.forEach(set); else set(o.material);
-        }
-      });
-    }
-    if (opts.hidden != null) e.obj.visible = !opts.hidden;
-    return e;
-  }
-
-  /**
-   * 就地移动一个已存在的自由点（增量修正，对标 2D 的 move 命令）：
-   * 只改坐标、不新建图元，依赖它的线段/面/体随之实时联动。
-   * 用于 AI 自检闭环的定向修正——避免「同 id 重发 point3d 报重复定义」或「remove3d 整组级联重建」的笨重做法。
-   * 安全降级：id 不存在 / 不是点 / 已 fixed 锁定 → 抛错（由执行器捕获为 ok:false）。
-   */
-  movePoint3D(id, x, y, z) {
-    const e = this.entries.get(id);
-    if (!e) throw new Error(`点「${id}」不存在`);
-    if (e.type !== 'point3d') throw new Error(`「${id}」不是点，无法移动`);
-    if (e.data && e.data.fixed) throw new Error(`点「${id}」已锁定（fixed），不可移动`);
-    const p = this.points.get(id);
-    if (p) p.set(x, y, z);
-    if (e.data) { e.data.x = x; e.data.y = y; e.data.z = z; }
-    this.notifyPointMoved(id);
-    return e;
-  }
-
-  // ---------------- 拖拽 / 拾取 ----------------
-  _bindEvents() {
-    const el = this.renderer.domElement;
-    el.style.touchAction = 'none';
-    el.addEventListener('pointerdown', (e) => {
-      const hit = this._pickPoint(e);
-      if (hit && !hit.userData.fixed) {
-        this.dragging = hit;
-        this.controls.enabled = false;
-        this._setDragWorkPlane(hit.position);
-        el.setPointerCapture && el.setPointerCapture(e.pointerId);
-      }
-    });
-    el.addEventListener('pointermove', (e) => {
-      if (this.dragging) {
-        const p = this._rayToPlane(e);
-        if (p) {
-          this.dragging.position.copy(p);
-          this.notifyPointMoved(this.dragging.userData.id);
-        }
-      } else {
-        el.style.cursor = this._pickPoint(e) ? 'grab' : 'default';
-      }
-    });
-    const end = () => {
-      if (this.dragging) {
-        this.dragging = null;
-        this.controls.enabled = true;
-        if (this.onChange) this.onChange();
-      }
-    };
-    el.addEventListener('pointerup', end);
-    el.addEventListener('pointercancel', end);
-  }
-
-  /**
-   * 按下点时按当前视角选定拖拽工作面（平面过该点）。
-   * 等轴/俯视仍用水平面保持「高度守恒」；正视/侧视等视线接近水平的视角
-   * 自动切换为面向相机的平面，避免射线与水平面平行导致顶点被甩到极远处。
-   */
-  _setDragWorkPlane(point) {
-    const dir = this._viewDir || (this._viewDir = new THREE.Vector3());
-    this.camera.getWorldDirection(dir);
-    const p = workPlaneForDrag(dir, point);
-    this.workPlane.set(
-      new THREE.Vector3(p.normal[0], p.normal[1], p.normal[2]),
-      p.constant
-    );
-    this.workPlaneY = point.y;
-    this.workPlaneHorizontal = p.horizontal;
-  }
-
-  _updatePointer(e) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-  }
-
-  _pickPoint(e) {
-    this._updatePointer(e);
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    const meshes = [];
-    for (const en of this.entries.values()) {
-      if (en.type === 'point3d' && en.obj.visible) meshes.push(en.obj);
-    }
-    const hits = this.raycaster.intersectObjects(meshes, false);
-    return hits.length ? hits[0].object : null;
-  }
-
-  _rayToPlane(e) {
-    this._updatePointer(e);
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hit = this.raycaster.ray.intersectPlane(this.workPlane, this._tmp);
-    return hit ? this._tmp.clone() : null;
-  }
-
-  /** 某点移动后，刷新所有依赖它的图元 */
-  notifyPointMoved(id) {
-    for (const en of this.entries.values()) {
-      if (en.deps && en.deps.includes(id) && en.update) en.update((i) => this.points.get(i));
-    }
-  }
-
-  // ---------------- 视角 ----------------
-  viewReset() {
-    this.camera.position.copy(this._defaultCam);
-    this.controls.target.set(0, 0, 0);
-    this.controls.update();
-  }
-  viewPreset(name) {
-    const t = new THREE.Vector3(0, 0, 0);
-    let p;
-    switch (name) {
-      case 'front': p = new THREE.Vector3(0, 0, 14); break;   // 正对 XY 面（+Z 看向原点）
-      case 'top': p = new THREE.Vector3(0, 14, 0); break;     // 俯视 XZ 面
-      case 'side': p = new THREE.Vector3(14, 0, 0); break;    // 侧视 YZ 面
-      case 'iso':
-      default: p = this._defaultCam.clone(); break;
-    }
-    this.camera.position.copy(p);
-    this.controls.target.copy(t);
-    this.controls.update();
-  }
-
-  // ---------------- 维护 ----------------
-  remove(id) {
-    const e = this.entries.get(id);
-    if (!e) return false;
-    this.scene.remove(e.obj);
-    e.obj.traverse((o) => {
-      if (o.geometry) o.geometry.dispose();
-      if (o.material) {
-        if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose());
-        else o.material.dispose();
-      }
-    });
-    this.entries.delete(id);
-    this.points.delete(id);
-    return true;
-  }
-
-  clear() {
-    for (const id of [...this.entries.keys()]) this.remove(id);
-  }
-
-  resize() {
-    const w = this.container.clientWidth, h = this.container.clientHeight;
-    if (!w || !h) return;
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
-  }
-
-  _animate() {
-    this.controls.update();
-    this.renderer.render(this.scene, this.camera);
-  }
-
-  dispose() {
-    this.renderer.setAnimationLoop(null);
-    this._ro && this._ro.disconnect();
-    this.clear();
-    this.renderer.dispose();
-  }
-}
-
-/**
- * 3D 命令执行器（与 2D createExecutor 平行，互不复用代码）。
- * 协议命令：point3d / segment3d / line3d / polygon3d / sphere3d / circle3d /
- *           cylinder3d / cone3d / text3d / label3d / style3d / measure3d /
- *           verify3d / remove3d / clear
- * remove3d：{op:'remove3d',id:'A'}  删除指定元素并级联删除其全部（传递）依赖者
- *           （如删除被引用的点会一并删除依赖它的线段/面/体），用于 AI 自校正时
- *           删掉画错的元素；引用不存在的 id 被捕获为 ok:false。
- * measure3d：{op:'measure3d',kind:'distance',of:['A','B']} 或
- *           {op:'measure3d',kind:'angle',of:['A','B','C']}（B 为顶点），
- *           返回 {ok,op:'measure3d',kind,value:number}（不创建画板元素）
- * verify3d ：与 measure3d 同参数，额外带 expect+tol / rtol / expectRange:[lo,hi]；
- *           返回 {ok,op:'verify3d',kind,value,pass,delta,mode,...}（纯读数，不创建画板元素）
- */
-/**
- * measure3d：纯计算的测量命令（不创建画板元素），与 2D measure 平行、互不复用。
- * - kind:'distance' of:[A,B]    → 两点欧氏距离
- * - kind:'angle'    of:[A,B,C]  → 以 B 为顶点的夹角（单位：度）
- * 返回 {ok,op:'measure3d',kind,value}；测量目标须为已定义的点（引用未定义 id 被捕获为 ok:false）。
- */
-function runMeasure3D(board, cmd, requireId, round) {
-  const kind = cmd.kind || 'distance';
-  const ids = Array.isArray(cmd.of) ? cmd.of : [];
   try {
-    if (kind === 'distance') {
-      if (ids.length < 2) throw new Error('measure3d distance 需要 of:[A,B]');
-      const a = requirePoint(board, ids[0], requireId);
-      const b = requirePoint(board, ids[1], requireId);
-      const d = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-      return { ok: true, op: 'measure3d', kind, value: round(d) };
-    }
-    if (kind === 'angle') {
-      if (ids.length < 3) throw new Error('measure3d angle 需要 of:[A,B,C]（B 为顶点）');
-      const a = requirePoint(board, ids[0], requireId);
-      const bv = requirePoint(board, ids[1], requireId);
-      const c = requirePoint(board, ids[2], requireId);
-      const v1 = [a.x - bv.x, a.y - bv.y, a.z - bv.z];
-      const v2 = [c.x - bv.x, c.y - bv.y, c.z - bv.z];
-      const dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
-      const m1 = Math.hypot(v1[0], v1[1], v1[2]);
-      const m2 = Math.hypot(v2[0], v2[1], v2[2]);
-      if (!m1 || !m2) throw new Error('测量向量长度为零，无法求夹角');
-      const cos = Math.max(-1, Math.min(1, dot / (m1 * m2)));
-      const ang = Math.acos(cos) * 180 / Math.PI;
-      return { ok: true, op: 'measure3d', kind, value: round(ang) };
-    }
-    throw new Error('未知 measure3d.kind: ' + kind);
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   } catch (e) {
-    return { ok: false, op: 'measure3d', kind, error: String((e && e.message) || e) };
+    showHint('当前浏览器不支持 WebGL，无法加载立体画板。');
+    return;
   }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(BG_COLORS.white);
+
+  camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+  camera.position.set(6, 5, 8);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.95);
+  dir.position.set(6, 12, 8);
+  scene.add(dir);
+
+  gridHelper = new THREE.GridHelper(20, 20, 0xb8c0d0, 0xd9dfe8);
+  scene.add(gridHelper);
+  axesHelper = new THREE.AxesHelper(5);
+  scene.add(axesHelper);
+
+  group = new THREE.Group();
+  scene.add(group);
+
+  orbit = new OrbitControls(camera, renderer.domElement);
+  orbit.enableDamping = true;
+  orbit.dampingFactor = 0.08;
+
+  transform = new TransformControls(camera, renderer.domElement);
+  transform.setMode('translate');
+  transform.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
+  transform.addEventListener('objectChange', onGizmoChange);
+  scene.add(transform);
+
+  raycaster = new THREE.Raycaster();
+
+  resize();
+  window.addEventListener('resize', resize);
+  bindUI();
+
+  // 载入文件并构建场景
+  loadFile();
+
+  animate();
 }
 
-// 取点实时坐标：requireId 校验元素已定义，再从 board.points 取坐标（THREE.Vector3 或 {x,y,z} 皆可）
-function requirePoint(board, id, requireId) {
-  requireId(id);
-  const p = board.points.get(id);
-  if (!p) throw new Error(`测量目标「${id}」无坐标（仅点可被测量）`);
-  return p;
-}
-
-/**
- * verify3d：声明式自检断言（3D 命令分支，与 2D verify 语义平行、互不复用代码）。
- *
- * 背景：此前 3D 只有 measure3d 裸回读，画得对不对全靠 LLM 肉眼比对数值，容易放过偏差。
- * 现由 AI 在规划阶段把关键量的期望值写进命令，执行器复用 runMeasure3D() 的同一套测量算法
- * 得到实测值，再由机器按容差判定 pass/delta —— 两套判定不会漂移。纯读数，不创建画板元素。
- *
- * 期望值三种写法（互斥，与 2D 一致）：
- *   · expect + tol         ：绝对容差，pass ⇔ |实测-预期| ≤ tol + rtol·|预期|
- *   · expect + rtol        ：相对容差（贴合 math.isclose，适合大数量级，如空间对角线）
- *   · expectRange:[lo,hi]  ：区间容差，pass ⇔ lo ≤ 实测 ≤ hi（端点自动归一化）
- * 缺省容差：kind='angle' 为 0.5°，其余 0.05；三者都缺 → pass:false（mode:'none'）。
- */
-function runVerify3D(board, cmd, requireId, round) {
-  const m = runMeasure3D(board, cmd, requireId, round);
-  const kind = m.kind;
-  // 测量本身失败（引用不存在的点 / 未知 kind / 零长度向量）→ 断言直接判不通过，附带原因
-  if (!m.ok) {
-    return { ok: false, op: 'verify3d', kind, pass: false, mode: 'none', error: m.error };
+// ============================================================
+// 文件载入 / 保存
+// ============================================================
+function loadFile() {
+  const params = new URLSearchParams(location.search);
+  fileId = params.get('id');
+  if (!fileId) {
+    const f = Store.create('立体画板 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }), '3d');
+    fileId = f.id;
+    window.history.replaceState(null, '', 'board3d.html?id=' + fileId);
   }
-  const value = m.value;
-  const range = Array.isArray(cmd.expectRange) ? cmd.expectRange.map(Number) : null;
-  const hasRange = !!range && range.length === 2 && Number.isFinite(range[0]) && Number.isFinite(range[1]);
-  const expect = Number(cmd.expect != null ? cmd.expect : cmd.expected);
-  const expectFinite = Number.isFinite(expect);
-  const tolRaw = Number(cmd.tol != null ? cmd.tol : cmd.tolerance);
-  const tol = Number.isFinite(tolRaw) && tolRaw >= 0 ? tolRaw : (kind === 'angle' ? 0.5 : 0.05);
-  const rtolRaw = Number(cmd.rtol != null ? cmd.rtol : cmd.relativeTol);
-  const rtol = Number.isFinite(rtolRaw) && rtolRaw >= 0 ? rtolRaw : 0;
+  const f = Store.get(fileId);
+  if (!f) { showHint('文件不存在或已删除。'); return; }
+  fileName = f.name || '未命名立体画板';
+  document.getElementById('doc-name').value = fileName;
 
-  let pass, delta, mode;
-  if (hasRange) {
-    mode = 'range';
-    const lo = Math.min(range[0], range[1]);
-    const hi = Math.max(range[0], range[1]);
-    pass = Number.isFinite(value) && value >= lo && value <= hi;
-    delta = NaN; // 区间模式无单一偏差
-  } else if (expectFinite) {
-    mode = rtol > 0 ? 'rtol' : 'abs';
-    delta = Number.isFinite(value) ? value - expect : NaN;
-    const bound = tol + rtol * Math.abs(expect); // 绝对 + 相对组合容差
-    pass = Number.isFinite(delta) && Math.abs(delta) <= bound;
+  let content = f.content;
+  if (content && content.v === 1 && Array.isArray(content.objects)) {
+    doc = {
+      v: 1,
+      bg: content.bg || 'white',
+      axes: content.axes !== false,
+      grid: content.grid !== false,
+      objects: content.objects.map(cloneObj),
+    };
   } else {
-    mode = 'none';
-    pass = false;
-    delta = NaN;
+    // 全新文件：应用上次使用的视图设置（来自 localStorage）
+    const saved = loadSettings();
+    doc = { v: 1, bg: saved.bg, axes: saved.axes, grid: saved.grid, objects: [] };
   }
-  const label = String(cmd.label || (kind === 'angle' ? '夹角自检' : '距离自检'));
+  applyView();
+  doc.objects.forEach(addMeshForObj);
+  setSaveStatus('就绪');
+}
+
+function cloneObj(o) {
   return {
-    ok: true, op: 'verify3d', kind, value, pass, delta, mode,
-    tol, rtol,
-    expect: expectFinite ? expect : NaN,
-    expectRange: hasRange ? [range[0], range[1]] : undefined,
-    label,
-    id: cmd.id || null,
+    id: o.id || genId(),
+    type: o.type,
+    color: o.color || '#4f6bed',
+    opacity: o.opacity == null ? 1 : o.opacity,
+    pos: (o.pos || [0, 0, 0]).slice(),
+    rot: (o.rot || [0, 0, 0]).slice(),
+    scale: (o.scale || [1, 1, 1]).slice(),
+    p: Object.assign({}, o.p || {}),
   };
 }
 
-export function createBoard3DExecutor(board) {
-  const plainPoints = new Set(); // 可拖拽自由点（坐标随 moves 持久化）
-  const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
-  const round = (v) => Math.round(v * 1000) / 1000;
+function genId() { return 'o_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
-  function requireId(id) {
-    if (!board.entries.has(id)) throw new Error(`引用了不存在的元素「${id}」`);
-    return id;
-  }
-
-  // 收集 id 的全部（传递）依赖者：被引用的点/元素删除时，依赖它的图元要一起删，
-  // 否则拖拽时会引用已删除的 point 而崩溃。
-  function collectDependents(id, acc = new Set()) {
-    for (const [oid, e] of board.entries) {
-      if (e.deps && e.deps.includes(id) && !acc.has(oid)) {
-        acc.add(oid);
-        collectDependents(oid, acc);
-      }
-    }
-    return acc;
-  }
-
-  function build(cmd) {
-    switch (cmd.op) {
-      case 'point3d':
-        board.createPoint3D(cmd.id, num(cmd.x, 0), num(cmd.y, 0), num(cmd.z, 0), { fixed: cmd.fixed, label: cmd.label, color: cmd.color });
-        if (!cmd.fixed) plainPoints.add(cmd.id);
-        return;
-      case 'move3d':
-        // 增量修正：就地改一个已存在自由点的坐标，不新建图元，依赖实时联动。
-        requireId(cmd.id);
-        board.movePoint3D(cmd.id, num(cmd.x, 0), num(cmd.y, 0), num(cmd.z, 0));
-        return;
-      case 'segment3d':
-        requireId(cmd.from); requireId(cmd.to);
-        board.createSegment3D(cmd.id, cmd.from, cmd.to, { color: cmd.color });
-        return;
-      case 'line3d': {
-        const th = Array.isArray(cmd.through) ? cmd.through : [];
-        requireId(th[0]); requireId(th[1]);
-        board.createLine3D(cmd.id, th[0], th[1], { color: cmd.color });
-        return;
-      }
-      case 'polygon3d': {
-        const ps = Array.isArray(cmd.points) ? cmd.points : [];
-        ps.forEach(requireId);
-        board.createPolygon3D(cmd.id, ps, { color: cmd.color });
-        return;
-      }
-      case 'sphere3d':
-        requireId(cmd.center);
-        board.createSphere3D(cmd.id, cmd.center, num(cmd.radius, 1), { color: cmd.color });
-        return;
-      case 'circle3d':
-        requireId(cmd.center);
-        board.createCircle3D(cmd.id, cmd.center, num(cmd.radius, 1), cmd.normal, { color: cmd.color });
-        return;
-      case 'cylinder3d':
-        requireId(cmd.base); requireId(cmd.top);
-        board.createCylinder3D(cmd.id, cmd.base, cmd.top, num(cmd.radius, 1), { color: cmd.color });
-        return;
-      case 'cone3d':
-        requireId(cmd.apex); requireId(cmd.base);
-        board.createCone3D(cmd.id, cmd.apex, cmd.base, num(cmd.radius, 1), { color: cmd.color });
-        return;
-      case 'text3d':
-        board.createText3D(cmd.id, num(cmd.x, 0), num(cmd.y, 0), num(cmd.z, 0), String(cmd.text || ''), { color: cmd.color });
-        return;
-      case 'label3d':
-        board.createLabel3D(cmd.target, String(cmd.text || ''));
-        return;
-      case 'style3d':
-        board.setStyle(cmd.target, cmd);
-        return;
-      default:
-        throw new Error('未知命令 op: ' + cmd.op);
-    }
-  }
-
-  function execute(commands) {
-    const out = [];
-    for (const cmd of (Array.isArray(commands) ? commands : [])) {
-      if (!cmd || typeof cmd !== 'object') continue;
-      try {
-        if (cmd.op === 'clear') { board.clear(); plainPoints.clear(); out.push({ ok: true, op: 'clear' }); continue; }
-        if (cmd.op === 'measure3d') {
-          out.push(runMeasure3D(board, cmd, requireId, round));
-          continue;
-        }
-        // verify3d 与 measure3d 同为纯读数：不建图元、不需要 id，故在「缺少 id」校验之前特判
-        if (cmd.op === 'verify3d') {
-          out.push(runVerify3D(board, cmd, requireId, round));
-          continue;
-        }
-        if (cmd.op === 'remove3d') {
-          if (!cmd.id) throw new Error('缺少 id');
-          requireId(cmd.id);
-          const toRemove = collectDependents(cmd.id);
-          toRemove.add(cmd.id);
-          for (const rid of toRemove) {
-            board.remove(rid);
-            plainPoints.delete(rid);
-          }
-          out.push({ ok: true, op: 'remove3d', id: cmd.id, removed: [...toRemove] });
-          continue;
-        }
-        if (!cmd.id && cmd.op !== 'label3d' && cmd.op !== 'style3d') throw new Error('缺少 id');
-        build(cmd);
-        out.push({ ok: true, op: cmd.op, id: cmd.id || null });
-      } catch (e) {
-        out.push({ ok: false, op: cmd.op, id: cmd.id || null, error: String((e && e.message) || e) });
-      }
-    }
-    return out;
-  }
-
-  function describe() {
-    const items = [];
-    for (const [id, e] of board.entries) items.push(id + '(' + e.type + ')');
-    return items.length ? items.join(', ') : '（空画板）';
-  }
-
-  function moves() {
-    const out = [];
-    for (const id of plainPoints) {
-      const v = board.points.get(id);
-      if (v) out.push({ id, x: round(v.x), y: round(v.y), z: round(v.z) });
-    }
-    return out;
-  }
-
-  function applyMoves(list) {
-    for (const m of (Array.isArray(list) ? list : [])) {
-      if (!plainPoints.has(m.id)) continue;
-      const v = board.points.get(m.id);
-      if (!v) continue;
-      v.set(num(m.x, 0), num(m.y, 0), num(m.z, 0));
-    }
-    // 点坐标改完，统一刷新依赖它的全部图元
-    for (const id of plainPoints) board.notifyPointMoved(id);
-  }
-
-  return {
-    execute, describe, moves, applyMoves,
-    clearAll: () => { board.clear(); plainPoints.clear(); },
-    remove: (id) => board.remove(id),
-    registry: board.entries,
-    has: (id) => board.entries.has(id),
-  };
+let saveTimer = null;
+function scheduleSave() {
+  setSaveStatus('保存中…', 'busy');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(doSave, 400);
 }
+function doSave() {
+  syncAllFromMeshes();
+  // 视图设置同时存到 localStorage 作为新文件默认
+  const view = { bg: doc.bg, axes: doc.axes, grid: doc.grid };
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(view)); } catch (_) {}
+  Store.saveContent(fileId, JSON.parse(JSON.stringify(doc)));
+  if (window.Auth && Auth.user) {
+    Auth.syncBoard({ id: fileId, name: fileName, mode: '3d', content: doc })
+      .then(() => setSaveStatus('已保存到云端 ' + time()))
+      .catch(() => setSaveStatus('已本地保存 ' + time()));
+  } else {
+    setSaveStatus('已本地保存 ' + time());
+  }
+}
+function syncAllFromMeshes() {
+  meshes.forEach((mesh, id) => { const o = mesh.userData.obj; if (o) writeObjFromMesh(o, mesh); });
+}
+function time() { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
+
+// ============================================================
+// 几何体创建 / 重建
+// ============================================================
+function addShape(type) {
+  const def = SHAPE_DEFS[type];
+  if (!def) return;
+  const p = {};
+  for (const k in def.params) p[k] = def.params[k].d;
+  const obj = {
+    id: genId(), type, color: '#4f6bed', opacity: 1,
+    pos: [0, def.geo === SHAPE_DEFS.point.geo ? 0 : 0, 0],
+    rot: [0, 0, 0], scale: [1, 1, 1], p,
+  };
+  doc.objects.push(obj);
+  const mesh = addMeshForObj(obj);
+  hideHint();
+  selectObject(mesh);
+  scheduleSave();
+}
+
+function addMeshForObj(obj) {
+  const mesh = new THREE.Mesh(buildGeometry(obj), makeMaterial(obj));
+  mesh.userData.obj = obj;
+  applyTransform(mesh, obj);
+  mesh.castShadow = true;
+  group.add(mesh);
+  meshes.set(obj.id, mesh);
+  return mesh;
+}
+
+function buildGeometry(obj) {
+  const def = SHAPE_DEFS[obj.type];
+  const geo = def.geo(obj.p);
+  if (obj.type === 'plane') geo.rotateX(-Math.PI / 2); // 让平面默认水平
+  return geo;
+}
+
+function makeMaterial(obj) {
+  const m = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(obj.color),
+    roughness: 0.55, metalness: 0.05,
+    transparent: obj.opacity < 1,
+    opacity: obj.opacity,
+    side: obj.type === 'plane' ? THREE.DoubleSide : THREE.FrontSide,
+  });
+  return m;
+}
+
+function applyTransform(mesh, obj) {
+  mesh.position.set(obj.pos[0], obj.pos[1], obj.pos[2]);
+  mesh.rotation.set(obj.rot[0] * DEG, obj.rot[1] * DEG, obj.rot[2] * DEG);
+  mesh.scale.set(obj.scale[0], obj.scale[1], obj.scale[2]);
+}
+
+function writeObjFromMesh(obj, mesh) {
+  obj.pos = [mesh.position.x, mesh.position.y, mesh.position.z];
+  obj.rot = [mesh.rotation.x / DEG, mesh.rotation.y / DEG, mesh.rotation.z / DEG];
+  obj.scale = [mesh.scale.x, mesh.scale.y, mesh.scale.z];
+}
+
+// 几何参数变化：重建 geometry（保留当前变换）
+function rebuildGeometry(obj) {
+  const mesh = meshes.get(obj.id);
+  if (!mesh) return;
+  const old = mesh.geometry;
+  mesh.geometry = buildGeometry(obj);
+  old.dispose();
+}
+
+// ============================================================
+// 选择 / 属性面板
+// ============================================================
+function selectObject(mesh) {
+  if (!mesh) return deselect();
+  if (selectedMesh) setHighlight(selectedMesh, false);
+  selected = mesh.userData.obj;
+  selectedMesh = mesh;
+  setHighlight(mesh, true);
+  transform.attach(mesh);
+  renderInspector();
+}
+function deselect() {
+  selected = null; selectedMesh = null;
+  transform.detach();
+  document.getElementById('inspectorEmpty').classList.remove('hidden');
+  document.getElementById('inspectorBody').classList.add('hidden');
+}
+function setHighlight(mesh, on) {
+  const mat = mesh.material;
+  if (!mat || !mat.emissive) return;
+  mat.emissive.setHex(on ? 0x2a2fff2a : 0x000000);
+}
+
+function renderInspector() {
+  if (!selected) return;
+  document.getElementById('inspectorEmpty').classList.add('hidden');
+  document.getElementById('inspectorBody').classList.remove('hidden');
+  document.getElementById('insp-type').textContent = SHAPE_DEFS[selected.type].name;
+  const set = (k, i, v) => { const el = document.querySelector(`#inspectorBody [data-k="${k}"][data-i="${i}"]`); if (el) el.value = v; };
+  set('pos', 0, round(selected.pos[0])); set('pos', 1, round(selected.pos[1])); set('pos', 2, round(selected.pos[2]));
+  set('rot', 0, round(selected.rot[0])); set('rot', 1, round(selected.rot[1])); set('rot', 2, round(selected.rot[2]));
+  set('scale', 0, round(selected.scale[0])); set('scale', 1, round(selected.scale[1])); set('scale', 2, round(selected.scale[2]));
+  const colEl = document.querySelector('#inspectorBody [data-k="color"]'); if (colEl) colEl.value = selected.color;
+  const opEl = document.querySelector('#inspectorBody [data-k="opacity"]'); if (opEl) opEl.value = selected.opacity;
+  // 类型专属参数
+  const extra = document.getElementById('inspExtra');
+  extra.innerHTML = '';
+  const params = SHAPE_DEFS[selected.type].params;
+  for (const key in params) {
+    const meta = params[key];
+    const row = document.createElement('div');
+    row.className = 'b3d-field';
+    const lab = document.createElement('label'); lab.textContent = meta.l || key;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.step = '0.1'; inp.value = round(selected.p[key]);
+    inp.addEventListener('input', () => {
+      const v = parseFloat(inp.value); if (!Number.isFinite(v)) return;
+      selected.p[key] = v; rebuildGeometry(selected); scheduleSave();
+    });
+    row.append(lab, inp); extra.appendChild(row);
+  }
+}
+function round(n) { return Math.round((n || 0) * 1000) / 1000; }
+
+function onGizmoChange() {
+  if (!selectedMesh) return;
+  writeObjFromMesh(selected, selectedMesh);
+  renderInspector();
+  scheduleSave();
+}
+
+// ============================================================
+// 视图设置
+// ============================================================
+function applyView() {
+  const c = BG_COLORS[doc.bg] || BG_COLORS.white;
+  scene.background = new THREE.Color(c);
+  document.body.style.background = BG_CSS[doc.bg] || BG_CSS.white;
+  if (gridHelper) gridHelper.visible = doc.grid;
+  if (axesHelper) axesHelper.visible = doc.axes;
+  // 同步 UI
+  const ax = document.getElementById('set-axis'); if (ax) ax.checked = doc.axes;
+  const gr = document.getElementById('set-grid'); if (gr) gr.checked = doc.grid;
+  document.querySelectorAll('#set-bg .bg-swatch').forEach((b) => b.classList.toggle('active', b.dataset.bg === doc.bg));
+}
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch (_) { return {}; }
+}
+function setView(key, val) {
+  doc[key] = val; applyView(); scheduleSave();
+}
+
+// ============================================================
+// UI 绑定
+// ============================================================
+function bindUI() {
+  // 名称
+  const nameInput = document.getElementById('doc-name');
+  nameInput.addEventListener('change', () => {
+    fileName = nameInput.value.trim() || '未命名立体画板';
+    if (fileId) Store.rename(fileId, fileName);
+    scheduleSave();
+  });
+
+  // 几何体面板
+  document.getElementById('palette').querySelectorAll('.b3d-shape').forEach((btn) => {
+    btn.addEventListener('click', () => addShape(btn.dataset.shape));
+  });
+
+  // 设置气泡
+  const setBtn = document.getElementById('btn-settings');
+  const setPop = document.getElementById('settings-pop');
+  setBtn.addEventListener('click', (e) => { e.stopPropagation(); setPop.classList.toggle('hidden'); });
+  document.addEventListener('click', (e) => { if (!setPop.contains(e.target) && e.target !== setBtn) setPop.classList.add('hidden'); });
+  document.getElementById('set-axis').addEventListener('change', (e) => setView('axes', e.target.checked));
+  document.getElementById('set-grid').addEventListener('change', (e) => setView('grid', e.target.checked));
+  document.querySelectorAll('#set-bg .bg-swatch').forEach((b) => b.addEventListener('click', () => setView('bg', b.dataset.bg)));
+
+  // 视角 / 导出
+  document.getElementById('btn-reset-view').addEventListener('click', resetView);
+  document.getElementById('btn-export').addEventListener('click', () => { syncAllFromMeshes(); Store.saveContent(fileId, JSON.parse(JSON.stringify(doc))); Store.exportFile(fileId); });
+
+  // 属性面板输入
+  document.getElementById('inspectorBody').addEventListener('input', onInspectorInput);
+  document.getElementById('insp-delete').addEventListener('click', deleteSelected);
+
+  // 变换模式
+  document.querySelectorAll('#gizmoModes button').forEach((b) => b.addEventListener('click', () => {
+    transform.setMode(b.dataset.mode);
+    document.querySelectorAll('#gizmoModes button').forEach((x) => x.classList.toggle('active', x === b));
+  }));
+
+  // 拾取
+  let down = null, gizmoActive = false;
+  canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; gizmoActive = !!transform.axis; });
+  canvas.addEventListener('pointerup', (e) => {
+    if (!down) return;
+    const dist = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+    down = null;
+    if (gizmoActive || dist > 5 || transform.dragging) return;
+    pick(e);
+  });
+
+  // 键盘
+  document.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selected) { e.preventDefault(); deleteSelected(); }
+    if (e.key === 'Escape') deselect();
+  });
+}
+
+function onInspectorInput(e) {
+  const el = e.target;
+  const k = el.dataset.k; if (!k || !selected) return;
+  if (k === 'color') { selected.color = el.value; const m = meshes.get(selected.id); if (m) m.material.color.set(el.value); scheduleSave(); return; }
+  if (k === 'opacity') { selected.opacity = parseFloat(el.value); const m = meshes.get(selected.id); if (m) { m.material.opacity = selected.opacity; m.material.transparent = selected.opacity < 1; } scheduleSave(); return; }
+  const i = parseInt(el.dataset.i, 10);
+  const v = parseFloat(el.value); if (!Number.isFinite(v)) return;
+  if (k === 'pos') selected.pos[i] = v;
+  else if (k === 'rot') selected.rot[i] = v;
+  else if (k === 'scale') selected.scale[i] = Math.max(0.05, v);
+  const m = meshes.get(selected.id); if (m) applyTransform(m, selected);
+  scheduleSave();
+}
+
+function deleteSelected() {
+  if (!selected || !selectedMesh) return;
+  const id = selected.id;
+  transform.detach();
+  group.remove(selectedMesh);
+  selectedMesh.geometry.dispose();
+  selectedMesh.material.dispose();
+  meshes.delete(id);
+  doc.objects = doc.objects.filter((o) => o.id !== id);
+  deselect();
+  scheduleSave();
+}
+
+function pick(e) {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(group.children, false);
+  if (hits.length) selectObject(hits[0].object);
+  else deselect();
+}
+
+function resetView() {
+  camera.position.set(6, 5, 8);
+  orbit.target.set(0, 0, 0);
+  orbit.update();
+}
+
+// ============================================================
+// 渲染循环 / 尺寸
+// ============================================================
+function resize() {
+  if (!stage || !renderer) return;
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+function animate() {
+  requestAnimationFrame(animate);
+  if (orbit) orbit.update();
+  if (renderer) renderer.render(scene, camera);
+}
+
+// ============================================================
+// 工具
+// ============================================================
+function lineGeo(p) {
+  const a = new THREE.Vector3(p.x1, p.y1, p.z1);
+  const b = new THREE.Vector3(p.x2, p.y2, p.z2);
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const len = dir.length() || 0.001;
+  const geo = new THREE.CylinderGeometry(0.05, 0.05, len, 12);
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  geo.applyQuaternion(q);
+  geo.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+  return geo;
+}
+function setSaveStatus(text, cls) {
+  const el = document.getElementById('save-status');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'save-status' + (cls ? ' ' + cls : '');
+}
+let hintHidden = false;
+function hideHint() { if (hintHidden) return; const h = document.getElementById('b3dHint'); if (h) { h.style.display = 'none'; hintHidden = true; } }
+function showHint(msg) { const h = document.getElementById('b3dHint'); if (h) { h.textContent = msg; h.style.display = 'block'; } }
+
+// 启动
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();

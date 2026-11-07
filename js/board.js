@@ -227,25 +227,6 @@ function animStop() {
   animPlayBtn.textContent = '▶ 播放';
   animBtn.textContent = '▶ 动画';
 }
-/** 按命令触发动画（AI 的 animate 命令用）：播放指定滑动条，ids 可为数组、"__all__" 或单个 id。
- *  复用既有动画引擎（anim/animTick），不联网、不改存档，与顶部「▶ 动画」按钮行为一致。 */
-function animPlayTargets(ids, opts) {
-  if (blockIfReplaying()) return;
-  ids = ids === '__all__' ? sliderIds() : (Array.isArray(ids) ? ids : [ids]);
-  opts = opts || {};
-  if (anim) animStop();
-  const ranges = {}, vals = {};
-  for (const id of ids) {
-    const r = sliderRange(id);
-    if (r) { ranges[id] = r; vals[id] = r.cur; }
-  }
-  if (!Object.keys(ranges).length) { toast('animate 无可播放的滑动条'); return; }
-  animPeriod = ANIM_PERIOD[opts.speed] || ANIM_PERIOD.normal;
-  anim = { ids: Object.keys(ranges), ranges, vals, dir: 1, pingpong: !!opts.pingpong, raf: 0, last: 0 };
-  animPlayBtn.textContent = '⏸ 暂停';
-  animBtn.textContent = '⏸ 动画中';
-  anim.raf = requestAnimationFrame(animTick);
-}
 function isSliderId(id) {
   const el = id ? executor.registry.get(id) : null;
   return !!(el && el.elType === 'slider');
@@ -320,8 +301,13 @@ if (!fileId) {
     setTimeout(() => (location.href = 'index.html'), 1200);
     throw new Error('file not found');
   }
+  // 3D 文件统一在自研立体画板打开（路线B，不依赖大角 SDK）
+  if (f.mode === '3d') {
+    setTimeout(() => (location.href = 'board3d.html?id=' + encodeURIComponent(fileId)), 60);
+    throw new Error('route to self-built 3d board');
+  }
   // 兼容：路线A的工程文件（slides 结构）在自建画板里打开会空白，跳回 SDK 编辑器
-  if (f.content && !Array.isArray(f.content.commands) && (f.content.slides || f.content.objects)) {
+  if (f.content && f.content.slides) {
     toast('这是路线A的工程文件，正在跳转到 SDK 编辑器打开…');
     setTimeout(() => (location.href = 'editor.html?id=' + encodeURIComponent(fileId)), 1200);
     throw new Error('legacy route-a file');
@@ -335,9 +321,8 @@ nameInput.value = doc.name;
 const REF_FIELDS = {
   segment: ['from', 'to'], ray: ['from', 'to'], line: ['through'],
   circle: ['center', 'through', 'radius'], polygon: ['points'], midpoint: ['of'],
-  intersect: ['of'], glider: ['on'],   perpendicular: ['of', 'through'],
+  intersect: ['of'], glider: ['on'], perpendicular: ['of', 'through'],
   parallel: ['of', 'through'], angle: ['points'], arc: ['center', 'from', 'to'],
-  transform: ['of'], // 几何变换副本依赖源元素，删源则连副本一起删
   // 点坐标可以是滑动条 id（动态联动），删滑动条时要连带删掉依赖它的点
   point: ['x', 'y'],
 };
@@ -417,14 +402,9 @@ function runCommands(cmds) {
   const r = executor.execute(list);
   list.forEach((cmd, i) => {
     if (!(r[i] && r[i].ok)) return;
-    if (cmd.op === 'measure' || cmd.op === 'verify' || cmd.op === 'animate') return; // 临时读数/断言/动作，不进文档与画板历史
     if (cmd.op === 'clear') doc.commands = [];
     doc.commands.push(cmd);
   });
-  // 触发动画命令（不进文档，纯前端播放）
-  for (const x of r) {
-    if (x && x.ok && x.op === 'animate') animPlayTargets(x.ids, { pingpong: x.pingpong, speed: x.speed });
-  }
   const bad = r.filter((x) => !x.ok);
   if (bad.length) toast('命令执行失败：' + bad.map((b) => b.error).join('；'));
   scheduleSave();
@@ -2429,78 +2409,6 @@ function appendLog(role, text) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// 把一次测量/断言结果描述成可读串（read-back 闭环与 AI 面板自检摘要共用）
-function describeMeasure(m) {
-  const v = m.value;
-  // verify 断言：执行器已按 expect/tol 自动判定，把「预期/实测/容差/偏差」完整回读，
-  // 让 LLM 不必再肉眼猜数值是否符合意图（对标"与预期不符时自动修正"）。
-  if (m.op === 'verify') {
-    const unit = m.kind === 'angle' ? '°' : '';
-    const digits = m.kind === 'evaluate' ? 3 : (m.kind === 'angle' ? 1 : 2);
-    const f = (x) => Number.isFinite(x) ? x.toFixed(digits) : '?';
-    const tag = m.pass ? '✔ 通过' : '✘ 未通过';
-    // 区间模式（expectRange）：展示"应在 [lo,hi]"，越界时提示
-    if (m.mode === 'range' && Array.isArray(m.expectRange)) {
-      return `${tag}｜${m.label || '自检'}：实测 ${f(v)}${unit}，应在 [${f(m.expectRange[0])}, ${f(m.expectRange[1])}]${unit}`
-        + (m.pass ? '' : '，越界');
-    }
-    // 相对容差模式（rtol）：容差写成 "tol+rtol·|E|"
-    const tolTxt = m.rtol ? `，容差 ${f(m.tol)}+${m.rtol}·|E|${unit}` : (m.tol != null ? `，容差 ${f(m.tol)}${unit}` : '');
-    return `${tag}｜${m.label || '自检'}：实测 ${f(v)}${unit}，预期 ${f(m.expect)}${unit}${tolTxt}`
-      + (m.pass ? '' : `，偏差 ${f(m.delta)}${unit}`);
-  }
-  if (!Number.isFinite(v)) return '?';
-  if (m.kind === 'angle') return `∠${Array.isArray(m.of) ? m.of.join('') : ''} = ${v.toFixed(1)}°`;
-  if (m.kind === 'evaluate') return `${m.label || m.expr || 'expr'} @ x=${m.x} = ${v.toFixed(3)}`;
-  return `|${Array.isArray(m.of) ? m.of.join('') : ''}| = ${v.toFixed(2)}`;
-}
-
-// 汇总一轮自检：text 送回 LLM / 面板；failed 是机器判定未通过的断言；
-// allPassed 表示「本轮全部是 verify 断言且全部通过」——此时机器已能确定符合意图，可跳过二次 LLM 调用。
-// 只要含裸 measure（无期望值），就必须交给 LLM 核对，不能省。
-function buildReadback(measures) {
-  if (!measures || !measures.length) return null;
-  const failed = measures.filter((m) => m.op === 'verify' && !m.pass);
-  return {
-    text: measures.map(describeMeasure).join('\n'),
-    failed,
-    allPassed: failed.length === 0 && measures.every((m) => m.op === 'verify' && m.pass),
-  };
-}
-
-// 批量执行 AI 命令（同一撤销单元内）。paced=true 时逐条停顿，肉眼可见作图过程；
-// 收集 measure 的回读数值，供 read-back 闭环二次核对。返回 {okCount, errs, measures}。
-async function applyAiCommands(cmds, paced) {
-  let okCount = 0;
-  const errs = [];
-  const measures = [];
-  for (const cmd of (Array.isArray(cmds) ? cmds : [])) {
-    const r = executor.execute([cmd]);
-    const res = r && r[0];
-    if (res && res.ok) {
-      if (cmd.op === 'measure' || cmd.op === 'verify') {
-        const m = { op: cmd.op, kind: cmd.kind, of: cmd.of, expr: cmd.expr, x: cmd.x, label: cmd.label, value: res.value };
-        if (cmd.op === 'verify') {
-          m.pass = res.pass; m.expect = res.expect; m.tol = res.tol; m.delta = res.delta;
-          m.label = res.label || cmd.label;
-          m.mode = res.mode; m.expectRange = res.expectRange; m.rtol = res.rtol;
-        }
-        measures.push(m);
-      } else if (cmd.op === 'animate') {
-        animPlayTargets(res.ids, { pingpong: res.pingpong, speed: res.speed });
-      } else {
-        if (cmd.op === 'clear') doc.commands = [];
-        doc.commands.push(cmd);
-        okCount++;
-      }
-    } else if (res) {
-      errs.push(`${cmd.op || '?'}(${res.error})`);
-    }
-    if (paced) await sleep(90);
-  }
-  return { okCount, errs, measures };
-}
-
 async function aiSend() {
   if (blockIfReplaying()) return;
   const text = aiInput.value.trim();
@@ -2531,79 +2439,22 @@ async function aiSend() {
     if (Array.isArray(data.commands) && data.commands.length) {
       // 整批 AI 作图 = 一个撤销单元；逐条执行，肉眼可见作图过程
       pushUndo();
-      executor.clearMeasures(); // 每轮作图前清掉上一轮的临时读数/断言，避免堆积
-      const round1 = await applyAiCommands(data.commands, true);
-      if (round1.errs.length) appendLog('ai', `已执行 ${round1.okCount} 条命令，${round1.errs.length} 条失败：` + round1.errs.join('；'));
+      let okCount = 0;
+      const errs = [];
+      for (const cmd of data.commands) {
+        const r = executor.execute([cmd]);
+        if (r[0] && r[0].ok) {
+          if (cmd.op === 'clear') doc.commands = [];
+          doc.commands.push(cmd);
+          okCount++;
+        } else if (r[0]) {
+          errs.push(`${cmd.op || '?'}(${r[0].error})`);
+        }
+        await sleep(90);
+      }
+      if (errs.length) appendLog('ai', `已执行 ${okCount} 条命令，${errs.length} 条失败：` + errs.join('；'));
       saveNow();
       refreshObjects();
-
-      // ---- read-back 闭环（对标大角几何 MCP 式「读画板状态后改图」）----
-      // verify 断言已由执行器按 expect/tol/expectRange/rtol 自动判定：全部通过即机器确认符合意图，跳过二次 LLM 调用。
-      // 有失败项（或只有裸 measure）时进入「定向修正 → 复跑首轮原始 verify → 机器判定收敛」的多轮循环：
-      //   1) 修正提示带上【已通过项，请勿重画】diff 清单，明确禁止 clear 重画已通过的部分；
-      //   2) 修正轮过滤 clear / measure / verify（防误清画板、防临时读数重复堆积），优先用 move 就地改坐标；
-      //   3) 修正后复跑首轮原始的 verify 命令（transient，重跑只读当前画板、不落文档），用机器判定是否收敛；
-      //   4) 失败项没有减少就提前收手，最多 MAX_FIX_ROUNDS 轮，避免无限请求 LLM。
-      const MAX_FIX_ROUNDS = 2;
-      const origVerifies = (Array.isArray(data.commands) ? data.commands : []).filter((c) => c && c.op === 'verify');
-      let rb = buildReadback(round1.measures);
-      if (rb) {
-        appendLog('ai', '自检结果：');
-        rb.text.split('\n').forEach((line) => appendLog('ai', line)); // 逐项一行，✔/✘ 清晰可读
-        if (rb.allPassed) {
-          appendLog('ai', `已自检 ${round1.measures.length} 项，全部符合预期`);
-        } else {
-          // 只有裸 measure（没有断言）时无法机器复检，用 Infinity 占位保证只修正一轮
-          let prevFailCount = rb.failed.length || Infinity;
-          for (let round = 1; round <= MAX_FIX_ROUNDS && rb && !rb.allPassed; round++) {
-            try {
-              const passedTxt = rb.text.split('\n').filter((l) => l.startsWith('✔')).join('\n');
-              const failHint = rb.failed.length
-                ? `\n【未通过断言，请重点修正】\n${rb.failed.map(describeMeasure).join('\n')}\n`
-                : '\n';
-              const diffHint = passedTxt
-                ? `\n【已通过项，请勿重画】下列断言已符合预期，修正时不要 clear、不要重复输出它们对应的作图命令：\n${passedTxt}\n`
-                : '';
-              const verifyMsg = `【自检回读·第 ${round}/${MAX_FIX_ROUNDS} 轮】你刚才的作图已实际在画板上执行，自检测量结果如下：\n${rb.text}\n${failHint}${diffHint}请核对几何关系是否符合用户意图（该垂直是否垂直、角/边长是否相等、顶点函数值是否正确、交点是否落在应有的边上）。\n只针对未通过项输出增量修正命令：优先用 move 就地改坐标/改滑动条值，或用 style/label 微调；禁止 clear 重画、禁止重复已画好的部分、禁止输出 measure/verify 与任何解释文字。若已符合意图，只输出 {"message":"已自检，符合意图","commands":[]}。`;
-              const vres = await fetch(CFG.boardAiEndpoint || '/api/ai/board', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: verifyMsg, model, context: executor.describe() }),
-              });
-              const vdata = await vres.json().catch(() => ({}));
-              if (!vres.ok || vdata.ok === false || !Array.isArray(vdata.commands)) break;
-              // 修正轮只收增量命令：clear 会清空画板、measure/verify 会重复堆读数，一律过滤
-              const fixCmds = vdata.commands.filter((c) => c && c.op && !['clear', 'measure', 'verify'].includes(c.op));
-              if (fixCmds.length !== vdata.commands.length) appendLog('ai', '（已忽略修正轮里的 clear / measure / verify 命令）');
-              if (!fixCmds.length) { appendLog('ai', '（自检修正：AI 判定无需修改）'); break; }
-              const fix = await applyAiCommands(fixCmds, false);
-              if (fix.errs.length) appendLog('ai', `自检修正有 ${fix.errs.length} 条失败：` + fix.errs.join('；'));
-              if (fix.okCount) appendLog('ai', `（第 ${round} 轮自动自检并修正 ${fix.okCount} 处）`);
-              saveNow();
-              refreshObjects();
-              // 没有断言可复跑（只有裸 measure）：修正一轮即止
-              if (!origVerifies.length) break;
-              // 复跑首轮原始 verify（transient，不进文档）：先清掉旧读数，再按当前画板重新判定
-              executor.clearMeasures();
-              const recheck = await applyAiCommands(origVerifies, false);
-              rb = buildReadback(recheck.measures);
-              if (!rb) break;
-              appendLog('ai', `第 ${round} 轮复检：`);
-              rb.text.split('\n').forEach((line) => appendLog('ai', line));
-              if (rb.allPassed) { appendLog('ai', '已收敛：全部断言符合预期'); break; }
-              const failCount = rb.failed.length || Infinity; // 无失败项但未 allPassed：视为无改善
-              if (failCount >= prevFailCount) {
-                appendLog('ai', '（复检未见改善，已停止自动修正；请参照上方 ✘ 读数手动调整）');
-                break;
-              }
-              prevFailCount = failCount;
-            } catch (ve) {
-              console.warn('自检闭环失败（不影响已出图）', ve);
-              break;
-            }
-          }
-        }
-      }
     }
     if (data.message) {
       appendLog('ai', data.message);
