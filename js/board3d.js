@@ -218,6 +218,9 @@ function makeMaterial(obj) {
     roughness: 0.55, metalness: 0.05,
     transparent: obj.opacity < 1,
     opacity: obj.opacity,
+    // 半透明体不写深度：避免两个重叠的透明几何体互相写深度，
+    // 导致局部被错误剔除/闪烁（z-fighting）。仅不透明体写深度以保持清晰遮挡。
+    depthWrite: obj.opacity >= 1,
     side: obj.type === 'plane' ? THREE.DoubleSide : THREE.FrontSide,
   });
   return m;
@@ -441,9 +444,32 @@ function resize() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
+
+// 透明体每帧渲染顺序：按「几何中心到相机距离」赋 renderOrder（远者更小→先画），
+// 使重叠的半透明几何体（球/柱/锥/面）按稳定一致的「由远及近」顺序混合，
+// 消除绘制顺序随相机抖动导致的 z-fighting / 穿透闪烁。
+export function transparentRenderOrder(camPos, worldPos) {
+  const dx = worldPos.x - camPos.x;
+  const dy = worldPos.y - camPos.y;
+  const dz = worldPos.z - camPos.z;
+  return -Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+const _camPos = new THREE.Vector3();
+const _objPos = new THREE.Vector3();
+function sortTransparentByDepth() {
+  if (!camera || !group) return;
+  camera.getWorldPosition(_camPos);
+  for (const mesh of group.children) {
+    const mat = mesh.material;
+    if (!mat || !mat.transparent || mat.opacity >= 1) { if (mat) mesh.renderOrder = 0; continue; }
+    mesh.getWorldPosition(_objPos);
+    mesh.renderOrder = transparentRenderOrder(_camPos, _objPos);
+  }
+}
 function animate() {
   requestAnimationFrame(animate);
   if (orbit) orbit.update();
+  sortTransparentByDepth();
   if (renderer) renderer.render(scene, camera);
 }
 
