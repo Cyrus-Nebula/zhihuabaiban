@@ -1,7 +1,8 @@
 /**
  * 立体画板（路线B · 自研，不依赖大角几何 SDK）
- * 基于 Three.js（CDN ESM），提供几何体建模、拾取选择、属性编辑、
- * 坐标轴/网格/背景切换、本地 + 云端（Supabase）持久化。
+ * 基于 Three.js（r160 ESM，已本地 vendor 至 libs/three/，运行时无需 CDN），
+ * 提供几何体建模、拾取选择、属性编辑、坐标轴/网格/背景切换、
+ * 本地 + 云端（Supabase）持久化。
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';

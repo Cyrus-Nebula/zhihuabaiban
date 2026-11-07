@@ -134,11 +134,12 @@
   <script src="js/models.js"></script>
   <script src="js/auth.js"></script>
 
+  <!-- Three.js 已本地 vendor 至 libs/three/（r160）：断网或 CDN 不可用时 3D 画板仍可加载 -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      "three": "./libs/three/three.module.min.js",
+      "three/addons/": "./libs/three/addons/"
     }
   }
   </script>
