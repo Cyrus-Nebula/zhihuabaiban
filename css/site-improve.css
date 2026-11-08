@@ -223,8 +223,11 @@ body.board-page .save-status.si-dirty::before { content: "● "; color: #c0392b;
 /* #12 窄屏把 动画 / 嵌入 / LaTeX 三个高级功能收进「更多 ▾」。
    宽屏不折叠：实测顶栏在 1440 下并不拥挤，无条件折叠反而多一次点击。 */
 .si-more-wrap { position: relative; display: inline-flex; }
+/* 第三轮改为 fixed：顶栏强制换行后「更多 ▾」可能落在某行最左侧，
+   原先 absolute + right:0 会向左展开到屏幕外（实测 left=-181）。
+   现由 site-improve.js 的 place() 按触发按钮位置夹进视口，与顶栏换行无关。 */
 .si-more-menu {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 120;
+  position: fixed; top: 0; left: 0; z-index: 120;
   min-width: 252px; padding: 6px;
   background: var(--panel, #fff);
   border: 1px solid var(--border, rgba(17, 24, 39, .1));
@@ -270,3 +273,120 @@ body.nf-page .nf-code { font-size: 56px; }
 .nf-tip { font-size: 12px; color: var(--muted, #6b7487); margin-top: 4px; }
 .nf-brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; color: var(--text, #111827); text-decoration: none; }
 .nf-brand img { width: 26px; height: 26px; }
+
+/* ---------------------------------------------------------------------------
+ * 第三轮：工具栏侧拉抽屉 / 手动「保存并同步」/ 顶栏首行对齐
+ * 用户手机实拍反馈：① 工具横滑难用，改侧拉；② 一直在自动同步，改手动；
+ *                   ③「返回工作台」与画板标题左边缘视觉不齐。
+ * 依旧只改本文件 + site-improve.js，核心 css/style.css 与 js/*.js 一字不动。
+ * -------------------------------------------------------------------------*/
+
+/* ---- ① 侧拉抽屉：触发按钮常驻工具条最左 ---- */
+.si-tools-trigger {
+  order: -2;
+  border: 1px solid var(--primary, #4c3dbe); border-radius: 8px;
+  background: var(--primary, #4c3dbe); color: #fff;
+  padding: 6px 12px; font: inherit; font-size: 12px; font-weight: 500;
+  cursor: pointer; white-space: nowrap;
+}
+.si-tools-trigger:hover { filter: brightness(1.07); }
+.si-drawer-mask {
+  position: fixed; inset: 0; z-index: 4500;
+  background: rgba(17, 24, 39, .38);
+  opacity: 0; pointer-events: none; transition: opacity .22s ease;
+}
+.si-drawer-mask.si-open { opacity: 1; pointer-events: auto; }
+.si-drawer-panel {
+  position: fixed; top: 0; bottom: 0; left: 0; z-index: 4501;
+  display: flex; flex-direction: column;
+  width: min(300px, 84vw);
+  background: var(--panel, #fff);
+  border-right: 1px solid var(--border, rgba(17, 24, 39, .12));
+  box-shadow: 12px 0 36px rgba(15, 23, 42, .16);
+  transform: translateX(-102%);
+  transition: transform .22s cubic-bezier(.2, .8, .2, 1);
+  overscroll-behavior: contain;
+}
+.si-drawer-mask.si-open .si-drawer-panel { transform: translateX(0); }
+.si-drawer-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 16px 12px; border-bottom: 1px solid var(--border, rgba(17, 24, 39, .1));
+}
+.si-drawer-title { font-size: 15px; font-weight: 600; }
+.si-drawer-x {
+  border: 0; background: transparent; border-radius: 8px; cursor: pointer;
+  font-size: 22px; line-height: 1; padding: 4px 8px; color: var(--muted, #6b7487);
+}
+.si-drawer-x:hover { background: var(--raised, #f1f2f7); }
+.si-drawer-body { flex: 1; overflow-y: auto; padding: 8px 14px 24px; }
+.si-drawer-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 分组标签在抽屉里变成整行小标题，工具按钮两列铺开 */
+.si-drawer-tools .tool-group-label {
+  width: 100%; margin: 10px 0 0; padding: 0; border-left: 0;
+  font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--muted, #6b7487);
+}
+.si-drawer-tools .tool {
+  flex: 1 1 calc(50% - 4px); min-width: 0; min-height: 44px;
+  text-align: center; border-radius: 8px; font-size: 13px;
+}
+.si-drawer-tools .tool.active {
+  background: var(--primary, #4c3dbe); color: #fff; border-color: var(--primary, #4c3dbe);
+}
+.si-drawer-tools .toolbar-sep { display: none; }
+.si-drawer-tip { margin: 18px 2px 0; font-size: 11.5px; line-height: 1.75; color: var(--muted, #6b7487); }
+/* 抽屉打开时锁住背景滚动，避免手机端穿透 */
+body.si-drawer-lock { overflow: hidden; }
+
+/* ---- ② 手动保存并同步：按钮态 + 离开确认层 ---- */
+body.board-page #btn-save.si-saving { opacity: .72; pointer-events: none; }
+.si-confirm {
+  width: min(380px, 92vw); padding: 22px;
+  background: var(--panel, #fff); border-radius: 14px;
+  border: 1px solid var(--border, rgba(17, 24, 39, .1));
+  box-shadow: 0 24px 60px rgba(15, 23, 42, .2);
+}
+.si-confirm h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+.si-confirm p { margin: 0 0 18px; font-size: 13px; line-height: 1.75; color: var(--secondary, #4b5565); }
+.si-confirm-acts { display: flex; flex-direction: column; gap: 8px; }
+.si-confirm-acts button {
+  width: 100%; min-height: 44px; padding: 11px 14px; border-radius: 9px;
+  font: inherit; font-size: 13.5px; cursor: pointer;
+}
+.si-cf-primary { border: 1px solid var(--primary, #4c3dbe); background: var(--primary, #4c3dbe); color: #fff; }
+.si-cf-plain { border: 1px solid var(--border, rgba(17, 24, 39, .16)); background: var(--panel, #fff); color: var(--text, #111827); }
+.si-cf-ghost { border: 0; background: transparent; color: var(--muted, #6b7487); }
+.si-more-menu > .si-menu-item {
+  border-top: 1px solid var(--border, rgba(17, 24, 39, .1));
+  margin-top: 4px; padding-top: 11px; border-radius: 0 0 7px 7px;
+}
+
+/* ---- ③ 窄屏顶栏：返回按钮 + 标题同一行左对齐 ----
+   原来顶栏 flex-wrap 后「返回工作台」独占第一行、画板标题在第二行，
+   按钮带 1px 边框 + 7px 12px 内边距，而标题是 1px 透明边框 + 4px 8px，
+   两者文字起点错开，视觉上像没对齐。这里统一两者盒子，并让它们同排；
+   其余按钮由 .flex-spacer 占满整行强制换到下一行（顶栏依旧 overflow:visible）。 */
+@media (max-width: 640px) {
+  body.board-page .topbar > a.btn.ghost {
+    order: 0; padding: 4px 8px; font-size: 13px;
+  }
+  body.board-page .topbar > .doc-name {
+    order: 1; flex: 1 1 auto; min-width: 0; padding: 4px 8px;
+    /* 触屏顶栏按钮有 44px 热区，输入框原本只有 ~26px，
+       两者同排时被 align-items:center 上下错开 9px。统一高度即真正对齐。 */
+    min-height: 44px; box-sizing: border-box;
+  }
+  body.board-page .topbar > .save-status { order: 2; }
+  body.board-page .topbar > .flex-spacer {
+    order: 3; flex: 0 0 100%; height: 0; min-width: 0;
+  }
+  body.board-page .topbar > *:not(a.btn.ghost):not(.doc-name):not(.save-status):not(.flex-spacer) { order: 4; }
+  body.board-page .topbar { row-gap: 6px; }
+  /* 抽屉打开时工具条只留触发按钮 + 撤销/重做 + 函数区，无需再横向找工具；
+     仍保留 nowrap/overflow-x:auto 作为兜底，函数区可横滑到达 */
+  body.board-page .toolbar { align-content: flex-start; }
+  /* 触发按钮已显示「工具：当前工具」，原始「工具」label 重复了，
+     窄屏隐藏（节点保留在 DOM，宽屏原样显示，零删除） */
+  body.board-page .toolbar > .toolbar-label { display: none; }
+  /* 函数区收窄一点，减少横滑距离 */
+  body.board-page .toolbar .si-fn-panel #fn-input { width: 96px; }
+}

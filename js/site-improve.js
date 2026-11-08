@@ -21,11 +21,60 @@
   var isHome = body.classList.contains('landing') && !body.classList.contains('nf-page');
   var isBoard = body.classList.contains('board-page');
 
+  /* =========================================================================
+   * 第三轮 · 手动同步闸门（必须在解析阶段同步注册，不能放进 boot）
+   *
+   * 根因：board.js 在每次 mouseup 后 800ms 调 saveNow()，saveNow() 派发
+   *       board:saved；auth.js 的 bindBoardSync() 监听该事件后立刻 syncCurrent()
+   *       往云端上传 —— 于是「一直在同步」，按钮在「同步中…/已同步 ✓」反复跳。
+   *
+   * auth.js 是在 DOMContentLoaded 的 init() 里才注册该监听的；本文件是解析阶段
+   * 就执行的普通脚本，注册更早。对 window 上派发的事件，AT_TARGET 阶段按注册
+   * 顺序调用监听器，故这里先跑并 stopImmediatePropagation，即可挡住自动上传。
+   *
+   * 副作用：同事件上的其它监听也会被挡（包括旧 saveDirty 的 board:saved），
+   * 所以把「✓ 已保存」状态更新改由 siSync.onSaved 回调驱动（见 saveDirty）。
+   * 用户主动点「同步」按钮不受影响 —— 那条路径不走 board:saved。
+   * =======================================================================*/
+  var siSync = {
+    dirty: false,          // 本地已保存、云端未同步
+    lastDetail: null,      // 最近一次 board:saved 携带的完整工程
+    lastSync: null,
+    onSaved: [],
+    onSynced: [],
+    saveAndSync: null,
+    fireSaved: function (d) {
+      this.onSaved.forEach(function (fn) { try { fn(d); } catch (_) {} });
+    },
+    fireSynced: function (ok) {
+      this.onSynced.forEach(function (fn) { try { fn(ok); } catch (_) {} });
+    },
+  };
+  if (isBoard) {
+    window.addEventListener('board:saved', function (e) {
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      siSync.lastDetail = e.detail || null;
+      siSync.dirty = true;
+      siSync.fireSaved(e.detail);
+    }, true);
+  }
+
   /* 每个模块隔离，避免一处报错导致整份增强失效 */
   function safe(name, fn) {
     try { fn(); } catch (e) {
       if (window.console && console.warn) console.warn('[site-improve] ' + name + ': ' + (e && e.message));
     }
+  }
+
+  /* 轻量提示：复用页面原有 #toast，不新建浮层 */
+  var siToastTimer = null;
+  function siToast(msg) {
+    var t = $('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.remove('hidden');
+    clearTimeout(siToastTimer);
+    siToastTimer = setTimeout(function () { t.classList.add('hidden'); }, 2600);
   }
 
   /* =========================================================================
@@ -378,7 +427,9 @@
         st.classList.add('si-dirty'); st.classList.remove('si-saved');
       }
     });
-    window.addEventListener('board:saved', function () {
+    // 第三轮起 board:saved 由闸门接管并 stopImmediatePropagation，
+    // 原来的 window 监听收不到事件，改订阅闸门的 onSaved 回调（行为不变）。
+    siSync.onSaved.push(function () {
       st.classList.remove('si-dirty'); st.classList.add('si-saved');
       setTimeout(function () { st.classList.remove('si-saved'); }, 4000);
     });
@@ -547,12 +598,56 @@
     holder.appendChild(trigger);
     holder.appendChild(menu);
 
+    // 第三轮：「保存所有同步」——把本机所有画板一次性推到云端。
+    // 复用 auth.js 暴露的 syncAllLocal()，不重复实现上传逻辑。
+    // 用 button.si-menu-item（不是 .settings-wrap），不影响原有 3 个折叠项的断言。
+    var syncAll = document.createElement('button');
+    syncAll.type = 'button';
+    syncAll.id = 'siSyncAll';
+    syncAll.className = 'si-menu-item';
+    syncAll.textContent = '同步全部画板';
+    syncAll.addEventListener('click', function () {
+      close();
+      if (!window.Auth || !Auth.user || !Auth.syncAllLocal) {
+        siToast('请先登录，再同步全部画板');
+        return;
+      }
+      syncAll.disabled = true;
+      syncAll.textContent = '同步中…';
+      Promise.resolve(Auth.syncAllLocal()).then(function (r) {
+        siSync.dirty = false;
+        siSync.fireSynced(true);
+        siToast('已同步 ' + ((r && r.done) || 0) + ' 个画板' + ((r && r.fail) ? '，' + r.fail + ' 个失败' : ''));
+      }).catch(function () {
+        siToast('同步失败，请稍后重试');
+      }).then(function () {
+        syncAll.disabled = false;
+        syncAll.textContent = '同步全部画板';
+      });
+    });
+    menu.appendChild(syncAll);
+
     function close() { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); }
+    // 第三轮：顶栏强制换行后「更多 ▾」可能落到某行最左侧，原先
+    // absolute + right:0 会向左展开到屏幕外（实测 left=-181，整块不可点）。
+    // 改为 fixed，打开时按触发按钮位置夹进视口，不再依赖顶栏换行位置。
+    function place() {
+      var r = trigger.getBoundingClientRect();
+      var w = menu.offsetWidth || 252;
+      var vw = document.documentElement.clientWidth;
+      var max = Math.max(8, vw - w - 8);
+      var left = Math.min(Math.max(8, r.right - w), max);
+      menu.style.right = 'auto';
+      menu.style.left = Math.round(left) + 'px';
+      menu.style.top = Math.round(r.bottom + 8) + 'px';
+    }
     trigger.addEventListener('click', function (e) {
       e.stopPropagation();
       menu.hidden = !menu.hidden;
       trigger.setAttribute('aria-expanded', String(!menu.hidden));
+      if (!menu.hidden) place();
     });
+    window.addEventListener('resize', function () { if (!menu.hidden) place(); });
     document.addEventListener('click', function (e) { if (!holder.contains(e.target)) close(); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
 
@@ -580,6 +675,243 @@
     else if (mq.addListener) mq.addListener(apply);
   }
 
+  /* =========================================================================
+   * 第三轮 ① 工具栏侧拉抽屉（手机）
+   *    原工具栏 16 个工具按钮在窄屏只能一路横滑找，用户要求改成「侧拉」。
+   *    做法：只搬运节点，不删除、不重建 —— board.js:1122 在模块执行时用
+   *    querySelectorAll('.tool[data-tool]') 缓存引用并逐个绑定 click，搬移 DOM
+   *    不改变引用，所有作图逻辑原样生效。宽屏按注释锚点精确还原顺序。
+   *    函数区 .si-fn-panel 与撤销/重做保留在工具条（高频操作不必进抽屉）。
+   * =======================================================================*/
+  function toolsDrawer() {
+    var bar = $('toolbar');
+    if (!bar || $('siToolsTrigger')) return;
+    var nodes = Array.prototype.slice.call(
+      bar.querySelectorAll('.tool[data-tool], .tool-group-label, .toolbar-sep')
+    );
+    if (nodes.length < 10) return;
+
+    var trigger = document.createElement('button');
+    trigger.id = 'siToolsTrigger';
+    trigger.type = 'button';
+    trigger.className = 'si-tools-trigger';
+    trigger.textContent = '工具 ▾';
+    trigger.setAttribute('aria-haspopup', 'dialog');
+    trigger.setAttribute('aria-expanded', 'false');
+    bar.insertBefore(trigger, bar.firstChild);
+
+    var mask = document.createElement('div');
+    mask.className = 'si-drawer-mask';
+    mask.hidden = true;
+    mask.innerHTML =
+      '<div class="si-drawer-panel" role="dialog" aria-modal="true" aria-label="作图工具">' +
+        '<div class="si-drawer-head"><span class="si-drawer-title">作图工具</span>' +
+        '<button class="si-drawer-x" type="button" aria-label="关闭工具面板">×</button></div>' +
+        '<div class="si-drawer-body"><div class="si-drawer-tools"></div>' +
+        '<p class="si-drawer-tip">选好工具后点画布作图。撤销 / 重做与函数曲线仍在上方工具条。</p>' +
+        '</div></div>';
+    document.body.appendChild(mask);
+    var panel = mask.querySelector('.si-drawer-tools');
+
+    // 注释锚点：宽屏还原时保持原始顺序（与 moreMenu 同一套手法）
+    nodes.forEach(function (n) {
+      var a = document.createComment('si-tool-anchor');
+      n.parentNode.insertBefore(a, n);
+      n.__siAnchor = a;
+    });
+
+    function open() {
+      mask.hidden = false;
+      body.classList.add('si-drawer-lock');
+      requestAnimationFrame(function () { mask.classList.add('si-open'); });
+      trigger.setAttribute('aria-expanded', 'true');
+    }
+    function close() {
+      mask.classList.remove('si-open');
+      body.classList.remove('si-drawer-lock');
+      trigger.setAttribute('aria-expanded', 'false');
+      setTimeout(function () {
+        if (!mask.classList.contains('si-open')) mask.hidden = true;
+      }, 240);
+    }
+    function syncTrigger() {
+      var a = bar.querySelector('.tool.active[data-tool]') || panel.querySelector('.tool.active[data-tool]');
+      trigger.textContent = '工具' + (a ? '：' + a.textContent.trim() : '') + ' ▾';
+    }
+
+    trigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (mask.classList.contains('si-open')) close(); else open();
+    });
+    mask.addEventListener('click', function (e) {
+      if (e.target === mask || (e.target.closest && e.target.closest('.si-drawer-x'))) { close(); return; }
+      if (e.target.closest && e.target.closest('.tool[data-tool]')) {
+        setTimeout(function () { close(); syncTrigger(); }, 0);
+      }
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !mask.hidden) close(); });
+
+    if (window.MutationObserver) {
+      var mo = new MutationObserver(syncTrigger);
+      [bar, panel].forEach(function (root) {
+        mo.observe(root, { attributes: true, subtree: true, attributeFilter: ['class'] });
+      });
+    }
+
+    var mq = window.matchMedia('(max-width: 640px)');
+    function apply() {
+      if (mq.matches) {
+        nodes.forEach(function (n) { panel.appendChild(n); });
+        trigger.hidden = false;
+      } else {
+        nodes.forEach(function (n) {
+          var a = n.__siAnchor;
+          if (a && a.parentNode) a.parentNode.insertBefore(n, a.nextSibling);
+        });
+        close();
+        trigger.hidden = true;
+      }
+      syncTrigger();
+    }
+    apply();
+    if (mq.addEventListener) mq.addEventListener('change', apply);
+    else if (mq.addListener) mq.addListener(apply);
+  }
+
+  /* =========================================================================
+   * 第三轮 ② 手动「保存并同步」
+   *    board.js 仍会在每次操作后 800ms 自动保存「本地」副本（数据安全网，保留），
+   *    但闸门已挡住自动云端上传。这里把「保存」升级为一次点击完成：
+   *      本地保存（复用 board.js 原有 saveNow） + 云端同步（复用 Auth.syncBoard）。
+   *    未登录时只存本机并给出提示，不报错、不阻断作图。
+   * =======================================================================*/
+  function manualSyncSave() {
+    var saveBtn = $('btn-save'), cloudBtn = $('btn-cloud');
+    if (!saveBtn) return;
+
+    saveBtn.textContent = '保存并同步';
+    saveBtn.title = '保存到本机浏览器，并同步到云端（登录后生效）';
+    saveBtn.setAttribute('aria-label', saveBtn.title);
+    if (cloudBtn) {
+      cloudBtn.textContent = '同步';
+      cloudBtn.title = '仅把当前画板同步到云端，不改动本地保存';
+    }
+
+    function pushCloud(detail) {
+      if (!window.Auth || !Auth.syncBoard) return Promise.resolve({ ok: false, reason: 'noauth' });
+      if (!Auth.user) return Promise.resolve({ ok: false, reason: 'nologin' });
+      var d = detail || siSync.lastDetail || {};
+      var id = d.id || new URLSearchParams(location.search).get('id');
+      if (!id) return Promise.resolve({ ok: false, reason: 'noid' });
+      var content = d.content || (window.__dajiao && window.__dajiao.getDoc && window.__dajiao.getDoc());
+      var name = d.name || ($('doc-name') && $('doc-name').value) || '未命名画板';
+      if (!content) return Promise.resolve({ ok: false, reason: 'nodata' });
+      return Promise.resolve(Auth.syncBoard({ id: id, name: name, mode: d.mode || '2d', content: content }))
+        .then(function () { return { ok: true }; })
+        .catch(function (err) { return { ok: false, reason: (err && err.message) || '网络错误' }; });
+    }
+
+    function doSync() {
+      saveBtn.classList.add('si-saving');
+      return pushCloud(siSync.lastDetail).then(function (r) {
+        saveBtn.classList.remove('si-saving');
+        if (r.ok) {
+          siSync.dirty = false;
+          siSync.fireSynced(true);
+          saveBtn.textContent = '✓ 已同步';
+          setTimeout(function () { saveBtn.textContent = '保存并同步'; }, 1800);
+          siToast('已保存并同步到云端');
+        } else if (r.reason === 'nologin' || r.reason === 'noauth') {
+          siToast('已保存到本机浏览器；登录后可同步到云端');
+        } else {
+          siToast('已保存到本机，云端同步失败：' + r.reason);
+        }
+        return r;
+      });
+    }
+
+    // boot 在 DOMContentLoaded 触发，board.js（module/defer）此时已绑定 saveNow，
+    // 故本监听排在 saveNow 之后：saveNow 先存本地并派发 board:saved，闸门更新
+    // lastDetail，再由这里读取最新工程上传，顺序确定。
+    saveBtn.addEventListener('click', function () { siSync.lastSync = doSync(); });
+
+    // 退出确认复用：模拟一次真实的「保存并同步」点击，返回其 Promise
+    siSync.saveAndSync = function () {
+      saveBtn.click();
+      return siSync.lastSync || Promise.resolve({ ok: false, reason: 'noop' });
+    };
+
+    // 用户手动点原「同步」按钮且成功时也算已同步，退出不再追问
+    if (cloudBtn && window.MutationObserver) {
+      new MutationObserver(function () {
+        if (/已同步/.test(cloudBtn.textContent)) {
+          siSync.dirty = false;
+          siSync.fireSynced(true);
+        }
+      }).observe(cloudBtn, { childList: true, characterData: true, subtree: true });
+    }
+  }
+
+  /* =========================================================================
+   * 第三轮 ③ 离开画板时询问是否保存
+   *    有「本地已存、云端未同步」的改动时，点「返回工作台」弹三选一：
+   *    保存并同步 / 不保存直接离开 / 取消；没有未同步改动时直接放行。
+   *    浏览器返回键用一层哨兵 history 覆盖（移动端主要退出方式）；
+   *    不用 beforeunload —— 移动端支持不稳定，且会给自动化验收带来 dialog。
+   * =======================================================================*/
+  function exitConfirm() {
+    var back = document.querySelector('.topbar > a.btn.ghost');
+    if (!back) return;
+    var href = back.getAttribute('href') || 'index.html';
+
+    var layer = document.createElement('div');
+    layer.className = 'si-layer';
+    layer.hidden = true;
+    layer.innerHTML =
+      '<div class="si-confirm" role="dialog" aria-modal="true" aria-label="离开画板">' +
+        '<h3>要保存并同步后再离开吗？</h3>' +
+        '<p>当前改动已自动存在本机浏览器，但还没有同步到云端，其它设备暂时看不到。</p>' +
+        '<div class="si-confirm-acts">' +
+          '<button class="si-cf-primary" type="button">保存并同步</button>' +
+          '<button class="si-cf-plain" type="button">不保存，直接离开</button>' +
+          '<button class="si-cf-ghost" type="button">取消</button>' +
+        '</div></div>';
+    document.body.appendChild(layer);
+
+    var leaving = false, primary = layer.querySelector('.si-cf-primary');
+    function close() { layer.hidden = true; }
+    function go() { leaving = true; siSync.dirty = false; location.href = href; }
+
+    back.addEventListener('click', function (e) {
+      if (leaving || !siSync.dirty) return;
+      e.preventDefault();
+      layer.hidden = false;
+    });
+
+    primary.addEventListener('click', function () {
+      primary.disabled = true;
+      primary.textContent = '保存并同步中…';
+      var pr = siSync.saveAndSync ? siSync.saveAndSync() : Promise.resolve();
+      Promise.resolve(pr).then(function () { setTimeout(go, 280); }, function () { setTimeout(go, 280); });
+    });
+    layer.querySelector('.si-cf-plain').addEventListener('click', function () { close(); go(); });
+    layer.querySelector('.si-cf-ghost').addEventListener('click', close);
+    layer.addEventListener('click', function (e) { if (e.target === layer) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !layer.hidden) close(); });
+
+    // 浏览器返回键：push 一条同 URL 的哨兵，返回时先弹确认并留在当前页
+    try {
+      history.pushState({ siGuard: true }, '');
+      window.addEventListener('popstate', function () {
+        if (leaving) return;
+        if (siSync.dirty) {
+          history.pushState({ siGuard: true }, '');
+          layer.hidden = false;
+        }
+      });
+    } catch (_) {}
+  }
+
   /* ---------------------------------------------------------------------------
    * 启动：等 DOMContentLoaded（保证 deferred module 如 board.js 已填好下拉选项）
    * -------------------------------------------------------------------------*/
@@ -603,6 +935,10 @@
       safe('#15 Tab aria', tabAria);
       safe('#16 保存状态', saveDirty);
       safe('#24 Emoji 统一', stripEmoji);
+      // 第三轮（手机实拍反馈）：侧拉工具 / 手动保存并同步 / 离开确认
+      safe('工具侧拉抽屉', toolsDrawer);
+      safe('手动保存并同步', manualSyncSave);
+      safe('离开确认', exitConfirm);
     }
     safe('#21 即时校验', fieldValidation);   // 全站（弹窗可能在任意页出现）
   }
