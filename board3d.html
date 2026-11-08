@@ -6,6 +6,7 @@
   <title>立体画板 · 智绘几何</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/site-improve.css" />
   <style>
     /* 3D AI 面板：自包含样式，刻意不改动共享的 css/style.css（避免与并行任务冲突） */
     .board3d-main { position: relative; }
@@ -194,5 +195,6 @@
   <script type="module" src="js/board3d.js"></script>
   <!-- 3D AI 面板逻辑：import 同一个 board3d.js 模块实例，共享 board3dApi，不重复初始化 -->
   <script type="module" src="js/board3d-ai.js"></script>
+  <script src="js/site-improve.js"></script>
 </body>
 </html>

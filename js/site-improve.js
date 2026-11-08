@@ -20,6 +20,7 @@
   var body = document.body;
   var isHome = body.classList.contains('landing') && !body.classList.contains('nf-page');
   var isBoard = body.classList.contains('board-page');
+  var isBoard3d = body.classList.contains('board3d-page');
 
   /* =========================================================================
    * 第三轮 · 手动同步闸门（必须在解析阶段同步注册，不能放进 boot）
@@ -969,6 +970,65 @@
   }
 
   /* ---------------------------------------------------------------------------
+   * 第五轮：窄屏弹层一律夹进视口
+   *
+   * .settings-pop 原本是 position:absolute + right:0（style.css:329），
+   * 触发按钮在顶栏左侧时，220px 宽的弹层会向左展开到负坐标：360px 屏点
+   * 「设置」实测 left=-158，整个弹层在屏外，elementFromPoint 命中不到按钮。
+   * 第三轮只修了「更多 ▾」里的嵌入 popover，其余（设置 / 动画 / 导出 /
+   * LaTeX / 3D 设置）都没覆盖。
+   *
+   * 这里用 MutationObserver 盯 class（弹层靠 .hidden 切换显隐），显示时按
+   * 触发按钮位置改成 fixed 并夹进视口；隐藏时清掉 inline 样式还原。
+   * 只改定位，不碰弹层内容、不重复绑定任何业务事件。
+   * -------------------------------------------------------------------------*/
+  function popoverInViewport() {
+    if (!window.MutationObserver) return;
+    var pops = document.querySelectorAll('.topbar .settings-pop');
+    if (!pops.length) return;
+    var mq = window.matchMedia('(max-width: 900px)');
+
+    function place(pop) {
+      var gone = pop.classList.contains('hidden') || pop.hidden ||
+                 getComputedStyle(pop).display === 'none';
+      if (!mq.matches || gone) {
+        if (pop.__siPlaced) {
+          pop.style.position = ''; pop.style.left = ''; pop.style.top = '';
+          pop.style.right = ''; pop.style.zIndex = '';
+          pop.__siPlaced = false;
+        }
+        return;
+      }
+      var wrap = pop.parentElement;
+      var btn = wrap ? wrap.querySelector('button') : null;
+      if (!btn) return;
+      var br = btn.getBoundingClientRect();
+      var pw = pop.offsetWidth || 220;
+      var ph = pop.offsetHeight || 240;
+      var vw = document.documentElement.clientWidth;
+      var vh = window.innerHeight;
+      var left = Math.max(8, Math.min(br.left, vw - pw - 8));
+      var top = Math.max(8, Math.min(br.bottom + 8, vh - ph - 8));
+      pop.style.position = 'fixed';
+      pop.style.left = left + 'px';
+      pop.style.top = top + 'px';
+      pop.style.right = 'auto';
+      pop.style.zIndex = '130';
+      pop.__siPlaced = true;
+    }
+
+    function placeAll() { Array.prototype.forEach.call(pops, place); }
+    Array.prototype.forEach.call(pops, function (pop) {
+      new MutationObserver(function () { place(pop); })
+        .observe(pop, { attributes: true, attributeFilter: ['class'] });
+      place(pop);
+    });
+    window.addEventListener('resize', placeAll);
+    if (mq.addEventListener) mq.addEventListener('change', placeAll);
+    else if (mq.addListener) mq.addListener(placeAll);
+  }
+
+  /* ---------------------------------------------------------------------------
    * 启动：等 DOMContentLoaded（保证 deferred module 如 board.js 已填好下拉选项）
    * -------------------------------------------------------------------------*/
   function boot() {
@@ -998,6 +1058,8 @@
       safe('手动保存并同步', manualSyncSave);
       safe('离开确认', exitConfirm);
     }
+    // 第五轮：平面/立体画板窄屏弹层一律夹进视口
+    if (isBoard || isBoard3d) safe('窄屏弹层夹进视口', popoverInViewport);
     safe('#21 即时校验', fieldValidation);   // 全站（弹窗可能在任意页出现）
   }
 

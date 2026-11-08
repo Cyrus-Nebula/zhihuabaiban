@@ -415,3 +415,131 @@ body.board-page #btn-save.si-saving { opacity: .72; pointer-events: none; }
   /* 函数区收窄一点，减少横滑距离 */
   body.board-page .toolbar .si-fn-panel #fn-input { width: 96px; }
 }
+
+/* ============================================================================
+ * 第五轮：手机端全量修整（全站审计后一次性落地）
+ * 审计范围：首页 / 平面画板 / 立体画板 / 404 / 编辑器 × 360/375/390/412/768
+ * ---------------------------------------------------------------------------
+ * ① 立体画板从未挂载改进层，且 .board3d-topbar 没有 flex-wrap —— 窄屏下
+ *    6 个按钮被硬挤成一列竖排文字，360px 时「导出」被挤出屏（sw=374>360）。
+ *    本轮给 board3d.html 补 2 行引用，并在这里补齐窄屏顶栏与热区。
+ * ② 通用 .topbar 是 justify-content:space-between（style.css:58），
+ *    平面画板窄屏最后一行的「更多 ▾」与「登录」被推到两端，中间空 250px。
+ * ③ .settings-pop 是 absolute + right:0，360px 屏点「设置」时 left=-158，
+ *    整个弹层在屏外且不可点 —— 由 site-improve.js 的 popoverInViewport() 修。
+ * ④ 触屏热区普遍不足：AI 面板 tab 27px / 关闭 24px / 发送 31px /
+ *    3D gizmo 31px / 工具按钮 27px / 页脚链接 16px。
+ * ==========================================================================*/
+
+/* ---- ① 立体画板顶栏：允许换行 + 与平面画板同款统一盒模型 ---- */
+body.board3d-page .board3d-topbar {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  overflow: visible;
+}
+body.board3d-page .board3d-topbar > * { flex: 0 0 auto; }
+body.board3d-page .board3d-topbar > a.btn.ghost,
+body.board3d-page .board3d-topbar > .doc-name {
+  box-sizing: border-box;
+  height: 44px; min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--border, rgba(17, 24, 39, .16));
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  margin: 0; align-self: center;
+  font-family: inherit; color: var(--text, #111827);
+}
+body.board3d-page .board3d-topbar > a.btn.ghost {
+  display: inline-flex; align-items: center; justify-content: flex-start;
+  font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap;
+}
+body.board3d-page .board3d-topbar > a.btn.ghost:hover {
+  border-color: var(--primary, #4c3dbe); color: var(--primary, #4c3dbe);
+}
+body.board3d-page .board3d-topbar > .doc-name {
+  font-size: 14px; font-weight: 600; line-height: 42px;
+  flex: 1 1 auto; min-width: 0; max-width: none;
+}
+body.board3d-page .board3d-topbar > .doc-name:hover,
+body.board3d-page .board3d-topbar > .doc-name:focus {
+  border-color: var(--primary, #4c3dbe); outline: none; background: var(--panel, #fff);
+}
+body.board3d-page .board3d-topbar .btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 12px; white-space: nowrap;
+}
+body.board3d-page .board3d-topbar > .save-status { display: none; }
+body.board3d-page .board3d-topbar > .flex-spacer {
+  order: 3; flex: 0 0 100%; height: 0; min-width: 0;
+}
+body.board3d-page .board3d-topbar > a.btn.ghost { order: 0; }
+body.board3d-page .board3d-topbar > .doc-name { order: 1; }
+body.board3d-page .board3d-topbar > *:not(a.btn.ghost):not(.doc-name):not(.save-status):not(.flex-spacer) { order: 4; }
+body.board3d-page .board3d-topbar { row-gap: 6px; }
+
+/* ---- ② 顶栏不再 space-between：最后一行「更多 ▾ / 登录」紧挨着 ---- */
+@media (max-width: 1024px) {
+  body.board-page .topbar { justify-content: flex-start; }
+}
+
+/* ---- ③ 窄屏弹层：JS 会把 .settings-pop 改成 fixed 并夹进视口，
+        这里只兜底限制宽度，避免 popover 自身比屏幕还宽 ---- */
+@media (max-width: 900px) {
+  body.board-page .topbar .settings-pop,
+  body.board3d-page .board3d-topbar .settings-pop {
+    max-width: calc(100vw - 16px);
+  }
+}
+
+/* ---- ④ 触屏热区：核心操作一律 >= 44px ---- */
+@media (max-width: 1024px) {
+  body.board-page .ai-tab,
+  body.board-page #ai-send,
+  body.board-page #ai-fab,
+  body.board-page #qsClose,
+  body.board-page .toolbar .tool,
+  body.board-page .toolbar .btn,
+  body.board3d-page .b3d-shape,
+  body.board3d-page .b3d-gizmo-modes button,
+  body.board3d-page .b3d-ai-close,
+  body.landing:not(.nf-page) #navToggle,
+  body.landing:not(.nf-page) #heroAiImgBtn,
+  body.landing:not(.nf-page) #heroAiSend,
+  body.landing:not(.nf-page) #qsClose { min-height: 44px; }
+
+  body.board-page #ai-close,
+  body.board-page #qsClose,
+  body.board3d-page .b3d-ai-close,
+  body.landing:not(.nf-page) #navToggle,
+  body.landing:not(.nf-page) #heroAiImgBtn,
+  body.landing:not(.nf-page) #heroAiSend,
+  body.landing:not(.nf-page) #qsClose { min-width: 44px; }
+
+  /* 页脚链接：只加纵向 padding，视觉仍是同一行小字，点击区扩大到 44px */
+  body.landing:not(.nf-page) .site-footer a { padding: 14px 3px; }
+
+  /* ---- ⑤ 第二轮补齐：审计后剩余的核心操作热区 ----
+     行内文字链接（关于区致谢、页脚正文里的 <a>）不加：它们是文字流的一部分，
+     强行撑到 44px 会破坏行文；品牌 Logo 与 skip-link 同理。这里只收
+     「用户真的会点」的按钮类元素。 */
+  /* 注意：不要给 .save-status 加 display —— style.css:1158 在窄屏把它
+     display:none，一旦覆盖会让「就绪」重新出现、顶栏平白多一行。 */
+  body.board-page .topbar .btn,
+  body.board-page .si-tools-trigger,
+  body.board-page .si-fn-head,
+  body.board-page #ai-close,
+  body.board-page .toolbar .tool { min-height: 44px; }
+  body.board-page .toolbar .tool { min-width: 44px; }
+
+  body.landing:not(.nf-page) .site-nav .btn,
+  body.landing:not(.nf-page) .tpl-card .btn,
+  body.landing:not(.nf-page) .si-login-cta button,
+  body.landing:not(.nf-page) #qsClose { min-height: 44px; }
+
+  body.nf-page .nf-links a {
+    min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+  }
+}
