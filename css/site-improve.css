@@ -1,0 +1,231 @@
+/* ============================================================================
+ * site-improve.css — 《智绘几何界面修改意见》27 条一次性落地层
+ *
+ * 作用域严格限定：
+ *   body.landing:not(.nf-page)  首页
+ *   body.board-page              平面画板
+ *   body.nf-page                 404 页
+ * 通用组件（下拉/浮层/校验）用 .si-* 前缀，不污染全局。
+ *
+ * 不修改 css/style.css、css/unslop.css 与任何 js/*.js。
+ * 删除各 HTML 里的两行引用即完全回滚。
+ * 依据：百度 AI 生成的《界面修改意见》（27 条，P0–P3），逐条处置见交付报告。
+ * ==========================================================================*/
+
+/* [hidden] 属性必须真正隐藏：原样式里存在 display:inline-flex 覆盖 hidden 的情况 */
+[hidden] { display: none !important; }
+
+/* ---------------------------------------------------------------------------
+ * 共用组件：下拉菜单 / 帮助浮层 / 校验提示 / 模型说明
+ * -------------------------------------------------------------------------*/
+.si-menu {
+  position: absolute; z-index: 120; min-width: 196px;
+  background: var(--panel, #fff);
+  border: 1px solid var(--border, rgba(17, 24, 39, .1));
+  border-radius: 10px; box-shadow: 0 12px 32px rgba(15, 23, 42, .14);
+  padding: 6px;
+}
+.si-menu-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  border: 0; background: transparent; border-radius: 7px; padding: 9px 11px;
+  font: inherit; font-size: 13px; line-height: 1.5;
+  color: var(--text, #111827); cursor: pointer;
+}
+.si-menu-item:hover { background: var(--raised, #f1f2f7); }
+.si-menu-item .si-key {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px;
+  color: var(--muted, #6b7487); letter-spacing: .06em;
+}
+
+.si-layer {
+  position: fixed; inset: 0; z-index: 4000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(17, 24, 39, .34); padding: 20px;
+}
+.si-help {
+  position: relative; width: min(460px, 94vw);
+  background: var(--panel, #fff); border-radius: 14px;
+  border: 1px solid var(--border, rgba(17, 24, 39, .1));
+  box-shadow: 0 24px 60px rgba(15, 23, 42, .2); padding: 26px 26px 22px;
+}
+.si-help h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.si-help .si-help-sub { margin: 0 0 18px; font-size: 13px; color: var(--muted, #6b7487); line-height: 1.7; }
+.si-help ol { margin: 0; padding: 0; list-style: none; counter-reset: si; }
+.si-help li {
+  counter-increment: si; position: relative; padding: 9px 0 9px 34px;
+  font-size: 13.5px; line-height: 1.65; border-top: 1px solid var(--border, rgba(17, 24, 39, .08));
+}
+.si-help li::before {
+  content: counter(si); position: absolute; left: 0; top: 9px;
+  width: 22px; height: 22px; border-radius: 6px;
+  background: var(--raised, #f1f2f7); color: var(--muted, #6b7487);
+  font: 500 12px/22px var(--font-mono, ui-monospace, monospace); text-align: center;
+}
+.si-help li b { font-weight: 600; }
+.si-help-links { display: flex; gap: 18px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border, rgba(17, 24, 39, .08)); }
+.si-help-links a { font-size: 13px; color: var(--primary, #4c3dbe); text-decoration: none; }
+.si-help-links a:hover { text-decoration: underline; }
+.si-help-x {
+  position: absolute; top: 12px; right: 12px; width: 30px; height: 30px;
+  border: 0; background: transparent; border-radius: 8px; cursor: pointer;
+  font-size: 20px; line-height: 1; color: var(--muted, #6b7487);
+}
+.si-help-x:hover { background: var(--raised, #f1f2f7); }
+
+.si-field-err { display: block; margin-top: 5px; font-size: 12px; color: #c0392b; line-height: 1.5; }
+.si-field-err:empty { display: none; }
+.si-input-bad { border-color: #c0392b !important; }
+
+.si-model-note {
+  display: block; margin-top: 6px; font-size: 11px; line-height: 1.6;
+  color: var(--muted, #6b7487); white-space: normal;
+}
+.si-model-note b { font-weight: 600; color: var(--secondary, #4b5565); }
+
+/* ---------------------------------------------------------------------------
+ * 首页（landing）
+ * -------------------------------------------------------------------------*/
+/* #2 顶栏「＋新建画板」→ 下拉（平面 / 立体 / 打开文件），与 Hero 对齐 */
+body.landing:not(.nf-page) .nav-new-wrap { position: relative; display: inline-flex; }
+body.landing:not(.nf-page) .nav-new-wrap .si-menu { top: calc(100% + 8px); right: 0; }
+body.landing:not(.nf-page) .site-cta { white-space: nowrap; }
+
+/* #5 生成按钮置灰提示 + 空输入引导 */
+.si-ai-hint {
+  margin: 8px 0 2px; font-size: 12px; line-height: 1.6;
+  color: var(--muted, #6b7487);
+}
+.si-ai-hint kbd {
+  font: 500 11px var(--font-mono, ui-monospace, monospace);
+  background: var(--raised, #f1f2f7); border-radius: 4px; padding: 1px 5px;
+}
+
+/* #6 首页模型选择：让 select 不撑宽、说明另起一行 */
+body.landing:not(.nf-page) .hero-ai-left { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+body.landing:not(.nf-page) .hero-ai-left .ai-model { max-width: 100%; }
+
+/* #10 我的画板：未登录引导 */
+.si-login-cta { margin-top: 14px; font-size: 13px; color: var(--secondary, #4b5565); line-height: 1.8; }
+.si-login-cta button {
+  border: 1px solid var(--primary-soft-border, #dcd8f3); background: var(--primary-soft, #f2f1fc);
+  color: var(--primary-ink, #4335ad); border-radius: 7px; padding: 5px 12px;
+  font: inherit; font-size: 13px; cursor: pointer; margin-left: 4px;
+}
+.si-login-cta button:hover { border-color: var(--primary, #4c3dbe); }
+
+/* #8 快速入门收起态：标题下给一行说明，避免只留一个 + 号看不懂 */
+.si-qs-tip { margin: 0 0 14px; font-size: 12.5px; color: var(--muted, #6b7487); }
+
+/* #11 + #25 关于区丰富 / 页脚去重 */
+.si-about-lead { font-size: 14.5px !important; line-height: 1.9 !important; }
+.si-about-list { margin: 2px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.95; color: var(--secondary, #4b5565); }
+.si-about-list li { margin: 0; }
+.si-about-meta { margin: 4px 0 0; font-size: 12.5px; line-height: 1.9; color: var(--muted, #6b7487); }
+.si-about-meta a { color: var(--primary, #4c3dbe); text-decoration: none; }
+.si-about-meta a:hover { text-decoration: underline; }
+body.landing:not(.nf-page) .site-footer { line-height: 1.9; }
+body.landing:not(.nf-page) .site-footer a { color: var(--secondary, #4b5565); text-decoration: none; }
+body.landing:not(.nf-page) .site-footer a:hover { color: var(--primary, #4c3dbe); text-decoration: underline; }
+
+/* ---------------------------------------------------------------------------
+ * 平面画板（board-page）
+ * -------------------------------------------------------------------------*/
+/* #12 / #27 工具栏：分组标签 + 撤销组归位。
+   注意：工具栏内容实测约 2000px，若宽屏也强制 nowrap，撤销/重做会被推到
+   1666px 之外、必须横滑才看得见（高频操作被藏）。故宽屏沿用 style.css 原本的
+   flex-wrap:wrap 自动换成两行、全部按钮可见；只在窄屏（<=640px）启用横滑，
+   并让滚动条可见（原样式把它隐藏了，用户不知道能滑）。 */
+body.board-page .toolbar > * { flex: 0 0 auto; }
+@media (max-width: 640px) {
+  body.board-page .toolbar {
+    flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: thin; -webkit-overflow-scrolling: touch;
+  }
+  body.board-page .toolbar::-webkit-scrollbar { height: 6px; display: block; }
+  body.board-page .toolbar::-webkit-scrollbar-thumb { background: rgba(17, 24, 39, .16); border-radius: 3px; }
+  /* 窄屏：撤销/重做是最高频操作，不能藏在 1600px 之外，提到工具栏最左 */
+  body.board-page .toolbar #btn-undo,
+  body.board-page .toolbar #btn-redo,
+  body.board-page .toolbar #btn-poly-done { order: -1; }
+  body.board-page .toolbar .sep-history { display: none; }
+}
+.tool-group-label {
+  align-self: center; margin: 0 2px 0 8px; padding-left: 9px;
+  border-left: 1px solid var(--border, rgba(17, 24, 39, .14));
+  font-size: 10px; letter-spacing: .1em; color: var(--muted, #6b7487);
+  white-space: nowrap; user-select: none;
+}
+/* #12 撤销 / 重做归到最右（仅宽屏；窄屏改提到最左，见上方 media），
+   函数区留在其左。限定 min-width 避免后面的同优先级规则覆盖窄屏的 order:-1。 */
+@media (min-width: 641px) {
+  body.board-page .toolbar .sep-history,
+  body.board-page .toolbar #btn-undo,
+  body.board-page .toolbar #btn-redo,
+  body.board-page .toolbar #btn-poly-done { order: 4; }
+}
+body.board-page .toolbar .sep-fn { display: none; }
+body.board-page .toolbar #tool-hint { order: 6; }
+body.board-page .toolbar #btn-undo,
+body.board-page .toolbar #btn-redo { background: var(--raised, #f6f7f9); }
+body.board-page .toolbar .toolbar-label.si-fn-label {
+  margin-left: 10px; padding-left: 10px;
+  border-left: 1px solid var(--border, rgba(17, 24, 39, .14));
+  font-weight: 600; color: var(--secondary, #4b5565);
+}
+
+/* #14 定义域「从 / 到」标注 */
+body.board-page .toolbar .fn-range { width: 62px; }
+
+/* #17 返回按钮：标准描边按钮，不再是裸文字链接 */
+body.board-page .topbar > a.btn.ghost {
+  border: 1px solid var(--border, rgba(17, 24, 39, .16));
+  border-radius: 8px; padding: 7px 12px; white-space: nowrap;
+  background: var(--panel, #fff); font-weight: 500;
+}
+body.board-page .topbar > a.btn.ghost:hover { border-color: var(--primary, #4c3dbe); color: var(--primary, #4c3dbe); }
+
+/* #12 顶栏：窄屏允许横向滚动，避免 8 个按钮挤成一团 */
+body.board-page .topbar { overflow-x: auto; scrollbar-width: thin; }
+body.board-page .topbar > * { flex: 0 0 auto; }
+body.board-page .topbar .flex-spacer { flex: 1 1 auto; min-width: 8px; }
+
+/* #16 保存状态：✓ 已保存 / ● 未保存 */
+body.board-page .save-status { white-space: nowrap; }
+body.board-page .save-status.si-saved::before { content: "✓ "; color: #1a7a4c; font-weight: 600; }
+body.board-page .save-status.si-dirty::before { content: "● "; color: #c0392b; }
+
+/* #21 登录/注册即时校验（弹窗由 auth.js 动态注入，这里覆盖全站） */
+.auth-field input.si-input-bad { box-shadow: 0 0 0 2px rgba(192, 57, 43, .1); }
+
+/* #27 触屏点击热区 >= 44px */
+@media (pointer: coarse) {
+  body.landing:not(.nf-page) .hero-action,
+  body.landing:not(.nf-page) .btn,
+  body.board-page .toolbar .tool,
+  body.board-page .toolbar .btn,
+  body.board-page .topbar .btn { min-height: 44px; }
+  body.board-page .toolbar .tool { padding-left: 14px; padding-right: 14px; }
+}
+
+/* 移动端：模型说明不撑破输入条 */
+@media (max-width: 640px) {
+  body.landing:not(.nf-page) .hero-ai-left { max-width: 100%; }
+  body.landing:not(.nf-page) .hero-ai-left .ai-model { max-width: 62vw; }
+  body.board-page .topbar { gap: 8px; padding: 8px 12px; }
+}
+
+/* ---------------------------------------------------------------------------
+ * 404 页（#1）：不再只有「返回首页」，给出模块直达 + 自动跳回对应锚点
+ * -------------------------------------------------------------------------*/
+body.nf-page .nf-wrap { gap: 14px; }
+body.nf-page .nf-code { font-size: 56px; }
+.nf-links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 6px 0 2px; }
+.nf-links a {
+  border: 1px solid var(--border, rgba(17, 24, 39, .16)); border-radius: 8px;
+  padding: 7px 14px; font-size: 13px; color: var(--secondary, #4b5565); text-decoration: none;
+  background: var(--panel, #fff);
+}
+.nf-links a:hover { border-color: var(--primary, #4c3dbe); color: var(--primary, #4c3dbe); }
+.nf-tip { font-size: 12px; color: var(--muted, #6b7487); margin-top: 4px; }
+.nf-brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; color: var(--text, #111827); text-decoration: none; }
+.nf-brand img { width: 26px; height: 26px; }

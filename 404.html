@@ -7,17 +7,49 @@
   <meta name="theme-color" content="#6549d5" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/site-improve.css" />
+  <script>
+    /* 报告 #1：导航是页内锚点，直接访问 /resources、/boards 等语义路径会 404。
+       这里把常见的模块别名重定向回首页对应锚点，避免用户看到「裸的页面不存在」；
+       未命中的路径仍保留友好 404 页，并给出全部模块直达入口。 */
+    (function () {
+      var map = {
+        '/resources': 'templates', '/templates': 'templates', '/cases': 'templates',
+        '/boards': 'files', '/files': 'files', '/my': 'files', '/my-boards': 'files',
+        '/about': 'about', '/quickstart': 'quickstart', '/help': 'quickstart',
+        '/new': 'hero', '/create': 'hero', '/board': 'hero'
+      };
+      var p = location.pathname.replace(/\/+$/, '').toLowerCase();
+      var hash = map[p];
+      if (!hash && location.hash) {
+        var h = location.hash.slice(1);
+        if (['templates', 'files', 'about', 'quickstart', 'hero'].indexOf(h) >= 0) hash = h;
+      }
+      if (hash) {
+        location.replace('/index.html#' + hash);
+        return;
+      }
+    })();
+  </script>
   <style>
     .nf-wrap { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 32px; text-align: center; }
     .nf-code { font-family: var(--font-mono, monospace); font-size: 64px; font-weight: 700; letter-spacing: -0.02em; color: var(--muted); }
   </style>
 </head>
-<body class="landing">
+<body class="landing nf-page">
   <div class="nf-wrap">
+    <a class="nf-brand" href="index.html"><img src="favicon.svg" alt="" /> 智绘几何</a>
     <p class="nf-code">404</p>
-    <h1 style="font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">这个页面不存在</h1>
-    <p class="muted">链接可能已经失效，回到首页重新开始吧。</p>
-    <a class="btn btn-primary" href="index.html">返回首页</a>
+    <h1 style="font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin: 0;">这个页面不存在</h1>
+    <p class="muted" style="margin: 0; max-width: 420px; line-height: 1.8;">本站是单页应用，内容都在首页。链接可能已失效，直接从下面的入口继续吧。</p>
+    <div class="nf-links">
+      <a href="index.html#quickstart">快速入门</a>
+      <a href="index.html#templates">资源库</a>
+      <a href="index.html#files">我的画板</a>
+      <a href="index.html#about">关于</a>
+      <a href="index.html">返回首页</a>
+    </div>
+    <p class="nf-tip">提示：访问 /resources、/boards、/about 等地址会自动跳到首页对应板块。</p>
   </div>
 </body>
 </html>
