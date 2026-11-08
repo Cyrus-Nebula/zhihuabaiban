@@ -176,13 +176,43 @@ body.board-page .toolbar .toolbar-label.si-fn-label {
 /* #14 定义域「从 / 到」标注 */
 body.board-page .toolbar .fn-range { width: 62px; }
 
-/* #17 返回按钮：标准描边按钮，不再是裸文字链接 */
-body.board-page .topbar > a.btn.ghost {
+/* #17 返回按钮：标准描边按钮，不再是裸文字链接。
+   第四轮（18:39 手机实拍）：用户圈出「← 返回工作台」与画板名，反馈
+   「文字上下没有对齐」。两者原本盒子不一致——按钮是 1px 可见边框 +
+   7px/12px 内边距的 inline 文本，输入框是 1px 透明边框 + 4px/8px 的
+   内建单行文字，文字起点与垂直基线天然错开；顶栏换行后更明显。
+   这里统一盒模型：同高、同内边距、同边框、同垂直居中，于是
+   「无论同排还是换行，文字起点 x 与垂直中心 y 都严格一致」。
+   规则放在全局（不再只在 <=640px 生效），任何视口下都对齐。 */
+body.board-page .topbar > a.btn.ghost,
+body.board-page .topbar > .doc-name {
+  box-sizing: border-box;
+  height: 44px; min-height: 44px;
+  padding: 0 8px;
   border: 1px solid var(--border, rgba(17, 24, 39, .16));
-  border-radius: 8px; padding: 7px 12px; white-space: nowrap;
-  background: var(--panel, #fff); font-weight: 500;
+  border-radius: 8px;
+  background: var(--panel, #fff);
+  margin: 0;
+  align-self: center;
+  font-family: inherit;
+  color: var(--text, #111827);
 }
-body.board-page .topbar > a.btn.ghost:hover { border-color: var(--primary, #4c3dbe); color: var(--primary, #4c3dbe); }
+body.board-page .topbar > a.btn.ghost {
+  display: inline-flex; align-items: center; justify-content: flex-start;
+  font-size: 13px; font-weight: 500; line-height: 1;
+  white-space: nowrap;
+}
+body.board-page .topbar > a.btn.ghost:hover {
+  border-color: var(--primary, #4c3dbe); color: var(--primary, #4c3dbe);
+}
+body.board-page .topbar > .doc-name {
+  font-size: 14px; font-weight: 600; line-height: 42px;
+  min-width: 0;
+}
+body.board-page .topbar > .doc-name:hover,
+body.board-page .topbar > .doc-name:focus {
+  border-color: var(--primary, #4c3dbe); outline: none; background: var(--panel, #fff);
+}
 
 /* #12 顶栏：style.css 原本就有 flex-wrap:wrap，按钮自动换行，无需横向滚动。
    必须保持 overflow:visible —— 按 CSS 规范，overflow-x 设成 auto 会把
@@ -360,20 +390,15 @@ body.board-page #btn-save.si-saving { opacity: .72; pointer-events: none; }
   margin-top: 4px; padding-top: 11px; border-radius: 0 0 7px 7px;
 }
 
-/* ---- ③ 窄屏顶栏：返回按钮 + 标题同一行左对齐 ----
-   原来顶栏 flex-wrap 后「返回工作台」独占第一行、画板标题在第二行，
-   按钮带 1px 边框 + 7px 12px 内边距，而标题是 1px 透明边框 + 4px 8px，
-   两者文字起点错开，视觉上像没对齐。这里统一两者盒子，并让它们同排；
-   其余按钮由 .flex-spacer 占满整行强制换到下一行（顶栏依旧 overflow:visible）。 */
+/* ---- ③ 窄屏顶栏：返回按钮 + 画板名固定为第一行 ----
+   统一盒模型已在上方全局定义（任何视口都对齐），这里只负责
+   「首行只放这两项」：.flex-spacer 用 flex:0 0 100% 占满整行，
+   把其余按钮全部换到下一行。顶栏保持 overflow:visible，
+   避免裁掉「更多 ▾」的绝对定位下拉。 */
 @media (max-width: 640px) {
-  body.board-page .topbar > a.btn.ghost {
-    order: 0; padding: 4px 8px; font-size: 13px;
-  }
+  body.board-page .topbar > a.btn.ghost { order: 0; flex: 0 0 auto; }
   body.board-page .topbar > .doc-name {
-    order: 1; flex: 1 1 auto; min-width: 0; padding: 4px 8px;
-    /* 触屏顶栏按钮有 44px 热区，输入框原本只有 ~26px，
-       两者同排时被 align-items:center 上下错开 9px。统一高度即真正对齐。 */
-    min-height: 44px; box-sizing: border-box;
+    order: 1; flex: 1 1 auto; min-width: 0; max-width: none;
   }
   body.board-page .topbar > .save-status { order: 2; }
   body.board-page .topbar > .flex-spacer {

@@ -913,6 +913,62 @@
   }
 
   /* ---------------------------------------------------------------------------
+   * 第四轮：顶栏首行视觉对齐（随 JS 注入，绕过 CSS 缓存）
+   *
+   * 18:39 手机实拍里「保存并同步」已是新文案，说明 site-improve.js 是新版，
+   * 但顶栏仍是旧的「返回工作台独占第一行 / 画板名第二行」——浏览器缓存了
+   * 旧版 site-improve.css。只改 CSS 对这类用户不生效，故把对齐规则随 JS
+   * 一起注入 <head> 末尾，保证新版 JS 一到就立刻对齐。规则与
+   * css/site-improve.css 的「③ 顶栏首行」完全一致（那边负责常规加载）。
+   *
+   * 只注入样式、不搬动 DOM：exitConfirm() 仍靠 '.topbar > a.btn.ghost'
+   * 取返回按钮，board.js / auth.js 零影响。
+   * -------------------------------------------------------------------------*/
+  function alignTopbarHead() {
+    if (document.getElementById('si-align-style')) return;
+    var css = [
+      'body.board-page .topbar > a.btn.ghost,',
+      'body.board-page .topbar > .doc-name {',
+      '  box-sizing:border-box !important; height:44px !important; min-height:44px !important;',
+      '  padding:0 8px !important;',
+      '  border:1px solid var(--border, rgba(17,24,39,.16)) !important;',
+      '  border-radius:8px !important; background:var(--panel,#fff) !important;',
+      '  margin:0 !important; align-self:center !important;',
+      '  font-family:inherit !important; color:var(--text,#111827) !important;',
+      '}',
+      'body.board-page .topbar > a.btn.ghost {',
+      '  display:inline-flex !important; align-items:center !important;',
+      '  justify-content:flex-start !important; font-size:13px !important;',
+      '  font-weight:500 !important; line-height:1 !important; white-space:nowrap !important;',
+      '}',
+      'body.board-page .topbar > .doc-name {',
+      '  font-size:14px !important; font-weight:600 !important;',
+      '  line-height:42px !important; min-width:0 !important;',
+      '}',
+      'body.board-page .topbar > a.btn.ghost:hover {',
+      '  border-color:var(--primary,#4c3dbe) !important; color:var(--primary,#4c3dbe) !important;',
+      '}',
+      'body.board-page .topbar > .doc-name:hover,',
+      'body.board-page .topbar > .doc-name:focus {',
+      '  border-color:var(--primary,#4c3dbe) !important; outline:none !important;',
+      '  background:var(--panel,#fff) !important;',
+      '}',
+      '@media (max-width:640px) {',
+      '  body.board-page .topbar > a.btn.ghost { order:0 !important; flex:0 0 auto !important; }',
+      '  body.board-page .topbar > .doc-name { order:1 !important; flex:1 1 auto !important; min-width:0 !important; max-width:none !important; }',
+      '  body.board-page .topbar > .save-status { order:2 !important; }',
+      '  body.board-page .topbar > .flex-spacer { order:3 !important; flex:0 0 100% !important; height:0 !important; min-width:0 !important; }',
+      '  body.board-page .topbar > *:not(a.btn.ghost):not(.doc-name):not(.save-status):not(.flex-spacer) { order:4 !important; }',
+      '  body.board-page .topbar { row-gap:6px !important; }',
+      '}',
+    ].join('\n');
+    var s = document.createElement('style');
+    s.id = 'si-align-style';
+    s.textContent = css;
+    document.head.appendChild(s);
+  }
+
+  /* ---------------------------------------------------------------------------
    * 启动：等 DOMContentLoaded（保证 deferred module 如 board.js 已填好下拉选项）
    * -------------------------------------------------------------------------*/
   function boot() {
@@ -927,6 +983,8 @@
       safe('#11/#25 关于与页脚', aboutAndFooter);
     }
     if (isBoard) {
+      // 第四轮：顶栏首行对齐样式随 JS 注入，优先于可能被缓存的旧 CSS
+      safe('顶栏首行视觉对齐', alignTopbarHead);
       safe('#6 模型文案', modelLabels);
       safe('#12 工具栏分组', toolbarGroups);
       safe('#14 函数作图区', fnPanel);
