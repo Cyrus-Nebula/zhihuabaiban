@@ -20,8 +20,11 @@
  *   LLM_MODEL     默认 glm-4.7-flash
  */
 
-import { BOARD_SYSTEM_PROMPT } from './board-prompt.js';
+import { BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, isBoard3DIntent } from './board-prompt.js';
 import { DEFAULT_MODEL, resolveModel, supportsVision } from './models.js';
+
+// 3D 分支（独立自主 3D 画板任务）：/api/ai/board 同时服务 2D 与 3D 画板，
+// 按 mode 选用不同的系统提示词；2D 主干（BOARD_SYSTEM_PROMPT / extractResult）保持原语义。
 
 const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
 
@@ -210,6 +213,22 @@ export function extractResult(text) {
   return { message, commands };
 }
 
+/* ---------- 3D 分支：协议选择（纯函数，便于无头回归） ---------- */
+
+/**
+ * 决定本次请求用 2D 还是 3D 命令协议。
+ *
+ * 设计原则：默认行为与 3D 分支落地前完全一致（2D），避免影响既有 2D 画板：
+ *   - payload.mode 显式给 '3d' / '2d' → 直接采用（3D 画板前端固定传 '3d'）；
+ *   - 未显式给 mode 时，只有前端同时显式开启 detect3d:true 且命中立体意图才切 3D。
+ * 即「检测 3D 意图 → 使用 3D 命令集」这条链路存在且可用，但不会误伤 2D 请求。
+ */
+export function resolveBoardMode(payload, message) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  if (p.mode === '3d' || p.mode === '2d') return p.mode;
+  return p.detect3d === true && isBoard3DIntent(message) ? '3d' : '2d';
+}
+
 /* ---------- 主入口 ---------- */
 export async function handleBoardAi(request, env) {
   let payload;
@@ -233,6 +252,10 @@ export async function handleBoardAi(request, env) {
   const message = String(payload.message || '').trim();
   if (!message && !payload.image) return json({ ok: false, error: 'message 不能为空' }, 400);
 
+  // 3D 分支：按显式 mode（或显式开启的意图检测）选择 2D / 3D 命令协议
+  const mode = resolveBoardMode(payload, message);
+  const systemPrompt = mode === '3d' ? BOARD3D_SYSTEM_PROMPT : BOARD_SYSTEM_PROMPT;
+
   // ---- 图片（视觉模型专用）----
   let image = null;
   if (typeof payload.image === 'string' && /^data:image\//i.test(payload.image)) {
@@ -243,7 +266,7 @@ export async function handleBoardAi(request, env) {
     // 非视觉模型：忽略图片（前端也会隐藏上传按钮，这里兜底）
   }
 
-  const messages = [{ role: 'system', content: BOARD_SYSTEM_PROMPT }];
+  const messages = [{ role: 'system', content: systemPrompt }];
   if (Array.isArray(payload.history)) {
     for (const h of payload.history.slice(-10)) {
       if (h && (h.role === 'user' || h.role === 'assistant') && h.content) {
@@ -256,7 +279,7 @@ export async function handleBoardAi(request, env) {
       }
     }
   }
-  const context = payload.context ? `\n\n【当前画板元素】${String(payload.context).slice(0, 1000)}` : '';
+  const context = payload.context ? `\n\n【${mode === '3d' ? '当前画板对象' : '当前画板元素'}】${String(payload.context).slice(0, 1000)}` : '';
   let userText = (message || '请按这张图片复原几何图形') + context;
   if (image) {
     userText += '\n\n【用户上传了图片】请仔细观察图片中的几何图形，按原样用命令复原：先识别元素类型（点/线段/直线/圆/多边形/函数曲线/标注）与相互关系，再输出命令；坐标取近似值即可。';
@@ -327,7 +350,7 @@ export async function handleBoardAi(request, env) {
     console.error('AI 回复解析失败，原文前 300 字：', content.slice(0, 300));
     return json({ ok: false, error: 'AI 这次没有按格式作答，请重试或换一种描述' }, 200);
   }
-  return json({ ok: true, message: result.message, commands: result.commands }, 200);
+  return json({ ok: true, message: result.message, commands: result.commands, mode }, 200);
 }
 
 function json(obj, status) {

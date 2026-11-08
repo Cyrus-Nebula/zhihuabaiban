@@ -657,3 +657,103 @@ function showHint(msg) { const h = document.getElementById('b3dHint'); if (h) { 
 // 启动
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
 else init();
+
+// ============================================================
+// AI 3D 命令执行器对接 API（本轮增量 · 优先级 3）
+//
+// 只在此处把画板副作用暴露成窄接口；js/board3d-executor.js 是纯函数，
+// 通过注入本对象执行命令，二者互不引用 2D 的 js/executor.js。
+// 上方所有既有逻辑（几何体 / 拾取 / 属性面板 / 刻度 / 标注 / 持久化）原样保留。
+// ============================================================
+export const board3dApi = {
+  /** 3D 内核是否已就绪（WebGL 不可用时 init 会提前返回） */
+  isReady() { return !!group && !!scene; },
+
+  /** 当前场景快照，交给执行器做 id 存在性判定与 AI context */
+  getState() {
+    syncAllFromMeshes();
+    return {
+      objects: doc.objects.map(cloneObj),
+      view: { bg: doc.bg, axes: doc.axes, grid: doc.grid },
+    };
+  },
+
+  /** 新增对象：id 冲突时自动改号；几何参数缺省值由 SHAPE_DEFS 补齐 */
+  add(raw) {
+    if (!group || !raw || !SHAPE_DEFS[raw.type]) return null;
+    const obj = cloneObj(raw);
+    if (!raw.id || doc.objects.some((o) => o.id === obj.id)) obj.id = genId();
+    const def = SHAPE_DEFS[obj.type];
+    const p = {};
+    for (const k in def.params) p[k] = def.params[k].d;
+    obj.p = Object.assign(p, obj.p || {});
+    doc.objects.push(obj);
+    if (obj.type === 'label') addLabelOverlay(obj);
+    else addMeshForObj(obj);
+    hideHint();
+    scheduleSave();
+    return obj.id;
+  },
+
+  /** 局部更新：变换 / 材质 / 几何参数 / 标注文字 */
+  update(id, patch) {
+    const obj = doc.objects.find((o) => o.id === id);
+    if (!obj) return false;
+    for (const k of ['text', 'color', 'opacity']) if (patch[k] !== undefined) obj[k] = patch[k];
+    for (const k of ['pos', 'rot', 'scale']) if (Array.isArray(patch[k])) obj[k] = patch[k].slice();
+    if (patch.params && typeof patch.params === 'object') obj.p = Object.assign({}, obj.p, patch.params);
+    const mesh = meshes.get(id);
+    if (mesh) {
+      applyTransform(mesh, obj);
+      rebuildGeometry(obj);
+      const mat = mesh.material;
+      if (mat) {
+        if (mat.color && mat.color.set) mat.color.set(obj.color);
+        mat.opacity = obj.opacity;
+        mat.transparent = obj.opacity < 1;
+        mat.depthWrite = obj.opacity >= 1;
+      }
+    }
+    const lo = labelOverlays.get(id);
+    if (lo) { lo.el.textContent = obj.text || ''; lo.el.style.color = obj.color; }
+    scheduleSave();
+    return true;
+  },
+
+  /** 删除单个对象（mesh / 标注叠加层 / 选中态一并清理） */
+  remove(id) {
+    const obj = doc.objects.find((o) => o.id === id);
+    if (!obj) return false;
+    const lo = labelOverlays.get(id);
+    if (lo) { lo.el.remove(); labelOverlays.delete(id); }
+    const mesh = meshes.get(id);
+    if (mesh) {
+      transform.detach();
+      group.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+      meshes.delete(id);
+    }
+    if (selected && selected.id === id) deselect();
+    doc.objects = doc.objects.filter((o) => o.id !== id);
+    scheduleSave();
+    return true;
+  },
+
+  /** 清空全部对象（视图设置保留） */
+  clear() { [...doc.objects].forEach((o) => board3dApi.remove(o.id)); },
+
+  /** 视图设置：背景 / 坐标轴 / 网格 */
+  setView(patch) {
+    if (typeof patch.bg === 'string' && BG_COLORS[patch.bg]) doc.bg = patch.bg;
+    if (typeof patch.axes === 'boolean') doc.axes = patch.axes;
+    if (typeof patch.grid === 'boolean') doc.grid = patch.grid;
+    applyView();
+    scheduleSave();
+  },
+
+  /** 视角复位 */
+  resetView() { resetView(); },
+};
+
+if (typeof window !== 'undefined') window.Board3D = board3dApi;
