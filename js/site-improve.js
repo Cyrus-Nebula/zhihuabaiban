@@ -454,6 +454,132 @@
     });
   }
 
+  /* =========================================================================
+   * #14 函数独立面板（第二轮）：把「函数曲线 + 表达式 + 从/到 + 添加曲线」
+   *    包成一块带小标题、可折叠的面板，状态记 localStorage。
+   *    顺带修掉宽屏自动换行时「从」与「-10」被拆到两行的问题。
+   *    只搬运节点、不删节点；board.js 靠 id 绑定，移动 DOM 不影响任何逻辑。
+   *    必须在 fnPanel() 之后执行（要找到已改名为「函数曲线」的 label）。
+   * =======================================================================*/
+  function fnIndependentPanel() {
+    var bar = $('toolbar');
+    if (!bar || bar.querySelector('.si-fn-panel')) return;
+    var label = null;
+    Array.prototype.forEach.call(bar.querySelectorAll('.toolbar-label'), function (l) {
+      if (l.textContent.trim() === '函数曲线') label = l;
+    });
+    var add = $('btn-fn-add');
+    if (!label || !add) return;
+
+    // 收集 label..add 之间的兄弟节点（含两端），一个都不删
+    var nodes = [], n = label;
+    while (n) {
+      nodes.push(n);
+      if (n === add) break;
+      n = n.nextElementSibling;
+    }
+    if (nodes[nodes.length - 1] !== add) return;
+
+    var panel = document.createElement('div');
+    panel.className = 'si-fn-panel';
+    label.parentNode.insertBefore(panel, label);
+
+    var head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'si-fn-head';
+    head.innerHTML = '<span>函数曲线</span><span class="si-fn-caret">▾</span>';
+    var body = document.createElement('div');
+    body.className = 'si-fn-body';
+    panel.appendChild(head);
+    panel.appendChild(body);
+    nodes.forEach(function (x) { body.appendChild(x); });   // 原 label 由 head 接管显示，CSS 隐藏
+
+    var KEY = 'si-fn-open', open = true;
+    try { open = localStorage.getItem(KEY) !== '0'; } catch (e) {}
+    function apply() {
+      body.hidden = !open;
+      head.setAttribute('aria-expanded', String(open));
+      panel.classList.toggle('si-fn-collapsed', !open);
+    }
+    head.addEventListener('click', function () {
+      open = !open;
+      try { localStorage.setItem(KEY, open ? '1' : '0'); } catch (e) {}
+      apply();
+    });
+    apply();
+  }
+
+  /* =========================================================================
+   * #12 窄屏「更多 ▾」折叠（第二轮）：报告原文建议把 动画 / 嵌入 / LaTeX
+   *    这类高级功能收进下拉，避免顶栏首行全部摊开。
+   *    只搬运整个 .settings-wrap（button 与其 popover 一起走）；board.js 全部
+   *    靠 id 绑定、无 .settings-wrap 选择器，移动 DOM 不影响功能。
+   *    宽屏自动移回原位（注释锚点记录位置），跨断点 resize 无损切换。
+   * =======================================================================*/
+  function moreMenu() {
+    var topbar = document.querySelector('.topbar');
+    if (!topbar || $('siMoreTrigger')) return;
+    var wraps = ['btn-anim', 'btn-export-embed', 'btn-export-latex']
+      .map(function (id) { var b = $(id); return b && b.closest ? b.closest('.settings-wrap') : null; })
+      .filter(Boolean);
+    if (wraps.length !== 3) return;
+
+    // 注释锚点：宽屏移回时能精确还原顺序
+    wraps.forEach(function (w) {
+      var a = document.createComment('si-more-anchor');
+      w.parentNode.insertBefore(a, w);
+      w.__siAnchor = a;
+    });
+
+    var holder = document.createElement('div');
+    holder.className = 'si-more-wrap';
+    var trigger = document.createElement('button');
+    trigger.id = 'siMoreTrigger';
+    trigger.type = 'button';
+    trigger.className = 'btn';
+    trigger.textContent = '更多 ▾';
+    trigger.setAttribute('aria-haspopup', 'menu');
+    trigger.setAttribute('aria-expanded', 'false');
+    var menu = document.createElement('div');
+    menu.className = 'si-more-menu';
+    menu.hidden = true;
+    menu.setAttribute('role', 'menu');
+    holder.appendChild(trigger);
+    holder.appendChild(menu);
+
+    function close() { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); }
+    trigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      menu.hidden = !menu.hidden;
+      trigger.setAttribute('aria-expanded', String(!menu.hidden));
+    });
+    document.addEventListener('click', function (e) { if (!holder.contains(e.target)) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+    var mq = window.matchMedia('(max-width: 900px)');
+    var authAnchor = topbar.querySelector('.auth-anchor');
+    function apply() {
+      if (mq.matches) {
+        if (!holder.parentNode) {
+          if (authAnchor && authAnchor.parentNode === topbar) topbar.insertBefore(holder, authAnchor);
+          else topbar.appendChild(holder);
+        }
+        wraps.forEach(function (w) { menu.appendChild(w); });
+        holder.hidden = false;
+      } else {
+        wraps.forEach(function (w) {
+          var a = w.__siAnchor;
+          if (a && a.parentNode) a.parentNode.insertBefore(w, a.nextSibling);
+        });
+        close();
+        holder.hidden = true;
+      }
+    }
+    apply();
+    if (mq.addEventListener) mq.addEventListener('change', apply);
+    else if (mq.addListener) mq.addListener(apply);
+  }
+
   /* ---------------------------------------------------------------------------
    * 启动：等 DOMContentLoaded（保证 deferred module 如 board.js 已填好下拉选项）
    * -------------------------------------------------------------------------*/
@@ -472,6 +598,8 @@
       safe('#6 模型文案', modelLabels);
       safe('#12 工具栏分组', toolbarGroups);
       safe('#14 函数作图区', fnPanel);
+      safe('#14 函数独立面板', fnIndependentPanel);
+      safe('#12 更多 ▾ 折叠', moreMenu);
       safe('#15 Tab aria', tabAria);
       safe('#16 保存状态', saveDirty);
       safe('#24 Emoji 统一', stripEmoji);

@@ -184,8 +184,11 @@ body.board-page .topbar > a.btn.ghost {
 }
 body.board-page .topbar > a.btn.ghost:hover { border-color: var(--primary, #4c3dbe); color: var(--primary, #4c3dbe); }
 
-/* #12 顶栏：窄屏允许横向滚动，避免 8 个按钮挤成一团 */
-body.board-page .topbar { overflow-x: auto; scrollbar-width: thin; }
+/* #12 顶栏：style.css 原本就有 flex-wrap:wrap，按钮自动换行，无需横向滚动。
+   必须保持 overflow:visible —— 按 CSS 规范，overflow-x 设成 auto 会把
+   overflow-y 的 visible 也计算成 auto，顶栏变成滚动容器，从而裁掉
+   「更多 ▾」的绝对定位下拉（实测手机端只能看到第一项）。 */
+body.board-page .topbar { overflow: visible; }
 body.board-page .topbar > * { flex: 0 0 auto; }
 body.board-page .topbar .flex-spacer { flex: 1 1 auto; min-width: 8px; }
 
@@ -213,6 +216,44 @@ body.board-page .save-status.si-dirty::before { content: "● "; color: #c0392b;
   body.landing:not(.nf-page) .hero-ai-left .ai-model { max-width: 62vw; }
   body.board-page .topbar { gap: 8px; padding: 8px 12px; }
 }
+
+/* ---------------------------------------------------------------------------
+ * 第二轮：#12「更多 ▾」折叠 / #14 函数独立面板
+ * -------------------------------------------------------------------------*/
+/* #12 窄屏把 动画 / 嵌入 / LaTeX 三个高级功能收进「更多 ▾」。
+   宽屏不折叠：实测顶栏在 1440 下并不拥挤，无条件折叠反而多一次点击。 */
+.si-more-wrap { position: relative; display: inline-flex; }
+.si-more-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 120;
+  min-width: 252px; padding: 6px;
+  background: var(--panel, #fff);
+  border: 1px solid var(--border, rgba(17, 24, 39, .1));
+  border-radius: 10px; box-shadow: 0 12px 32px rgba(15, 23, 42, .14);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.si-more-menu > .settings-wrap { width: 100%; }
+.si-more-menu > .settings-wrap > .btn { width: 100%; text-align: center; }
+/* popover 保持 right:0 向左展开：390px 屏上向左才放得下 236px 的面板；
+   改 left:0 会向右顶出屏幕，且 mobile layout viewport 被撑宽后难以察觉。 */
+.si-more-menu .settings-pop { right: 0; left: auto; max-width: calc(100vw - 32px); }
+
+/* #14 函数区独立成一块：带小标题 + 可折叠，宽屏换行时不再被拆散到两行 */
+.si-fn-panel {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--raised, #f6f7f9);
+  border: 1px solid var(--border, rgba(17, 24, 39, .14));
+  border-radius: 10px; padding: 3px 8px 3px 6px;
+}
+.si-fn-head {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 0; background: transparent; font: inherit; font-size: 12px; font-weight: 600;
+  color: var(--secondary, #4b5565); cursor: pointer; white-space: nowrap; padding: 3px 2px;
+}
+.si-fn-head .si-fn-caret { font-size: 10px; color: var(--muted, #6b7487); transition: transform .2s ease; }
+.si-fn-panel.si-fn-collapsed .si-fn-caret { transform: rotate(-90deg); }
+.si-fn-body { display: inline-flex; align-items: center; gap: 6px; }
+/* 原「函数曲线」label 保留在 DOM 里（结构零删除），由标题按钮接管显示 */
+.si-fn-body .toolbar-label.si-fn-label { display: none; }
 
 /* ---------------------------------------------------------------------------
  * 404 页（#1）：不再只有「返回首页」，给出模块直达 + 自动跳回对应锚点
