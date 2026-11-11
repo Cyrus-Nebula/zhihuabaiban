@@ -1,13 +1,14 @@
 /**
  * 立体画板（路线B · 自研，不依赖大角几何 SDK）
  * 基于 Three.js（r160 ESM，已本地 vendor 至 libs/three/，运行时无需 CDN），
- * 提供几何体建模、拾取选择、属性编辑、坐标轴/网格/背景切换、
- * 本地 + 云端（Supabase）持久化。
+ * 提供几何体建模、拾取选择、点拖拽（屏幕坐标反投影到工作面）、属性编辑、
+ * 坐标轴/网格/背景切换、坐标轴刻度与 Label3D 标注、本地 + 云端（Supabase）持久化。
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { axisTickSpec } from './board3d-axis.js';
+import { screenToNdc, createDragSession, dragTo, isDraggableType } from './board3d-drag.js';
 
 const CFG = window.DAJIAO_CONFIG || {};
 const DEG = Math.PI / 180;
@@ -44,6 +45,10 @@ let selectedMesh = null;
 let scene, camera, renderer, orbit, transform, raycaster, group, gridHelper, axesHelper;
 let stage, canvas;
 const pointer = new THREE.Vector2();
+
+// 点拖拽会话（C3）：工作面在 pointerdown 时固定，拖拽期间反投影到该平面
+let dragSession = null;
+const _viewDir = new THREE.Vector3();
 
 // 叠加层（HTML，跟随 3D 锚点）：坐标轴刻度数值 + Label3D 文字标注
 let overlayLayer = null;
@@ -417,16 +422,28 @@ function bindUI() {
     document.querySelectorAll('#gizmoModes button').forEach((x) => x.classList.toggle('active', x === b));
   }));
 
-  // 拾取
+  // 拾取 + 点拖拽（C3：屏幕坐标反投影到工作面）
   let down = null, gizmoActive = false;
-  canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; gizmoActive = !!transform.axis; });
+  // 捕获阶段先于 OrbitControls 的 pointerdown：命中点图元时立刻禁用视角旋转
+  canvas.addEventListener('pointerdown', (e) => {
+    down = { x: e.clientX, y: e.clientY };
+    gizmoActive = !!transform.axis;
+    if (gizmoActive || transform.dragging) return;
+    tryStartPointDrag(e);
+  }, { capture: true });
+  window.addEventListener('pointermove', onDragPointerMove);
   canvas.addEventListener('pointerup', (e) => {
     if (!down) return;
     const dist = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     down = null;
+    endPointDrag();
     if (gizmoActive || dist > 5 || transform.dragging) return;
     pick(e);
   });
+  // 指针在画布外抬起 / 取消 / 窗口失焦时兜底结束拖拽，避免 orbit 一直被禁用
+  window.addEventListener('pointerup', endPointDrag);
+  canvas.addEventListener('pointercancel', endPointDrag);
+  window.addEventListener('blur', endPointDrag);
 
   // 键盘
   document.addEventListener('keydown', (e) => {
@@ -474,14 +491,66 @@ function deleteSelected() {
   scheduleSave();
 }
 
-function pick(e) {
-  const rect = canvas.getBoundingClientRect();
-  pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+/** 屏幕坐标 → 射线 → 首个命中（不改选中态，供点击拾取与拖拽命中共用）。 */
+function pickHit(e) {
+  const ndc = screenToNdc(e.clientX, e.clientY, canvas.getBoundingClientRect());
+  if (!ndc || !raycaster || !camera || !group) return null;
+  pointer.set(ndc.x, ndc.y);
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(group.children, false);
-  if (hits.length) selectObject(hits[0].object);
+  return hits.length ? hits[0] : null;
+}
+
+function pick(e) {
+  const hit = pickHit(e);
+  if (hit) selectObject(hit.object);
   else deselect();
+}
+
+// ---------- C3：点拖拽（屏幕坐标反投影到工作面） ----------
+function tryStartPointDrag(e) {
+  const hit = pickHit(e);
+  const obj = hit && hit.object.userData.obj;
+  if (!obj || !isDraggableType(obj.type)) return;
+  camera.getWorldDirection(_viewDir);
+  const session = createDragSession(_viewDir, { x: obj.pos[0], y: obj.pos[1], z: obj.pos[2] });
+  if (!session) return;
+  session.id = obj.id;
+  dragSession = session;
+  orbit.enabled = false;      // 拖拽点与旋转视角互斥
+  selectObject(hit.object);   // 选中该点，属性面板随之同步
+}
+
+function onDragPointerMove(e) {
+  if (!dragSession || !raycaster || !camera) return;
+  const ndc = screenToNdc(e.clientX, e.clientY, canvas.getBoundingClientRect());
+  if (!ndc) return;
+  pointer.set(ndc.x, ndc.y);
+  raycaster.setFromCamera(pointer, camera);
+  const next = dragTo(dragSession, raycaster.ray.origin, raycaster.ray.direction);
+  if (!next) return;          // 退化帧保持原位，实现「不跳变」
+  const obj = doc.objects.find((o) => o.id === dragSession.id);
+  if (!obj) return;
+  obj.pos = next;
+  const mesh = meshes.get(obj.id);
+  if (mesh) applyTransform(mesh, obj);
+  syncPosInputs();
+  scheduleSave();
+}
+
+/** 拖拽时只刷新位置输入框，避免每帧重建整个属性面板（含几何参数输入框）。 */
+function syncPosInputs() {
+  if (!selected) return;
+  for (let i = 0; i < 3; i++) {
+    const el = document.querySelector(`#inspectorBody [data-k="pos"][data-i="${i}"]`);
+    if (el) el.value = round(selected.pos[i]);
+  }
+}
+
+function endPointDrag() {
+  if (!dragSession) return;
+  dragSession = null;
+  if (orbit) orbit.enabled = true;
 }
 
 function resetView() {
