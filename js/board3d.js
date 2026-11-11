@@ -389,9 +389,23 @@ function bindUI() {
   document.getElementById('set-grid').addEventListener('change', (e) => setView('grid', e.target.checked));
   document.querySelectorAll('#set-bg .bg-swatch').forEach((b) => b.addEventListener('click', () => setView('bg', b.dataset.bg)));
 
-  // 视角 / 导出
+  // 视角 / 导出 / 导入
   document.getElementById('btn-reset-view').addEventListener('click', resetView);
   document.getElementById('btn-export').addEventListener('click', () => { syncAllFromMeshes(); Store.saveContent(fileId, JSON.parse(JSON.stringify(doc))); Store.exportFile(fileId); });
+  const importInput = document.getElementById('import-file');
+  document.getElementById('btn-import').addEventListener('click', () => { if (importInput) importInput.click(); });
+  if (importInput) importInput.addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const ok = board3dApi.importProject(String(reader.result || ''));
+      showToast(ok ? `工程已载入：${doc.objects.length} 个对象` : '导入失败：文件不是有效的工程 .json');
+    };
+    reader.onerror = () => showToast('导入失败：文件读取错误');
+    reader.readAsText(file);
+    e.target.value = ''; // 允许重复选择同一文件
+  });
 
   // 属性面板输入
   document.getElementById('inspectorBody').addEventListener('input', onInspectorInput);
@@ -650,6 +664,15 @@ function setSaveStatus(text, cls) {
   el.textContent = text;
   el.className = 'save-status' + (cls ? ' ' + cls : '');
 }
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 2400);
+}
 let hintHidden = false;
 function hideHint() { if (hintHidden) return; const h = document.getElementById('b3dHint'); if (h) { h.style.display = 'none'; hintHidden = true; } }
 function showHint(msg) { const h = document.getElementById('b3dHint'); if (h) { h.textContent = msg; h.style.display = 'block'; } }
@@ -754,6 +777,60 @@ export const board3dApi = {
 
   /** 视角复位 */
   resetView() { resetView(); },
+
+  /**
+   * 导出工程：序列化完整持久化结构 `{ v, bg, axes, grid, objects }` 为 JSON 字符串。
+   * 与「导出」按钮共用同一结构（见 D4 回归用例：导出 .json 后再载入完整还原）。
+   * @returns {string} 可经 importProject() 原样还原的工程 JSON
+   */
+  exportProject() {
+    syncAllFromMeshes();
+    return JSON.stringify({
+      v: 1,
+      bg: doc.bg,
+      axes: doc.axes,
+      grid: doc.grid,
+      objects: doc.objects.map(cloneObj),
+    });
+  },
+
+  /**
+   * 载入工程：校验 → 清空当前场景 → 按持久化结构重建对象与视图设置。
+   * 用于「导入工程」按钮，导出后再载入可实现对象与设置完整还原。
+   * 容错：非法 JSON / 非对象 / 缺 objects 数组一律拒绝（返回 false，不破坏当前场景）；
+   *       未知图元类型被跳过，坐标/参数缺失回落默认（与 loadFile() 行为一致）。
+   * @param {string|object} raw  JSON 字符串或已解析对象
+   * @returns {boolean} 是否成功载入
+   */
+  importProject(raw) {
+    let data;
+    try { data = typeof raw === 'string' ? JSON.parse(raw) : raw; }
+    catch (_) { return false; }
+    if (!data || typeof data !== 'object' || !Array.isArray(data.objects)) return false;
+
+    // 清空当前场景（mesh / 标注叠加层 / 选中态一并清理）
+    [...doc.objects].forEach((o) => board3dApi.remove(o.id));
+    deselect();
+
+    doc = {
+      v: 1,
+      bg: BG_COLORS[data.bg] ? data.bg : 'white',
+      axes: data.axes !== false,
+      grid: data.grid !== false,
+      objects: [],
+    };
+    for (const o of data.objects) {
+      if (!o || !SHAPE_DEFS[o.type]) continue; // 跳过未知图元类型，避免脏数据进场景
+      const obj = cloneObj(o);
+      obj.p = o.p && typeof o.p === 'object' ? Object.assign({}, o.p) : {};
+      doc.objects.push(obj);
+      if (obj.type === 'label') addLabelOverlay(obj);
+      else addMeshForObj(obj);
+    }
+    applyView();
+    scheduleSave();
+    return true;
+  },
 };
 
 if (typeof window !== 'undefined') window.Board3D = board3dApi;
