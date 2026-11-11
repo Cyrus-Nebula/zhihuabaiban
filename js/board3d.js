@@ -631,7 +631,19 @@ function addLabelOverlay(obj) {
   el.className = 'b3d-label3d';
   el.textContent = obj.text || '标注';
   el.style.color = obj.color || '#1f2937';
-  el.addEventListener('pointerdown', (e) => { e.stopPropagation(); selectLabel(obj); });
+  el.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    selectLabel(obj);
+    // 标注锚点拖拽：复用点拖拽的「工作面反投影」纯函数流程（C3），
+    // 与 tryStartPointDrag 走同一套 session + window pointermove/up 监听。
+    if (!isDraggableType(obj.type) || !camera || !orbit) return;
+    camera.getWorldDirection(_viewDir);
+    const session = createDragSession(_viewDir, { x: obj.pos[0], y: obj.pos[1], z: obj.pos[2] });
+    if (!session) return;
+    session.id = obj.id;
+    dragSession = session;
+    orbit.enabled = false;   // 拖拽标注与旋转视角互斥
+  });
   overlayLayer.appendChild(el);
   labelOverlays.set(obj.id, { el, obj });
 }

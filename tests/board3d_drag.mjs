@@ -182,17 +182,37 @@ section('E. 四视角真实 Three.js 相机射线：90px 拖拽不跳变 / 不�
   assert(maxStep < 1, `正视连续 10 帧拖拽单帧位移 ${maxStep.toFixed(3)} < 1（无跳变）`);
 }
 
-/* ---------------- F. 可拖拽类型白名单 ---------------- */
-section('F. isDraggableType 白名单');
+/* ---------------- F. 可拖拽类型白名单（锚点型可拖拽） ---------------- */
+section('F. isDraggableType 白名单（锚点型图元可拖拽）');
 {
-  assert(isDraggableType('point') === true, 'point 图元可拖拽');
-  for (const t of ['box', 'sphere', 'label', 'line', 'plane', '', null, undefined]) {
-    assert(isDraggableType(t) === false, `非点图元 ${String(t)} 走既有 gizmo，不启用拖拽`);
+  for (const t of ['point', 'label']) {
+    assert(isDraggableType(t) === true, `${t} 锚点型图元可拖拽`);
+  }
+  for (const t of ['box', 'sphere', 'line', 'plane', '', null, undefined]) {
+    assert(isDraggableType(t) === false, `非锚点图元 ${String(t)} 走既有 gizmo，不启用拖拽`);
   }
 }
 
-/* ---------------- G. 接入静态断言 + 硬约束复核 ---------------- */
-section('G. 真实 board3d.js 接入与硬约束静态复核');
+/* ---------------- G. Label3D 标注锚点拖拽（复用 C3 纯函数） ---------------- */
+section('G. Label3D 标注锚点拖拽：与 point 同款反投影');
+{
+  // 标注锚点 (1,2,3)，等轴视线：拖拽应走水平工作面并保持高度守恒
+  const start = { x: 1, y: 2, z: 3 };
+  const sL = createDragSession({ x: -0.5, y: -0.45, z: -0.7 }, start);
+  assert(!!sL && sL.horizontal === true, '标注锚点会话：等轴视线 → 水平工作面');
+  const pL = dragTo(sL, { x: 0, y: 7, z: 0 }, { x: -0.3, y: -0.5, z: -0.6 });
+  assert(!!pL && near(pL[1], 2, 1e-9), '标注拖拽高度守恒（Y 恒等于锚点起点 2）');
+  assert(!!pL && pL.every(Number.isFinite), '标注拖拽交点三分量有限');
+  // 模拟 onDragPointerMove 把结果写回 obj.pos：Label3D 的 HTML 标注每帧按 obj.pos 投影跟随
+  const labelObj = { id: 'o_lbl1', type: 'label', pos: [1, 2, 3] };
+  labelObj.pos = pL;
+  assert(labelObj.pos[0] !== 1 || labelObj.pos[2] !== 3, '标注锚点 pos 已更新（HTML 标注将跟随该锚点）');
+  assert(dragTo(createDragSession({ x: 0, y: 0, z: -1 }, start), { x: 0, y: 5, z: 0 }, { x: 1, y: -0.0001, z: 0 }) === null,
+    '标注锚点近平行退化射线：拒绝不跳变（与 point 同款防护）');
+}
+
+/* ---------------- H. 接入静态断言 + 硬约束复核 ---------------- */
+section('H. 真实 board3d.js 接入与硬约束静态复核');
 {
   assert(src.length > 0, 'js/board3d.js 可读');
   assert(src.includes("from './board3d-drag.js'"), 'board3d.js 引入纯函数模块（相对路径可解析）');

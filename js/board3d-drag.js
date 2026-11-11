@@ -82,9 +82,14 @@ export function rayPlaneIntersect(origin, dir, plane, eps = EPS) {
   return hit.every(Number.isFinite) ? hit : null;
 }
 
-/** 仅点图元支持直接拖拽；其余图元仍走既有的 TransformControls gizmo。 */
+/**
+ * 仅「锚点型」图元支持鼠标直接拖动（在屏幕坐标反投影到工作面后改写其 pos）：
+ *  - `point`：点图元，pos 即其唯一位置；
+ *  - `label`：Label3D 文字标注，锚定在 3D 空间一点，拖动即移动该锚点，HTML 标注每帧跟随 obj.pos。
+ * 其余图元（box/sphere/line/plane…）有体积，仍走既有的 TransformControls gizmo，不启用拖拽。
+ */
 export function isDraggableType(type) {
-  return type === 'point';
+  return type === 'point' || type === 'label';
 }
 
 /**
