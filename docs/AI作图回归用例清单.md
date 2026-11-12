@@ -97,6 +97,15 @@
 | 38 | 多轮收敛：第 1 轮没修好，第 2 轮换改法后收敛 | 首轮作图 + `verify`；`pass:false` → 前端发【自检回读】→ 只发修正命令 → 静默复跑原始 `verify` → 仍 `pass:false` 且未横跳则第 2 轮换改法（`move` 就地改坐标）→ `pass:true` 收敛 | ✅ | `MAX_FIX_ROUNDS=3`；每轮附【自检状态条】与【上一轮已尝试的改动】；见 `ai/board-prompt.js` 例10 |
 | 39 | 防反复横跳 / 提前收手 | 第 2 轮修正命令与第 1 轮完全相同 → 立即停止；失败项变多、连续 2 轮没减少、或达 3 轮上限 → 停止并如实显示读数 | ✅ | 修正轮过滤 `clear`/`measure`/`verify`（防误清画板、防读数堆积）；纯 `measure`（无断言）不额外消耗 LLM |
 
+## 外接圆 / 外心（易错构造·本轮新增 2026-11-12 第三轮）
+
+> 协议无原生外接圆 op，必须先在规划阶段算外心：直角三角形外心 = 斜边中点；一般三角形用「垂直平分线交点」法。
+> 画外心点 + 一条 `circle`(center:外心, radius:外心到任一顶点距离)；末尾用 `verify` 的 `oncircle` 三顶点共圆自检（见 `ai/board-prompt.js` 例11）。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 40 | 直角三角形 A(0,0)B(4,0)C(0,3) 的外接圆 | 建三角形 → `point` O(2,1.5)（斜边 BC 中点当外心）→ `circle` cO center:O radius:2.5 → `verify` kind:oncircle of:[A/B/C,cO] expect:0 tol:0.05 ×3 | ✅ | 外心坐标必须规划阶段算好（直角用斜边中点，一般三角形用垂直平分线交点）；半径=外心到任一顶点距离；末尾 oncircle 自检算得对不对，pass:false 触发修正轮 |
+
 ## 协议扩展 TODO（不在本轮，供下一步）
 - [本轮已完成] `reflect` / `rotate` / `translate`：原生几何变换 op（见用例 17/21/22 与 `js/executor.js` 的 transform 分支）。
 - [本轮已完成] `animate`：自动播放参数动画命令（见用例 23 与 `js/executor.js` 的 animate 分支、`js/board.js` 的 animPlayTargets；前端复用既有滑动条动画引擎）。
@@ -111,6 +120,7 @@
 - [下一步·待办] ① 多轮收敛（连续 2~3 轮 verify→修正，带上限与改动 diff，避免反复横跳）；② [本轮已完成 2026-11-12] 把 `expect` 扩展到「关系断言」（perpendicular/parallel/collinear/online/oncircle，残差≈0 复用 judgeMeasure；见用例 32~36、`js/executor.js` 的 measureValue 新分支、`ai/board-prompt.js` 例9），贴近大角几何符号自检；③ 自检状态条可视化（"已自检 2 项，✘ 1 项，已修正 1 处"）。
 - [本轮已完成 2026-11-12 第二轮] 多轮收敛 + `move` 增量修正（兑现待办①③）：`js/board.js` 的 `aiSend()` 改为「修正 → `probeVerify` 静默复跑首轮 verify → 机器判定收敛」循环（`MAX_FIX_ROUNDS=3`，带上一轮改动 diff、已通过项白名单、横跳/失败项变多/连续 2 轮无改善/上限提前收手，逐轮【自检状态条】）；`js/executor.js` 新增 `move` 执行分支与 `probeVerify` 导出；见用例 37~39、`ai/board-prompt.js` 例10 与「多轮收敛」小节。
 - [下一步·待办] ① 自检状态条做成 AI 面板固定 DOM 徽标（现为逐轮日志行）；② 收敛判定引入「残差改善量」而非只数失败项；③ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数。
+- [本轮新增 2026-11-12 第三轮] 外接圆 / 外心 few-shot 与回归用例（易错构造补全）：协议无原生外接圆 op，本轮在「核心工作流」第 2 步明确"外接圆需先算外心坐标"，并新增 `ai/board-prompt.js` 例11（直角三角形外心=斜边中点，一般三角形用垂直平分线交点法；末尾 `verify` kind:oncircle 三顶点共圆自检，pass:false 触发修正轮）；纯提示词增量，未改 `js/executor.js` 执行分支，无 3D / editor.html 改动；见用例 40。
 
 ## 已知限制
 - 沙箱无头环境无法实例化真实 JSXGraph，上述用例需在带浏览器的环境目视确认或补单测；命令序列本身已与 `js/executor.js` 协议逐条对齐。
