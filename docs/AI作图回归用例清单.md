@@ -106,6 +106,17 @@
 |---|------|-----------|------|------|
 | 40 | 直角三角形 A(0,0)B(4,0)C(0,3) 的外接圆 | 建三角形 → `point` O(2,1.5)（斜边 BC 中点当外心）→ `circle` cO center:O radius:2.5 → `verify` kind:oncircle of:[A/B/C,cO] expect:0 tol:0.05 ×3 | ✅ | 外心坐标必须规划阶段算好（直角用斜边中点，一般三角形用垂直平分线交点）；半径=外心到任一顶点距离；末尾 oncircle 自检算得对不对，pass:false 触发修正轮 |
 
+## 读取画板状态（数值快照·本轮新增 2026-11-12 第四轮）
+
+> `js/executor.js` 的 `describe()` 由 `id(类型)` 升级为**数值快照**：点/交点/中点/glider 带坐标、线/线段带端点、圆带圆心半径、多边形带顶点、函数曲线带表达式与定义域、滑动条带当前值；`ai/board-backend.js` 的 context 上限 1000→2400 防截断。AI 据此在已有图形上精确继续构造（对标大角几何 MCP 式「读画板状态后改图」），规则见 `ai/board-prompt.js` 的「读取画板状态（数值快照）」小节与例12。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 41 | 当前画板已有三角形 A(0,3) B(-2,-1) C(3,-1)，"在这个三角形上作 BC 边上的高，标出垂足" | 读快照得坐标 → **不 clear / 不重画**：`line` lBC through:[B,C] → `perpendicular` h of:lBC through:A → `intersect` H of:[h,lBC] → `segment` AH → `style` h hidden:true → `label` H → `verify` kind:angle of:[A,H,B] expect:90 tol:0.5 | ⬜ | 已有 id 不能再 `point`（会报「id 重复定义」）；关键坐标必须取自快照而非猜测 |
+| 42 | 画板已有 `f1(function:"3-(x-2)^2"@[-2,6])`，"标出这条抛物线的顶点" | 按快照表达式与定义域算顶点 (2,3) → 不重画曲线：`point` V(2,3) → `verify` kind:evaluate expr:"3-(x-2)^2" x:2 expect:3；变式"把 A 往上挪 1"用 `move` id:A x:0 y:4 | ⬜ | 表达式/定义域来自 `execute()` 挂在 functiongraph 上的 `__aiExpr`/`__aiRange`；改坐标一律 `move` |
+
+> 状态标 ⬜：命令序列已与 `js/executor.js` 协议逐条对齐，`describe()` 已用无头桩元素验证输出格式（点/线/圆/多边形/函数/滑动条 + 取值失败回退 + 60 元素上限）；浏览器侧真实 JSXGraph 元素的 `elType` / `vertices` / `Radius()` 取值仍需带浏览器环境目视确认。
+
 ## 协议扩展 TODO（不在本轮，供下一步）
 - [本轮已完成] `reflect` / `rotate` / `translate`：原生几何变换 op（见用例 17/21/22 与 `js/executor.js` 的 transform 分支）。
 - [本轮已完成] `animate`：自动播放参数动画命令（见用例 23 与 `js/executor.js` 的 animate 分支、`js/board.js` 的 animPlayTargets；前端复用既有滑动条动画引擎）。
@@ -121,6 +132,8 @@
 - [本轮已完成 2026-11-12 第二轮] 多轮收敛 + `move` 增量修正（兑现待办①③）：`js/board.js` 的 `aiSend()` 改为「修正 → `probeVerify` 静默复跑首轮 verify → 机器判定收敛」循环（`MAX_FIX_ROUNDS=3`，带上一轮改动 diff、已通过项白名单、横跳/失败项变多/连续 2 轮无改善/上限提前收手，逐轮【自检状态条】）；`js/executor.js` 新增 `move` 执行分支与 `probeVerify` 导出；见用例 37~39、`ai/board-prompt.js` 例10 与「多轮收敛」小节。
 - [下一步·待办] ① 自检状态条做成 AI 面板固定 DOM 徽标（现为逐轮日志行）；② 收敛判定引入「残差改善量」而非只数失败项；③ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数。
 - [本轮新增 2026-11-12 第三轮] 外接圆 / 外心 few-shot 与回归用例（易错构造补全）：协议无原生外接圆 op，本轮在「核心工作流」第 2 步明确"外接圆需先算外心坐标"，并新增 `ai/board-prompt.js` 例11（直角三角形外心=斜边中点，一般三角形用垂直平分线交点法；末尾 `verify` kind:oncircle 三顶点共圆自检，pass:false 触发修正轮）；纯提示词增量，未改 `js/executor.js` 执行分支，无 3D / editor.html 改动；见用例 40。
+- [本轮新增 2026-11-12 第四轮] 读取画板状态升级为数值快照：`js/executor.js` 的 `describe()` 由 `id(类型)` 改为带出点坐标 / 线端点 / 圆心半径 / 多边形顶点 / 函数表达式与定义域 / 滑动条当前值（60 元素、2200 字符双上限），`execute()` 为 functiongraph 挂 `__aiExpr`/`__aiRange`；`ai/board-backend.js` 的 context 上限 1000→2400；`ai/board-prompt.js` 核心工作流第 1 步改用快照数值规划，新增「读取画板状态」小节与例12；见用例 41/42。纯 2D 增量，未碰 3D 分支 / `editor.html`。
+- [下一步·待办·本轮之后] ① 新增 `inspect` 命令让 AI 主动查询任意元素的数值（两阶段回读：先发查询、拿到读数再构造，需 `js/board.js` 把查询读数并入 read-back 闭环）；② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数；⑤ 补中位线 / 扇形弓形 / 函数图像平移演示 few-shot。
 
 ## 已知限制
 - 沙箱无头环境无法实例化真实 JSXGraph，上述用例需在带浏览器的环境目视确认或补单测；命令序列本身已与 `js/executor.js` 协议逐条对齐。

@@ -279,7 +279,9 @@ export async function handleBoardAi(request, env) {
       }
     }
   }
-  const context = payload.context ? `\n\n【${mode === '3d' ? '当前画板对象' : '当前画板元素'}】${String(payload.context).slice(0, 1000)}` : '';
+  // 2D 状态快照带坐标/半径/端点/定义域，比旧的 id(类型) 列表长，上限 1000→2400 避免后半段被截断
+  // （executor.describe() 自身还有 60 元素 / 2200 字符上限，两道保险）。3D 分支的 context 很短，不受影响。
+  const context = payload.context ? `\n\n【${mode === '3d' ? '当前画板对象' : '当前画板元素'}】${String(payload.context).slice(0, 2400)}` : '';
   let userText = (message || '请按这张图片复原几何图形') + context;
   if (image) {
     userText += '\n\n【用户上传了图片】请仔细观察图片中的几何图形，按原样用命令复原：先识别元素类型（点/线段/直线/圆/多边形/函数曲线/标注）与相互关系，再输出命令；坐标取近似值即可。';

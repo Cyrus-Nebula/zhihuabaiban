@@ -76,6 +76,16 @@
  *   2) 收敛判定引入"残差改善量"而不只数失败项（如 63°→85° 已接近，可再给一轮）；
  *   3) 收敛后把 probeVerify 的结果回画成最终 ✔ 读数（现在修正轮清掉临时读数，只留面板日志）。
  *
+ * 本轮（AI作图对标大角几何·增量·2026-11-12 第四轮）：只改 2D 协议，3D 分支零触碰。
+ *   补齐「读取画板状态」的实质短板：此前 describe() 只回 id(类型)（+滑动条值），AI 看不到
+ *   已有元素的坐标/半径/定义域，因此在现有图形上继续构造（作高线、求外心、求交点）时只能猜坐标。
+ *   本轮把状态升级为「数值快照」：点/交点/中点/glider 带当前坐标、直线/线段带两端点、圆带圆心与半径、
+ *   多边形带顶点坐标、函数曲线带表达式与定义域、滑动条带当前值；execute 为 functiongraph 挂
+ *   __aiExpr/__aiRange 供 describe 读取。快照带 60 元素 / 2200 字符上限，后端 context 上限同步放宽。
+ *   配套：ai/board-prompt.js 新增「读取画板状态」规则 + 例12 few-shot、docs 回归用例 41/42。
+ * TODO(下一步): 1) 新增 inspect 命令让 AI 主动查询任意元素数值（两阶段回读：先发查询、拿到读数再构造）；
+ *   2) 自检状态条做成 AI 面板固定徽标；3) 收敛判定引入「残差改善量」而不只数失败项。
+ *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
  * 函数曲线的 expr 里直接写滑动条 id 即可（JSXGraph 会自动替换成 .Value()）。
@@ -909,6 +919,13 @@ export function createExecutor(board) {
         continue;
       }
       const el = built;
+      // 函数曲线把表达式与定义域挂在元素上，describe() 才能把它们写进 AI 的数值状态快照
+      if (cmd.op === 'function' && el) {
+        el.__aiExpr = String(cmd.expr || '');
+        const a = Number.isFinite(Number(cmd.from)) ? Number(cmd.from) : -10;
+        const b = Number.isFinite(Number(cmd.to)) ? Number(cmd.to) : 10;
+        el.__aiRange = [Math.min(a, b), Math.max(a, b)];
+      }
       if (cmd.id) {
           if (registry.has(cmd.id)) throw new Error(`id「${cmd.id}」重复定义`);
           if (el) registry.set(cmd.id, el);
@@ -932,18 +949,53 @@ export function createExecutor(board) {
     measureEls.length = 0;
   }
 
-  /** 当前画板元素摘要（作为 AI 的上下文）；滑动条带出当前值，方便 AI 接着改 */
+  /**
+   * 当前画板元素摘要（AI 的「读取画板状态」上下文）——数值快照，不只是 id(类型)。
+   * 点/交点/中点/动点带坐标、线/线段带端点、圆带圆心半径、多边形带顶点、
+   * 函数带表达式与定义域、滑动条带当前值；取不到数值时退回类型摘要，绝不让 describe 抛错。
+   * 逐元素 try/catch + 总长上限，避免复杂画板把上下文撑爆或被后端截断掉后半段。
+   */
   function describe() {
+    const fmt = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? String(Math.round(n * 1000) / 1000) : '?';
+    };
+    const pt = (p) => '(' + fmt(p[0]) + ',' + fmt(p[1]) + ')';
+    const POINT_TYPES = new Set(['point', 'glider', 'intersection', 'midpoint']);
+    const LINE_TYPES = new Set(['line', 'segment', 'ray', 'arrow', 'axis', 'ticks']);
     const items = [];
     for (const [id, el] of registry) {
-      if (el.elType === 'slider') {
-        const v = numericOf(el);
-        items.push(id + '(滑动条=' + (Number.isFinite(v) ? Math.round(v * 100) / 100 : '?') + ')');
-      } else {
-        items.push(id + '(' + (el.elType || '?') + ')');
-      }
+      const t = (el && el.elType) || '?';
+      let desc = t;
+      try {
+        if (t === 'slider' || t === 'checkbox') {
+          const v = numericOf(el);
+          desc = '滑动条=' + (Number.isFinite(v) ? Math.round(v * 100) / 100 : '?');
+        } else if (POINT_TYPES.has(t) && typeof el.X === 'function' && typeof el.Y === 'function') {
+          desc = t + '@' + pt([el.X(), el.Y()]);
+        } else if (t === 'circle') {
+          const g = circleGeom(el);
+          if (g) desc = 'circle@O' + pt([g[0], g[1]]) + ',r=' + fmt(g[2]);
+        } else if (LINE_TYPES.has(t)) {
+          const ep = lineEndpoints(el);
+          if (ep) desc = t + '@' + pt(ep[0]) + '->' + pt(ep[1]);
+        } else if (t === 'polygon' && Array.isArray(el.vertices)) {
+          const vs = el.vertices.slice(0, 6)
+            .filter((v) => v && typeof v.X === 'function' && typeof v.Y === 'function')
+            .map((v) => pt([v.X(), v.Y()]));
+          if (vs.length) desc = 'polygon@[' + vs.join(' ') + (el.vertices.length > 6 ? ' …' : '') + ']';
+        } else if (t === 'functiongraph' || t === 'curve') {
+          desc = 'function' + (el.__aiExpr ? ':"' + el.__aiExpr + '"' : '')
+            + (Array.isArray(el.__aiRange) ? '@[' + fmt(el.__aiRange[0]) + ',' + fmt(el.__aiRange[1]) + ']' : '');
+        }
+      } catch (_) { desc = t; /* 单个元素取值失败就退回类型摘要 */ }
+      items.push(id + '(' + desc + ')');
     }
-    return items.length ? items.join(', ') : '（空画板）';
+    const MAX_ITEMS = 60;
+    let out = items.slice(0, MAX_ITEMS).join(', ');
+    if (items.length > MAX_ITEMS) out += ` …（另有 ${items.length - MAX_ITEMS} 个元素省略）`;
+    if (out.length > 2200) out = out.slice(0, 2200) + ' …（状态快照过长已截断）';
+    return items.length ? out : '（空画板）';
   }
 
   /** 导出自由点坐标 + 滑动条当前值（拖拽后保存用） */
