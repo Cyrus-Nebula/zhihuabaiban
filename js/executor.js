@@ -30,7 +30,7 @@
  *             （细粒度：描边/填色可分设；opacity 0~1 整体透明，fillOpacity 单管填充；labelColor/labelSize 改标签文字）
  *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
  *   verify    {kind,of|expr,expect?,tol?,rtol?,expectRange?:[lo,hi],label?}  声明式自检断言：在 measure 三种求值之上加机器判定
- *             （expect + tol(默认0.05) 或 rtol 相对容差；expectRange 区间），execute 回传 pass:true/false/null；pass:false 触发前端修正轮
+ *             （expect + tol(默认0.05) 或 rtol 相对容差；expectRange 区间），execute 回传 pass:true/false/null；pass:false 触发前端多轮收敛修正轮（最多 3 轮）
  *             · 关系断言（本轮新增，贴近大角几何符号自检）：以下 kind 把"关系"折算成「残差≈0」的标量，直接复用 expect/tol 判定
  *               perpendicular {kind,of:[A,B,C,D],expect:0,tol:0.5}  AB⊥CD（残差=|两线夹角-90°|）
  *               parallel      {kind,of:[A,B,C,D],expect:0,tol:0.5}  AB∥CD（残差=两线夹角[0,90]）
@@ -41,6 +41,9 @@
  *   transform {id,of,type,by?|angle?|center?|axis?}  几何变换：把 of 元素平移/旋转/反射成一份新副本（以 id 命名），
  *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?)；支持 point/segment/line/ray/polygon/circle
  *   animate    {id|ids,pingpong?,speed?}             动画：让指定滑动条（id 或 ids，或 "__all__"）自动连续改值，依赖它的几何实时播放；speed: slow/normal/fast，pingpong:true 往复。仅前端播放，不进文档
+ *   move      {id,x,y} | {id,v}                      增量修正：就地移动已存在的自由点 / 改滑动条当前值（不新建图元、不改 id）。
+ *                                                    同 id 重新 point 会被 execute 判「id 重复定义」而失败，自检自动修正改坐标一律用 move；
+ *                                                    依赖它的线/圆/多边形由 JSXGraph 联动自动刷新。多轮收敛闭环的核心配套命令。
  *
  * 本文件职责（命令协议执行）：measure 命令回读几何量，并经 execute 结果透传 value（见 case 'measure'），
  *   画板上生成的临时灰色读数不进注册表/文档（transient）。
@@ -61,6 +64,17 @@
  * TODO(下一步·本轮之后): 1) 多轮收敛（连续 2~3 轮 verify→修正，带上限与改动 diff，避免反复横跳）；
  *   2) [本轮已完成] 把 expect 扩展到"关系断言"（perpendicular/parallel/collinear/online/oncircle，残差≈0 复用 judgeMeasure；见 measureValue 新分支与 ai/board-prompt.js 例9、docs 用例 32~36）；
  *   3) 自检状态条可视化（"已自检 2 项，✘ 1 项，已修正 1 处"）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-12 第二轮）：只改 2D 协议，3D 分支零触碰。
+ *   (1) 恢复 move 增量修正命令（曾被 84815b71 简化掉）：就地改自由点坐标 / 滑动条当前值，
+ *       不新建图元、不改注册表，execute 对 move 单独放行（跳过「id 重复定义」检查）；
+ *       同 id 重新 point 会失败，自检自动修正改坐标一律走 move，依赖几何由 JSXGraph 联动刷新。
+ *   (2) 新增 probeVerify(cmd) 并导出：静默复判一条 verify（只求值 + judgeMeasure 判定，
+ *       不生成画板读数、不落文档），供 js/board.js 的多轮收敛闭环在每轮修正后复跑
+ *       首轮原始 verify，用 pass 机器判定是否收敛，避免每轮堆一叠 ✔/✘ 文本。
+ * TODO(下一步): 1) 自检状态条做成 AI 面板固定徽标（现为逐轮日志行）；
+ *   2) 收敛判定引入"残差改善量"而不只数失败项（如 63°→85° 已接近，可再给一轮）；
+ *   3) 收敛后把 probeVerify 的结果回画成最终 ✔ 读数（现在修正轮清掉临时读数，只留面板日志）。
  *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
@@ -470,6 +484,18 @@ export function createExecutor(board) {
     return { pass: null, expected: null }; // 无期望值：只回读，不判定（等价 measure）
   }
 
+  /**
+   * 静默复判一条 verify：只求值 + 机器判定，不生成画板临时读数、不进注册表/文档。
+   * 供 js/board.js 的多轮收敛闭环在每轮修正后复跑「首轮原始 verify」，用 pass 判定是否收敛，
+   * 避免每轮都往画板堆一叠 ✔/✘ 文本（首轮读数保留、修正轮静默）。
+   * 返回 { value, kind, pass, expected }；kind 非法 / 元素缺失时抛错，由外层 try 兜住。
+   */
+  function probeVerify(cmd) {
+    const m = measureValue(cmd);
+    const j = judgeMeasure(m.value, cmd);
+    return { value: m.value, kind: m.kind, pass: j.pass, expected: j.expected };
+  }
+
   /** 点 (x,y) 关于过 p1、p2 两点的直线的对称点坐标 */
   function reflectAcrossLine(x, y, p1, p2) {
     const x1 = p1[0], y1 = p1[1], x2 = p2[0], y2 = p2[1];
@@ -710,6 +736,29 @@ export function createExecutor(board) {
         }
         return null;
       }
+      case 'move': {
+        // 增量修正（多轮收敛闭环的配套命令）：就地改已存在自由点的坐标 / 滑动条当前值。
+        // 同 id 重新 point 会被 execute 判「id 重复定义」而失败，move 直接 setPosition，
+        // 依赖它的线/圆/多边形由 JSXGraph 联动刷新，是自检自动修正最稳的改法。
+        // 本分支不新建图元、返回 null，execute 里对 move 单独放行（跳过注册表重复检查）。
+        const target = registry.get(cmd.id);
+        if (!target) throw new Error(`move.id「${cmd.id}」不存在（只能改已建好的元素）`);
+        if (cmd.v !== undefined && typeof target.setValue === 'function') {
+          const v = Number(cmd.v);
+          if (!Number.isFinite(v)) throw new Error('move.v 必须是数字');
+          target.setValue(v);
+          try { board.update(); } catch (_) { /* 忽略 */ }
+          return null;
+        }
+        if (!plainPoints.has(cmd.id)) throw new Error('move 只支持自由点（point）或滑动条，不能移动依赖点/线');
+        const x = Number(cmd.x), y = Number(cmd.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('move.x / move.y 必须是数字');
+        const COORDS_BY_USER = 1; // JXG.COORDS_BY_USER 的固定值，避免依赖全局
+        try { target.setPosition(COORDS_BY_USER, [x, y]); }
+        catch (_) { try { target.moveTo([x, y]); } catch (_) { /* 忽略 */ } }
+        try { board.update(); } catch (_) { /* 忽略 */ }
+        return null;
+      }
       case 'measure': {
         // 测量/自检回读（对标大角几何 MCP 式读画板状态）：求值交给 measureValue，
         // 生成临时读数文本（不进注册表/文档），数值经 execute 结果透传给前端闭环。
@@ -727,7 +776,7 @@ export function createExecutor(board) {
         // 关系断言（perpendicular/parallel/collinear/online/oncircle）把"关系"折算成「残差≈0」的标量，
         // 同样走 expect/tol 判定（残差落在容差内即 pass:true）。
         // 不给期望字段则 pass:null（只回读，等价 measure）。pass:false 由 js/board.js 的
-        // read-back 闭环自动发起一轮修正，AI 收【自检回读】只发修正命令（见提示词例6/例7）。
+        // read-back 闭环自动发起多轮收敛修正（最多 3 轮，每轮 probeVerify 复判），AI 收【自检回读】只发修正命令（见提示词例6/例7/例10）。
         const m = measureValue(cmd);
         const j = judgeMeasure(m.value, cmd);
         const name = cmd.label || KIND_NAME[m.kind] || (m.kind === 'distance' ? '距离' : m.kind === 'angle' ? '∠' : String(cmd.expr || m.kind));
@@ -853,6 +902,12 @@ export function createExecutor(board) {
         out.push({ ok: true, op: 'animate', ids: (built && built.ids) || [], pingpong: !!(built && built.pingpong), speed: (built && built.speed) || 'normal' });
         continue;
       }
+      if (cmd.op === 'move') {
+        // 就地修正：不新建图元、不改注册表（id 已存在，跳过「重复定义」检查）；
+        // build 的 move 分支已完成 setPosition / setValue，这里只回透传成功结果。
+        out.push({ ok: true, op: 'move', id: cmd.id || null });
+        continue;
+      }
       const el = built;
       if (cmd.id) {
           if (registry.has(cmd.id)) throw new Error(`id「${cmd.id}」重复定义`);
@@ -933,5 +988,5 @@ export function createExecutor(board) {
     if (restoredSlider) { try { board.update(); } catch (_) { /* 忽略 */ } }
   }
 
-  return { execute, describe, moves, applyMoves, clearAll, remove, clearMeasures, registry, has: (id) => registry.has(id) };
+  return { execute, describe, moves, applyMoves, clearAll, remove, clearMeasures, probeVerify, registry, has: (id) => registry.has(id) };
 }

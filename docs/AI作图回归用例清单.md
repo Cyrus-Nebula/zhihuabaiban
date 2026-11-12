@@ -70,7 +70,7 @@
 | 24 | AI 作图后自动自检并修正（read-back 闭环） | AI 输出作图命令 + `measure`；前端执行后把 measure 数值回传 LLM 二次核对，几何关系不符时自动补发修正命令 | ✅ | 前端 `js/board.js` 的 `aiSend()` 驱动；仅当一轮含 `measure` 时触发一次额外 LLM 调用；`executor.clearMeasures()` 清上一轮读数 |
 | 28 | AI 收【自检回读】后只发修正命令（闭环回合示例，见 `ai/board-prompt.js` 例6） | 第一轮发作图命令 + `measure`；回读 ∠AHB≈90° 则回 `{"commands":[]}`；回读不符（如 63°）则只补发修正命令（重算垂足 / 改 intersect select），不整段重画 | ✅ | 收【自检回读】消息铁律：只输出修正命令或空 commands |
 | 29 | 作 BC 边上的高并机器判定是否垂直 | 作图命令（同用例 14）→ `verify` kind:angle of:[A,H,B] expect:90 tol:0.5；`verify` kind:distance of:[A,H] expectRange:[3,5] | ✅ | 本轮新增 `verify`：expect + 默认 tol 0.05 / rtol，expectRange 区间；回传 pass:true/false，读数绿✓/红✗/灰·；见例7 |
-| 30 | 自检不符时自动修正一轮（read-back 闭环真正落地） | 一轮含 `verify` 且 pass:false → 前端 `aiSend()` 发一次【自检回读】二次 LLM 调用 → 只执行修正命令（改 intersect select / 重画那一处），不再递归自检 | ✅ | 本轮补齐：此前注释声称已落地、实际前端未接入；纯 measure 只展示读数不额外调用 LLM；自检/动画命令不写入 doc.commands |
+| 30 | 自检不符时自动修正（read-back 闭环真正落地） | 一轮含 `verify` 且 pass:false → 前端 `aiSend()` 发【自检回读】二次 LLM 调用 → 只执行修正命令（改 intersect select / 重画那一处）；后续已演进为多轮收敛，见用例 38 | ✅ | 本轮补齐：此前注释声称已落地、实际前端未接入；纯 measure 只展示读数不额外调用 LLM；自检/动画命令不写入 doc.commands |
 
 ## 关系断言（verify 层·本轮新增 2026-11-12，对标大角几何符号自检）
 
@@ -84,6 +84,19 @@
 | 35 | 验证点 P 在直线上 | `verify` kind:online of:[P,"l1"] expect:0 tol:0.05（第二项填直线/线段 id）或 of:[P,A,B] 两点式 | ✅ | 第二项可填直线 id 或两点；残差=点到线距离 |
 | 36 | 验证点 P 在圆上（如顶点在外接圆上） | `verify` kind:oncircle of:[P,"c1"] expect:0 tol:0.05（残差=\|P到圆心距离-半径\|） | ✅ | 圆半径若用滑动条需给对初值（如 √2/2）；否则残差偏大 pass:false 触发修正轮 |
 
+## 多轮收敛与增量修正（verify 层·本轮新增 2026-11-12 第二轮）
+
+> 恢复并升级 `b79292af` 的多轮修正闭环（曾被 `84815b71` 重写 `aiSend()` 时简化成一轮）：
+> 修正后**静默复跑首轮原始 verify**（`js/executor.js` 的 `probeVerify`，只求值不画读数），机器判定是否真的收敛；
+> 每轮带【上一轮改动 diff】/【已通过项，请勿重画】，最多 3 轮，横跳 / 失败项变多 / 连续 2 轮无改善即收手。
+> 配套恢复 `move` 增量修正命令：同 id 重新 `point` 会被判「重复定义」而失败，改坐标一律用 `move`。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 说明 |
+|---|------|-----------|------|------|
+| 37 | 自检修正时把自由点 A 挪到 (0,3) | `move` id:A x:0 y:3（不新建图元、不改 id；依赖它的线/圆/多边形自动联动） | ✅ | 本轮恢复 `move`；同 id 重新 `point` 会报「id 重复定义」；`move` 也支持 `{"op":"move","id":"a","v":2}` 改滑动条当前值 |
+| 38 | 多轮收敛：第 1 轮没修好，第 2 轮换改法后收敛 | 首轮作图 + `verify`；`pass:false` → 前端发【自检回读】→ 只发修正命令 → 静默复跑原始 `verify` → 仍 `pass:false` 且未横跳则第 2 轮换改法（`move` 就地改坐标）→ `pass:true` 收敛 | ✅ | `MAX_FIX_ROUNDS=3`；每轮附【自检状态条】与【上一轮已尝试的改动】；见 `ai/board-prompt.js` 例10 |
+| 39 | 防反复横跳 / 提前收手 | 第 2 轮修正命令与第 1 轮完全相同 → 立即停止；失败项变多、连续 2 轮没减少、或达 3 轮上限 → 停止并如实显示读数 | ✅ | 修正轮过滤 `clear`/`measure`/`verify`（防误清画板、防读数堆积）；纯 `measure`（无断言）不额外消耗 LLM |
+
 ## 协议扩展 TODO（不在本轮，供下一步）
 - [本轮已完成] `reflect` / `rotate` / `translate`：原生几何变换 op（见用例 17/21/22 与 `js/executor.js` 的 transform 分支）。
 - [本轮已完成] `animate`：自动播放参数动画命令（见用例 23 与 `js/executor.js` 的 animate 分支、`js/board.js` 的 animPlayTargets；前端复用既有滑动条动画引擎）。
@@ -96,8 +109,10 @@
 - [本轮已完成 2026-11-07 第二轮] read-back 闭环真正落地：`js/board.js` 的 `aiSend()` 收集回读值，`verify` pass:false 时发起一次【自检回读】修正轮（不递归），并把 measure/verify/animate 从 `doc.commands` 里排除（见用例 30）。此前注释与实现不符，本轮补齐。
 - [本轮已完成 2026-11-07 第二轮] `style` 细粒度样式（兑现上一条 TODO 交接项）：`opacity` / `fillOpacity` / `strokeColor` / `fillColor` / `labelColor` / `labelSize` / `labelOpacity`（见用例 31、`js/executor.js` 的 style 分支、`ai/board-prompt.js` 例8）。
 - [下一步·待办] ① 多轮收敛（连续 2~3 轮 verify→修正，带上限与改动 diff，避免反复横跳）；② [本轮已完成 2026-11-12] 把 `expect` 扩展到「关系断言」（perpendicular/parallel/collinear/online/oncircle，残差≈0 复用 judgeMeasure；见用例 32~36、`js/executor.js` 的 measureValue 新分支、`ai/board-prompt.js` 例9），贴近大角几何符号自检；③ 自检状态条可视化（"已自检 2 项，✘ 1 项，已修正 1 处"）。
+- [本轮已完成 2026-11-12 第二轮] 多轮收敛 + `move` 增量修正（兑现待办①③）：`js/board.js` 的 `aiSend()` 改为「修正 → `probeVerify` 静默复跑首轮 verify → 机器判定收敛」循环（`MAX_FIX_ROUNDS=3`，带上一轮改动 diff、已通过项白名单、横跳/失败项变多/连续 2 轮无改善/上限提前收手，逐轮【自检状态条】）；`js/executor.js` 新增 `move` 执行分支与 `probeVerify` 导出；见用例 37~39、`ai/board-prompt.js` 例10 与「多轮收敛」小节。
+- [下一步·待办] ① 自检状态条做成 AI 面板固定 DOM 徽标（现为逐轮日志行）；② 收敛判定引入「残差改善量」而非只数失败项；③ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数。
 
 ## 已知限制
 - 沙箱无头环境无法实例化真实 JSXGraph，上述用例需在带浏览器的环境目视确认或补单测；命令序列本身已与 `js/executor.js` 协议逐条对齐。
 - `measure` 在前端画板生成临时读数并回传数值；read-back 闭环已在 `js/board.js` 接入（执行后用 measure 数值驱动 LLM 二次核对并自动修正），无需后端改造。沙箱无头环境无法跑真实 JSXGraph + LLM，闭环行为需在带浏览器的环境目视确认（用例 14/15/16/20/24）。
-- 本轮起 read-back 闭环由 `verify` 的 `pass:false` 精确触发（纯 `measure` 只展示读数、不再消耗一次 LLM 调用）；判定容差默认 `tol=0.05`，角度用例建议显式给 `tol:0.5`。闭环每轮最多修正一次、不递归；`expect`/`expectRange` 的取值合理性由 AI 在规划阶段给出，仍需带浏览器环境回归确认（用例 29/30）。
+- 本轮起 read-back 闭环由 `verify` 的 `pass:false` 精确触发（纯 `measure` 只展示读数、不再消耗一次 LLM 调用）；判定容差默认 `tol=0.05`，角度用例建议显式给 `tol:0.5`。闭环最多自动修正 3 轮（每轮静默复跑原始 verify 机器判定收敛，横跳 / 失败项变多 / 连续 2 轮无改善 / 达上限提前收手），不递归；`expect`/`expectRange` 的取值合理性由 AI 在规划阶段给出，仍需带浏览器环境回归确认（用例 29/30、37~39）。

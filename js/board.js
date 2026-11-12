@@ -2464,53 +2464,116 @@ async function aiSend() {
       saveNow();
       refreshObjects();
 
-      // ---- 自检回读闭环（对标大角几何：读画板状态 → 判定 → 自动修正）----
-      // verify 带机器判定 pass；只有明确 pass:false 才发起一轮二次 LLM 修正，
-      // 纯 measure 只在面板展示读数，不额外消耗一次调用。修正轮不再触发自检，避免递归。
+      // ---- 自检回读闭环 · 多轮收敛（对标大角几何：读画板状态 → 判定 → 自动修正 → 复判）----
+      // 恢复并升级 b79292af 的多轮修正（曾被 84815b71 重写 aiSend 时简化成一轮修正）：
+      //   1) 每轮修正后静默复跑「首轮原始 verify」(executor.probeVerify)，机器判定是否真收敛，
+      //      不再"改完就算完"；复跑只求值不画读数、不落文档，避免每轮堆一叠 ✔/✘ 文本。
+      //   2) 提示带【上一轮已尝试的改动 diff】+【已通过项，请勿重画】，让 AI 换改法、只动未通过项；
+      //      两轮命令完全相同（横跳）/ 失败项变多 / 连续 2 轮无改善 / 达 MAX_FIX_ROUNDS 即提前收手。
+      //   3) 修正轮过滤 clear / measure / verify（防误清画板、防读数堆积）。
+      //   4) 纯 measure（无 verify 断言）只在面板展示读数，不额外消耗 LLM 调用（沿用既有策略）。
+      //   5) 面板逐轮给【自检状态条】：已自检 N 项，✔ x，✘ y，第 k/3 轮修正 / 已收敛 / 已收手。
+      const MAX_FIX_ROUNDS = 3;
+      const origVerifies = (data.commands || []).filter((c) => c && c.op === 'verify');
+      const fmtReading = (x, i) => {
+        const name = x.label || `${x.kind || x.op}${readings.length > 1 ? i + 1 : ''}`;
+        const v = Number(x.value).toFixed(x.kind === 'angle' ? 1 : 3) + (x.kind === 'angle' ? '°' : '');
+        const judge = x.pass === true ? ' ✔ 符合预期'
+          : x.pass === false ? ` ✘ 偏离预期${x.expected != null ? '(' + x.expected + ')' : ''}` : '';
+        return `${name} = ${v}${judge}`;
+      };
+      const summaryOf = (list) => list.map(fmtReading).join('；');
+      const failsOf = (list) => list.filter((x) => x.pass === false);
+      // 复跑首轮 verify：静默读当前画板最新值 / pass，不生成读数文本、不改文档
+      const reprobe = () => {
+        if (!origVerifies.length) return readings;
+        try {
+          return origVerifies.map((c) => {
+            const p = executor.probeVerify(c);
+            return { op: 'verify', kind: c.kind, label: c.label, value: p.value,
+              pass: p.pass, expected: p.expected };
+          });
+        } catch (_) { return readings; }   // 复判异常（如元素被删）退回上一轮读数，不阻断收尾
+      };
       if (readings.length) {
-        const summary = readings.map((x, i) => {
-          const name = x.label || `${x.kind || x.op}${readings.length > 1 ? i + 1 : ''}`;
-          const v = Number(x.value).toFixed(x.kind === 'angle' ? 1 : 3) + (x.kind === 'angle' ? '°' : '');
-          const judge = x.pass === true ? ' ✔ 符合预期'
-            : x.pass === false ? ` ✘ 偏离预期${x.expected != null ? '(' + x.expected + ')' : ''}` : '';
-          return `${name} = ${v}${judge}`;
-        }).join('；');
-        appendLog('ai', '【自检】' + summary);
-        if (readings.some((x) => x.pass === false)) {
+        let cur = readings;
+        let prevFail = failsOf(cur).length;
+        let stall = 0;             // 连续「失败项没减少」的轮数
+        let attempted = [];       // 累计已执行的修正命令，供下一轮 diff
+        let lastSig = '';         // 上一轮修正命令签名，检测反复横跳
+        let corrected = 0;        // 累计成功修正的命令条数
+        appendLog('ai', '【自检】' + summaryOf(cur));
+        for (let round = 1; round <= MAX_FIX_ROUNDS; round++) {
+          const failed = failsOf(cur);
+          if (!failed.length) break;                        // 已收敛 / 纯读数：无需修正
+          const passedTxt = cur.filter((x) => x.pass === true).map((x) => x.label || x.kind).join('、');
+          const failTxt = failed.map((x) =>
+            `✘ ${x.label || x.kind} = ${Number(x.value).toFixed(3)}（期望 ${x.expected != null ? x.expected : '符合关系'}）`).join('\n');
+          const diffTxt = attempted.length
+            ? `\n【上一轮已尝试的改动（请勿原样重复，换一种改法）】\n${attempted.slice(-8).map((c) => JSON.stringify(c)).join('\n')}\n`
+            : '\n';
+          const status = `【自检状态条】已自检 ${cur.length} 项，✔ ${cur.length - failed.length} 项，✘ ${failed.length} 项；第 ${round}/${MAX_FIX_ROUNDS} 轮修正`;
+          appendLog('ai', status);
+          let fixCmds = [];
           try {
             const fixRes = await fetch(CFG.boardAiEndpoint || '/api/ai/board', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                message: '【自检回读】' + summary + '。请只输出让图形符合预期的修正命令（改错的那一处 / 重算取错的交点），'
-                  + '符合则输出空 commands；不要重复画已画好的部分，也不要再发 measure / verify。',
+                message: '【自检回读】' + summaryOf(cur) + '\n【未通过断言，请重点修正】\n' + failTxt + '\n'
+                  + status + diffTxt
+                  + (passedTxt ? `【已通过项，请勿重画】${passedTxt}\n` : '')
+                  + '请只输出让图形符合预期的修正命令（改错的那一处 / 重算取错的交点 / 用 move 就地改坐标），'
+                  + '符合则输出空 commands；不要 clear 重画、不要重复画已画好的部分，也不要再发 measure / verify。',
                 model,
                 context: executor.describe(),
                 history: chatHistory.slice(-10),
               }),
             });
             const fixData = await fixRes.json().catch(() => ({}));
-            const fixCmds = Array.isArray(fixData.commands) ? fixData.commands : [];
-            if (fixCmds.length) {
-              executor.clearMeasures();   // 清掉上一轮临时读数，避免堆积
-              let fixed = 0;
-              for (const c of fixCmds) {
-                const rr = executor.execute([c]);
-                if (rr[0] && rr[0].ok) {
-                  if (c.op === 'clear') doc.commands = [];
-                  if (!isTransient(c.op)) doc.commands.push(c);
-                  fixed++;
-                }
-                await sleep(90);
-              }
-              appendLog('ai', `已自检并自动修正 ${fixed} 处。`);
-              saveNow();
-              refreshObjects();
-            }
+            fixCmds = (Array.isArray(fixData.commands) ? fixData.commands : [])
+              .filter((c) => c && typeof c === 'object' && !['clear', 'measure', 'verify'].includes(c.op));
             if (fixData.message) appendLog('ai', fixData.message);
           } catch (e2) {
             appendLog('ai', '自检修正未完成：' + e2.message);
+            break;
           }
+          if (!fixCmds.length) { appendLog('ai', '【自检状态条】AI 判定已符合意图，收敛结束。'); break; }
+          const sig = JSON.stringify(fixCmds);
+          if (sig === lastSig) { appendLog('ai', '【自检状态条】修正命令与上轮相同（反复横跳），已停止自动修正。'); break; }
+          lastSig = sig;
+          executor.clearMeasures();   // 清掉上一轮临时 ✔/✘ 读数，保持画板干净（状态条留在面板日志）
+          let fixed = 0;
+          for (const c of fixCmds) {
+            const rr = executor.execute([c]);
+            if (rr[0] && rr[0].ok) {
+              if (!isTransient(c.op)) doc.commands.push(c);
+              fixed++;
+            }
+            await sleep(90);
+          }
+          corrected += fixed;
+          attempted.push(...fixCmds);
+          saveNow();
+          refreshObjects();
+          cur = reprobe();          // 复跑首轮原始 verify，机器判定修正是否真的奏效
+          const nextFails = failsOf(cur).length;
+          appendLog('ai', `【自检】第 ${round} 轮修正 ${fixed} 处 → ${summaryOf(cur)}`);
+          if (nextFails === 0) {
+            appendLog('ai', `【自检状态条】已收敛：${cur.length} 项全部符合预期（累计修正 ${corrected} 处）。`);
+            break;
+          }
+          if (nextFails > prevFail) {
+            appendLog('ai', '【自检状态条】失败项反而变多，提前收手，读数如上供人工确认。');
+            break;
+          }
+          stall = nextFails >= prevFail ? stall + 1 : 0;
+          if (stall >= 2) {
+            appendLog('ai', '【自检状态条】连续 2 轮无改善，提前收手，读数如上供人工确认。');
+            break;
+          }
+          prevFail = nextFails;
+          if (round === MAX_FIX_ROUNDS) appendLog('ai', '【自检状态条】已达修正轮数上限，读数如上供人工确认。');
         }
       }
     }
