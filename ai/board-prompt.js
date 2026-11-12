@@ -28,8 +28,15 @@
  *       labelColor / labelSize，让成品更接近"教科书图"观感；js/executor.js 同步执行分支。
  *   新增 例7（verify 自检）/ 例8（细粒度样式）few-shot，回归用例 29~31。
  * TODO(下一步·本轮之后): 1) 多轮收敛（连续 2~3 轮 verify→修正，带上限与改动 diff，避免反复横跳）；
- *   2) 把 expect 扩展到"关系断言"（AB⊥BC、A 在圆上、三点共线），贴近大角几何符号自检；
+ *   2) [本轮已完成 2026-11-12] 把 expect 扩展到"关系断言"（perpendicular/parallel/collinear/online/oncircle：残差≈0 复用 judgeMeasure，见 js/executor.js 的 measureValue 新分支、例9、docs 用例 32~36）；
  *   3) 自检状态条可视化（"已自检 2 项，✘ 1 项，已修正 1 处"）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-12）：只追加 2D 作图主干逻辑，3D 命令分支不触碰。
+ *   落实上一轮 TODO 交接项②——"关系断言"自检层：给 verify 新增 5 个 kind（perpendicular/parallel/collinear/online/oncircle），
+ *   它们把"几何关系"折算成「残差≈0」标量，直接复用既有的 expect/tol 机器判定（judgeMeasure 零改动），
+ *   让 AI 不仅能"量数"（distance/angle/evaluate）还能"判关系"，贴近大角几何的符号级自检。
+ *   同步：命令协议登记（verify 行）+ 例9 few-shot + docs 回归用例 32~36。
+ *   下一步：多轮收敛（verify→修正带上限与 diff，避免反复横跳）。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -93,6 +100,13 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
   · 在 measure 的三种 kind（distance/angle/evaluate）之上加期望值，由执行器机器判定 pass:true/false：expect 目标值 + tol 绝对容差（默认 0.05）或 rtol 相对容差；expectRange:[lo,hi] 判区间。不给期望字段则只回读不判定（等价 measure）。
   · 读数按判定着色（绿✓ 通过 / 红✗ 不符 / 灰· 未判定）。pass:false 时系统自动发起一次修正轮：你会收到以【自检回读】开头的消息，此时按例6 铁律只输出修正命令或空 commands，不要再重复画、不要再发 measure/verify。
   · 作图末尾请优先用 verify 把"预期数值"写进命令（如高线 ∠AHB=90°、抛物线顶点 x=2→3），这样自检可被机器判定并自动修正；只有确实没有预期值可写时才用 measure。
+  · 关系断言（本轮新增，对标大角几何符号自检）：把"几何关系"折算成「残差≈0」的标量，同样走 expect/tol 判定（残差落在容差内即 pass:true）。命令末尾一律写 expect:0：
+    - perpendicular  {"op":"verify","kind":"perpendicular","of":["A","B","C","D"],"expect":0,"tol":0.5}  断言 AB⊥CD（残差=|两线夹角-90°|，单位°，tol 建议 0.5）
+    - parallel       {"op":"verify","kind":"parallel","of":["A","B","C","D"],"expect":0,"tol":0.5}        断言 AB∥CD（残差=两线夹角[0,90]）
+    - collinear      {"op":"verify","kind":"collinear","of":["A","B","C","D"],"expect":0,"tol":0.05}      断言多点共线（残差=各点到首连线段的最大距离）
+    - online         {"op":"verify","kind":"online","of":["P","l1"]} | {"op":"verify","kind":"online","of":["P","A","B"],"expect":0,"tol":0.05}  断言点 P 在直线上（第二项填直线/线段 id，或给两点 A、B；残差=点到线距离）
+    - oncircle       {"op":"verify","kind":"oncircle","of":["P","c1"],"expect":0,"tol":0.05}              断言点 P 在圆上（残差=|P到圆心距离-半径|）
+    · 关系断言只判定"成立与否"（残差夹在容差内即 pass:true），不回读具体距离/角度；可用 label 另起中文读数名（如 "label":"M在BC上"）。
 - 画板自带坐标轴：引用 x 轴用 id "xaxis"、y 轴用 "yaxis"（如求函数与 x 轴靠左的交点：{"op":"intersect","id":"P1","of":["f1","xaxis"],"select":"left"}），不要自己画坐标轴。
 - 提醒：两圆相交、直线与圆相交、函数与直线相交往往有 2 个交点，只写一条 intersect 只画得出一个点，需要两个点就写两条并给出不同 select。
 
@@ -251,6 +265,24 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 {"op":"style","target":"tri","strokeColor":"#1D4ED8","fillColor":"#93C5FD","fillOpacity":0.15,"opacity":0.85}
 {"op":"style","target":"A","labelColor":"#E11D48","labelSize":16}
 // color 仍然可用（同时改描边与填充）；需要分开设色时再用 strokeColor / fillColor 覆盖对应项。
+
+== 例9：关系断言（对标大角几何符号自检——不只"量数"，还要"判关系"） ==
+用户："画正方形 ABCD，验证 AB⊥BC 且四条边都落在以对角线交点 O 为中心的圆上。"
+思路：先画正方形（A(0,0) B(1,0) C(1,1) D(0,1)）→ 算对角线交点 O(0.5,0.5) → 用关系断言 verify 一把"垂直/共线/在圆上"全判掉。
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":1,"y":0}
+{"op":"point","id":"C","x":1,"y":1}
+{"op":"point","id":"D","x":0,"y":1}
+{"op":"polygon","id":"sq","points":["A","B","C","D"]}
+{"op":"point","id":"O","x":0.5,"y":0.5}
+{"op":"circle","id":"cO","center":"O","radius":"a"}              // 用滑动条 a 当外接圆半径，a 的初值=√2/2≈0.707
+{"op":"slider","id":"a","min":0.5,"max":1,"value":0.707,"step":0.001}
+// 关系断言：残差≈0 即 pass:true，可直接机器判定，无需读出具体角度/距离
+{"op":"verify","kind":"perpendicular","of":["A","B","B","C"],"expect":0,"tol":0.5,"label":"AB⊥BC"}
+{"op":"verify","kind":"collinear","of":["A","C","O"],"expect":0,"tol":0.05,"label":"O在AC对角线上"}
+{"op":"verify","kind":"oncircle","of":["A","cO"],"expect":0,"tol":0.05,"label":"A在外接圆"}
+{"op":"verify","kind":"oncircle","of":["B","cO"],"expect":0,"tol":0.05,"label":"B在外接圆"}
+// 任一 pass:false 都会触发系统自动补一轮【自检回读】，你只发修正命令（如改滑动条初值 / 重取交点）。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

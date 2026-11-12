@@ -31,6 +31,13 @@
  *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
  *   verify    {kind,of|expr,expect?,tol?,rtol?,expectRange?:[lo,hi],label?}  声明式自检断言：在 measure 三种求值之上加机器判定
  *             （expect + tol(默认0.05) 或 rtol 相对容差；expectRange 区间），execute 回传 pass:true/false/null；pass:false 触发前端修正轮
+ *             · 关系断言（本轮新增，贴近大角几何符号自检）：以下 kind 把"关系"折算成「残差≈0」的标量，直接复用 expect/tol 判定
+ *               perpendicular {kind,of:[A,B,C,D],expect:0,tol:0.5}  AB⊥CD（残差=|两线夹角-90°|）
+ *               parallel      {kind,of:[A,B,C,D],expect:0,tol:0.5}  AB∥CD（残差=两线夹角[0,90]）
+ *               collinear     {kind,of:[A,B,C,...],expect:0,tol:0.05}  多点共线（残差=各点到首连线段的最大距离）
+ *               online        {kind,of:[P,lineId]|[P,A,B],expect:0,tol:0.05}  点 P 在直线上（残差=点到线距离；第二项可填直线/线段 id 或两点）
+ *               oncircle      {kind,of:[P,circleId],expect:0,tol:0.05}  点 P 在圆上（残差=|P到圆心距离-半径|）
+ *             · 关系断言只判定「成立与否」（残差夹在容差内即 pass:true），不回读具体距离/角度；label 可另起中文名
  *   transform {id,of,type,by?|angle?|center?|axis?}  几何变换：把 of 元素平移/旋转/反射成一份新副本（以 id 命名），
  *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?)；支持 point/segment/line/ray/polygon/circle
  *   animate    {id|ids,pingpong?,speed?}             动画：让指定滑动条（id 或 ids，或 "__all__"）自动连续改值，依赖它的几何实时播放；speed: slow/normal/fast，pingpong:true 往复。仅前端播放，不进文档
@@ -52,7 +59,7 @@
  *   (2) style 细粒度样式（兑现上一轮 TODO 交接项）：opacity/fillOpacity/strokeColor/fillColor/labelColor/labelSize；
  *       标签是独立 text 对象，单独 setAttribute。measure/verify 临时读数按 pass 着色（绿✓/红✗/灰·）。
  * TODO(下一步·本轮之后): 1) 多轮收敛（连续 2~3 轮 verify→修正，带上限与改动 diff，避免反复横跳）；
- *   2) 把 expect 扩展到"关系断言"（AB⊥BC、A 在圆上、三点共线），贴近大角几何符号自检；
+ *   2) [本轮已完成] 把 expect 扩展到"关系断言"（perpendicular/parallel/collinear/online/oncircle，残差≈0 复用 judgeMeasure；见 measureValue 新分支与 ai/board-prompt.js 例9、docs 用例 32~36）；
  *   3) 自检状态条可视化（"已自检 2 项，✘ 1 项，已修正 1 处"）。
  *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
@@ -259,6 +266,12 @@ export function createExecutor(board) {
   const resolveList = (arr) => (Array.isArray(arr) ? arr.map(resolve) : []);
   const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
 
+  // verify 关系断言的中文读数名（其余沿用 distance/angle 或 expr/kind）
+  const KIND_NAME = {
+    distance: '距离', angle: '∠',
+    perpendicular: '⊥残差', parallel: '∥残差', collinear: '共线残差', online: '在线上残差', oncircle: '在圆上残差',
+  };
+
   /** 数值位置上的反查：字符串若是已注册 id，返回取实时值的函数（交给 JXG 做动态依赖） */
   function valueGetter(v) {
     if (typeof v === 'string' && registry.has(v)) {
@@ -295,6 +308,55 @@ export function createExecutor(board) {
     let c = dot / (la * lb);
     c = Math.max(-1, Math.min(1, c));
     return Math.acos(c) * 180 / Math.PI;
+  }
+
+  /** 取一组点 id 的当前坐标 [x,y]（关系断言用） */
+  function coordsOf(refs) {
+    return (Array.isArray(refs) ? refs : [refs]).map((r) => {
+      const el = resolve(r);
+      return [el.X(), el.Y()];
+    });
+  }
+
+  /** 取直线/线段/射线元素的两个端点坐标（关系断言用），取不到返回 null */
+  function lineEndpoints(el) {
+    let p1 = el.point1, p2 = el.point2;
+    if ((!p1 || typeof p1.X !== 'function') && Array.isArray(el.points) && el.points.length >= 2) {
+      p1 = el.points[0]; p2 = el.points[1];
+    }
+    if (!p1 || !p2 || typeof p1.X !== 'function' || typeof p2.X !== 'function') return null;
+    return [[p1.X(), p1.Y()], [p2.X(), p2.Y()]];
+  }
+
+  /** 取圆元素圆心与半径（关系断言用），取不到返回 null */
+  function circleGeom(el) {
+    const c = el.center;
+    if (!c || typeof c.X !== 'function') return null;
+    const cx = c.X(), cy = c.Y();
+    let r = el.radius;
+    if (typeof r === 'number') { /* number */ }
+    else if (typeof r === 'function') r = r();
+    else if (r && typeof r.X === 'function') r = Math.hypot(r.X() - cx, r.Y() - cy);
+    else if (typeof el.Radius === 'function') r = el.Radius();
+    else return null;
+    return [cx, cy, r];
+  }
+
+  /** 点 P 到过 A、B 两点的直线的距离 */
+  function pointLineDist(P, A, B) {
+    const dx = B[0] - A[0], dy = B[1] - A[1];
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-9) return Math.hypot(P[0] - A[0], P[1] - A[1]);
+    return Math.abs((P[0] - A[0]) * dy - (P[1] - A[1]) * dx) / len;
+  }
+
+  /** 两方向向量夹角（度，归一到 [0,180]） */
+  function angleBetweenDirs(d1, d2) {
+    const a1 = Math.atan2(d1[1], d1[0]);
+    const a2 = Math.atan2(d2[1], d2[0]);
+    let d = Math.abs(a1 - a2) % (2 * Math.PI);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    return d * 180 / Math.PI;
   }
 
   /** 在 x 处求表达式（JSXGraph 语法）的数值；优先用 JessieCode 编译，失败回退到受限算术求值 */
@@ -344,7 +406,50 @@ export function createExecutor(board) {
       return { value, kind, unit: '',
         at: Array.isArray(cmd.at) ? cmd.at : [Number(cmd.x) || 0, (Number.isFinite(value) ? value : 0) + 0.6] };
     }
-    throw new Error('kind 只能是 distance / angle / evaluate');
+    // —— 关系断言（本轮新增）：把"关系"折算成「残差≈0」的标量，复用 judgeMeasure 的 expect/tol 判定 ——
+    if (kind === 'perpendicular' || kind === 'parallel') {
+      const [A, B, C, D] = coordsOf(cmd.of);
+      const d1 = [B[0] - A[0], B[1] - A[1]];
+      const d2 = [D[0] - C[0], D[1] - C[1]];
+      const ang = angleBetweenDirs(d1, d2); // [0,180]
+      const value = kind === 'perpendicular' ? Math.abs(ang - 90) : Math.min(ang, 180 - ang);
+      return { value, kind, unit: '°', at: [(A[0] + D[0]) / 2 + 0.4, (A[1] + D[1]) / 2 + 0.4] };
+    }
+    if (kind === 'collinear') {
+      const pts = coordsOf(cmd.of);
+      let A = null, B = null;
+      outer:
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          if (Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]) > 1e-6) { A = pts[i]; B = pts[j]; break outer; }
+        }
+      }
+      let value = 0;
+      if (A && B) for (const P of pts) value = Math.max(value, pointLineDist(P, A, B));
+      const c = pts[0] || [0, 0];
+      return { value, kind, unit: '', at: [c[0] + 0.4, c[1] + 0.4] };
+    }
+    if (kind === 'online') {
+      const refs = Array.isArray(cmd.of) ? cmd.of : [];
+      if (refs.length === 2) {
+        // of:[P, lineId]：第二项是直线/线段/射线 id
+        const P = coordsOf(refs[0])[0];
+        const line = lineEndpoints(resolve(refs[1]));
+        const value = line ? pointLineDist(P, line[0], line[1]) : NaN;
+        return { value, kind, unit: '', at: [P[0] + 0.4, P[1] + 0.4] };
+      }
+      // of:[P, A, B] 三点式：点 P 到过 A、B 的直线
+      const [P, A, B] = coordsOf(refs);
+      return { value: pointLineDist(P, A, B), kind, unit: '', at: [P[0] + 0.4, P[1] + 0.4] };
+    }
+    if (kind === 'oncircle') {
+      const refs = Array.isArray(cmd.of) ? cmd.of : [];
+      const P = coordsOf(refs[0])[0];
+      const g = circleGeom(resolve(refs[1]));
+      const value = g ? Math.abs(Math.hypot(P[0] - g[0], P[1] - g[1]) - g[2]) : NaN;
+      return { value, kind, unit: '', at: [P[0] + 0.4, P[1] + 0.4] };
+    }
+    throw new Error('kind 只能是 distance / angle / evaluate / perpendicular / parallel / collinear / online / oncircle');
   }
 
   /** verify 期望值机器判定：expect(+tol/rtol) 点判定 / expectRange:[lo,hi] 区间；没给期望字段则只回读 */
@@ -609,7 +714,7 @@ export function createExecutor(board) {
         // 测量/自检回读（对标大角几何 MCP 式读画板状态）：求值交给 measureValue，
         // 生成临时读数文本（不进注册表/文档），数值经 execute 结果透传给前端闭环。
         const m = measureValue(cmd);
-        const name = cmd.label || (m.kind === 'distance' ? '距离' : m.kind === 'angle' ? '∠' : String(cmd.expr || m.kind));
+        const name = cmd.label || KIND_NAME[m.kind] || (m.kind === 'distance' ? '距离' : m.kind === 'angle' ? '∠' : String(cmd.expr || m.kind));
         const shown = Number.isFinite(m.value) ? m.value.toFixed(m.kind === 'angle' ? 1 : 2) + m.unit : '?';
         const el = measureReadout('✓ ' + name + ' = ' + shown, m.at);
         measureEls.push(el);
@@ -619,11 +724,13 @@ export function createExecutor(board) {
         // 声明式自检断言：在 measure 的 distance/angle/evaluate 求值之上加期望值机器判定。
         //   expect + tol(绝对容差，默认 0.05) / rtol(相对容差) → 点判定
         //   expectRange:[lo,hi] → 区间判定
+        // 关系断言（perpendicular/parallel/collinear/online/oncircle）把"关系"折算成「残差≈0」的标量，
+        // 同样走 expect/tol 判定（残差落在容差内即 pass:true）。
         // 不给期望字段则 pass:null（只回读，等价 measure）。pass:false 由 js/board.js 的
         // read-back 闭环自动发起一轮修正，AI 收【自检回读】只发修正命令（见提示词例6/例7）。
         const m = measureValue(cmd);
         const j = judgeMeasure(m.value, cmd);
-        const name = cmd.label || (m.kind === 'distance' ? '距离' : m.kind === 'angle' ? '∠' : String(cmd.expr || m.kind));
+        const name = cmd.label || KIND_NAME[m.kind] || (m.kind === 'distance' ? '距离' : m.kind === 'angle' ? '∠' : String(cmd.expr || m.kind));
         const shown = Number.isFinite(m.value) ? m.value.toFixed(m.kind === 'angle' ? 1 : 3) + m.unit : '?';
         const mark = j.pass === true ? '✓' : j.pass === false ? '✗' : '·';
         const el = measureReadout(mark + ' ' + name + ' = ' + shown + (j.expected != null ? ' / 期望 ' + j.expected : ''), m.at, j.pass);
