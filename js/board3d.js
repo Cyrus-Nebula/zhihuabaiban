@@ -17,6 +17,8 @@ import {
 import {
   resetViewSpec, normalizeViewSpec, viewPresetSpec, orbitViewSpec, zoomViewSpec,
 } from './board3d-view.js';
+// 设置项 / 属性面板输入（C5/C6）：纯函数层，把 UI 输入转换为模型状态
+import { resolveViewSettings, resolveInspectorField } from './board3d-settings.js';
 
 const CFG = window.DAJIAO_CONFIG || {};
 const DEG = Math.PI / 180;
@@ -376,7 +378,10 @@ function loadSettings() {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch (_) { return {}; }
 }
 function setView(key, val) {
-  doc[key] = val; applyView(); scheduleSave();
+  // 经纯函数层合并，非法 bg 自动回落、axes/grid 仅接受布尔（C6，与 resolveViewSettings 对齐）
+  const next = resolveViewSettings(doc, { [key]: val });
+  doc.bg = next.bg; doc.axes = next.axes; doc.grid = next.grid;
+  applyView(); scheduleSave();
 }
 
 // ============================================================
@@ -486,14 +491,16 @@ function bindUI() {
 function onInspectorInput(e) {
   const el = e.target;
   const k = el.dataset.k; if (!k || !selected) return;
-  if (k === 'text') { selected.text = el.value; const lo = labelOverlays.get(selected.id); if (lo) lo.el.textContent = selected.text; scheduleSave(); return; }
-  if (k === 'color') { selected.color = el.value; const m = meshes.get(selected.id); if (m) m.material.color.set(el.value); const lo = labelOverlays.get(selected.id); if (lo) lo.el.style.color = selected.color; scheduleSave(); return; }
-  if (k === 'opacity') { selected.opacity = parseFloat(el.value); const m = meshes.get(selected.id); if (m) { m.material.opacity = selected.opacity; m.material.transparent = selected.opacity < 1; } scheduleSave(); return; }
+  // 文字 / 颜色 / 透明度 / 位置 / 旋转 / 缩放 全部经纯函数层解析，与 resolveInspectorField 对齐
+  if (k === 'text') { selected.text = resolveInspectorField('text', undefined, el.value); const lo = labelOverlays.get(selected.id); if (lo) lo.el.textContent = selected.text; scheduleSave(); return; }
+  if (k === 'color') { selected.color = resolveInspectorField('color', undefined, el.value); const m = meshes.get(selected.id); if (m) m.material.color.set(el.value); const lo = labelOverlays.get(selected.id); if (lo) lo.el.style.color = selected.color; scheduleSave(); return; }
+  if (k === 'opacity') { selected.opacity = resolveInspectorField('opacity', undefined, el.value); const m = meshes.get(selected.id); if (m) { m.material.opacity = selected.opacity; m.material.transparent = selected.opacity < 1; } scheduleSave(); return; }
   const i = parseInt(el.dataset.i, 10);
-  const v = parseFloat(el.value); if (!Number.isFinite(v)) return;
-  if (k === 'pos') selected.pos[i] = v;
-  else if (k === 'rot') selected.rot[i] = v;
-  else if (k === 'scale') selected.scale[i] = Math.max(0.05, v);
+  const v = parseFloat(el.value); if (!Number.isFinite(v)) return;   // 保持原行为：脏输入不改模型
+  const nv = resolveInspectorField(k, i, v);
+  if (k === 'pos') selected.pos[i] = nv;
+  else if (k === 'rot') selected.rot[i] = nv;
+  else if (k === 'scale') selected.scale[i] = nv;
   const m = meshes.get(selected.id); if (m) applyTransform(m, selected);
   scheduleSave();
 }
