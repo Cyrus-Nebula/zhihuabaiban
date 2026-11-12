@@ -9,23 +9,30 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { axisTickSpec } from './board3d-axis.js';
 import { screenToNdc, createDragSession, dragTo, isDraggableType } from './board3d-drag.js';
+import {
+  normalizeShapeParams, createShapeGeometry, shapeMaterialConfig,
+  transparentRenderOrder as depthRenderOrder,
+} from './board3d-geometry.js';
 
 const CFG = window.DAJIAO_CONFIG || {};
 const DEG = Math.PI / 180;
 const SETTINGS_KEY = 'zhihui_3d_settings';
 
 // ---------- 几何体定义 ----------
+// name / params 供几何体面板与属性面板使用；几何构造统一委托到 js/board3d-geometry.js
+// 的纯函数（参数规范化 + 真实 BufferGeometry 构造），默认值与之逐项对齐，
+// 一致性由 tests/board3d_geometry.mjs 静态断言锁定，避免两处漂移。
 const SHAPE_DEFS = {
-  box:      { name: '立方体',   params: { w: { d: 2,   l: '宽' }, h: { d: 2,   l: '高' }, d: { d: 2,   l: '深' } }, geo: (p) => new THREE.BoxGeometry(p.w, p.h, p.d) },
-  sphere:   { name: '球体',     params: { r: { d: 1.2, l: '半径' } }, geo: (p) => new THREE.SphereGeometry(p.r, 40, 28) },
-  cylinder: { name: '圆柱',     params: { rt: { d: 1, l: '上半径' }, rb: { d: 1, l: '下半径' }, h: { d: 2.4, l: '高' } }, geo: (p) => new THREE.CylinderGeometry(p.rt, p.rb, p.h, 48) },
-  cone:     { name: '圆锥',     params: { r: { d: 1, l: '半径' }, h: { d: 2.4, l: '高' } }, geo: (p) => new THREE.ConeGeometry(p.r, p.h, 48) },
-  pyramid:  { name: '四棱锥',   params: { s: { d: 2, l: '底边长' }, h: { d: 2.4, l: '高' } }, geo: (p) => new THREE.ConeGeometry(p.s * 0.7, p.h, 4) },
-  prism:    { name: '三棱柱',   params: { r: { d: 1, l: '半径' }, h: { d: 2.4, l: '高' } }, geo: (p) => new THREE.CylinderGeometry(p.r, p.r, p.h, 3) },
-  tetra:    { name: '正四面体', params: { s: { d: 2, l: '棱长' } }, geo: (p) => new THREE.TetrahedronGeometry(p.s) },
-  plane:    { name: '平面',     params: { w: { d: 3, l: '宽' }, h: { d: 3, l: '高' } }, geo: (p) => new THREE.PlaneGeometry(p.w, p.h) },
-  line:     { name: '线段',     params: { x1: { d: -1.5 }, y1: { d: 0 }, z1: { d: 0 }, x2: { d: 1.5 }, y2: { d: 0 }, z2: { d: 0 } }, geo: lineGeo },
-  point:    { name: '点',       params: { s: { d: 0.18, l: '大小' } }, geo: (p) => new THREE.SphereGeometry(p.s, 16, 12) },
+  box:      { name: '立方体',   params: { w: { d: 2,   l: '宽' }, h: { d: 2,   l: '高' }, d: { d: 2,   l: '深' } } },
+  sphere:   { name: '球体',     params: { r: { d: 1.2, l: '半径' } } },
+  cylinder: { name: '圆柱',     params: { rt: { d: 1, l: '上半径' }, rb: { d: 1, l: '下半径' }, h: { d: 2.4, l: '高' } } },
+  cone:     { name: '圆锥',     params: { r: { d: 1, l: '半径' }, h: { d: 2.4, l: '高' } } },
+  pyramid:  { name: '四棱锥',   params: { s: { d: 2, l: '底边长' }, h: { d: 2.4, l: '高' } } },
+  prism:    { name: '三棱柱',   params: { r: { d: 1, l: '半径' }, h: { d: 2.4, l: '高' } } },
+  tetra:    { name: '正四面体', params: { s: { d: 2, l: '棱长' } } },
+  plane:    { name: '平面',     params: { w: { d: 3, l: '宽' }, h: { d: 3, l: '高' } } },
+  line:     { name: '线段',     params: { x1: { d: -1.5 }, y1: { d: 0 }, z1: { d: 0 }, x2: { d: 1.5 }, y2: { d: 0 }, z2: { d: 0 } } },
+  point:    { name: '点',       params: { s: { d: 0.18, l: '大小' } } },
 };
 
 const BG_COLORS = { white: 0xf5f7fb, beige: 0xf3ecdd, dark: 0x1a1d24 };
@@ -206,7 +213,7 @@ function addShape(type) {
   for (const k in def.params) p[k] = def.params[k].d;
   const obj = {
     id: genId(), type, color: '#4f6bed', opacity: 1,
-    pos: [0, def.geo === SHAPE_DEFS.point.geo ? 0 : 0, 0],
+    pos: [0, 0, 0],
     rot: [0, 0, 0], scale: [1, 1, 1], p,
   };
   doc.objects.push(obj);
@@ -217,6 +224,9 @@ function addShape(type) {
 }
 
 function addMeshForObj(obj) {
+  // 载入 / AI / 导入工程的参数统一清洗：键白名单 + 数值化 + 钳制 + 缺省回落，
+  // 保证属性面板显示值与真实几何完全一致（脏数据不会打出 NaN 顶点）。
+  obj.p = normalizeShapeParams(obj.type, obj.p) || {};
   const mesh = new THREE.Mesh(buildGeometry(obj), makeMaterial(obj));
   mesh.userData.obj = obj;
   applyTransform(mesh, obj);
@@ -227,24 +237,22 @@ function addMeshForObj(obj) {
 }
 
 function buildGeometry(obj) {
-  const def = SHAPE_DEFS[obj.type];
-  const geo = def.geo(obj.p);
-  if (obj.type === 'plane') geo.rotateX(-Math.PI / 2); // 让平面默认水平
-  return geo;
+  // 几何构造统一走纯函数层（含平面水平旋转、线段端点定向、参数防护）。
+  // 未知类型 / label 返回 null：给个最小占位几何，避免脏数据让 new THREE.Mesh(null) 抛异常。
+  return createShapeGeometry(THREE, obj.type, obj.p) || new THREE.BoxGeometry(1, 1, 1);
 }
 
 function makeMaterial(obj) {
-  const m = new THREE.MeshStandardMaterial({
+  // 材质规格也来自纯函数层：平面双面、半透明体 depthWrite:false、opacity 钳制。
+  const cfg = shapeMaterialConfig(obj.type, obj.opacity);
+  return new THREE.MeshStandardMaterial({
     color: new THREE.Color(obj.color),
     roughness: 0.55, metalness: 0.05,
-    transparent: obj.opacity < 1,
-    opacity: obj.opacity,
-    // 半透明体不写深度：避免两个重叠的透明几何体互相写深度，
-    // 导致局部被错误剔除/闪烁（z-fighting）。仅不透明体写深度以保持清晰遮挡。
-    depthWrite: obj.opacity >= 1,
-    side: obj.type === 'plane' ? THREE.DoubleSide : THREE.FrontSide,
+    transparent: cfg.transparent,
+    opacity: cfg.opacity,
+    depthWrite: cfg.depthWrite,
+    side: cfg.side === 'double' ? THREE.DoubleSide : THREE.FrontSide,
   });
-  return m;
 }
 
 function applyTransform(mesh, obj) {
@@ -700,10 +708,8 @@ function resize() {
 // 使重叠的半透明几何体（球/柱/锥/面）按稳定一致的「由远及近」顺序混合，
 // 消除绘制顺序随相机抖动导致的 z-fighting / 穿透闪烁。
 export function transparentRenderOrder(camPos, worldPos) {
-  const dx = worldPos.x - camPos.x;
-  const dy = worldPos.y - camPos.y;
-  const dz = worldPos.z - camPos.z;
-  return -Math.sqrt(dx * dx + dy * dy + dz * dz);
+  // 规格已抽到纯函数层（含非法输入防护），此处保留导出名供既有回归与调用方使用。
+  return depthRenderOrder(camPos, worldPos);
 }
 const _camPos = new THREE.Vector3();
 const _objPos = new THREE.Vector3();
@@ -728,17 +734,8 @@ function animate() {
 // ============================================================
 // 工具
 // ============================================================
-function lineGeo(p) {
-  const a = new THREE.Vector3(p.x1, p.y1, p.z1);
-  const b = new THREE.Vector3(p.x2, p.y2, p.z2);
-  const dir = new THREE.Vector3().subVectors(b, a);
-  const len = dir.length() || 0.001;
-  const geo = new THREE.CylinderGeometry(0.05, 0.05, len, 12);
-  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-  geo.applyQuaternion(q);
-  geo.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
-  return geo;
-}
+// 线段几何已迁移至 js/board3d-geometry.js 的 lineGeometry()（纯函数，可无头回归）；
+// 由 createShapeGeometry('line', ...) 统一调用，此处不再保留重复实现。
 function setSaveStatus(text, cls) {
   const el = document.getElementById('save-status');
   if (!el) return;
@@ -784,13 +781,17 @@ export const board3dApi = {
 
   /** 新增对象：id 冲突时自动改号；几何参数缺省值由 SHAPE_DEFS 补齐 */
   add(raw) {
-    if (!group || !raw || !SHAPE_DEFS[raw.type]) return null;
+    // label 是锚点型图元（HTML 叠加层，无 SHAPE_DEFS 条目），与 10 种网格图元一同放行；
+    // 否则 AI 的 label3d 命令会被这里误判为「未知图元」而拒绝（标注顶点命令不可用）。
+    if (!group || !raw || (!SHAPE_DEFS[raw.type] && raw.type !== 'label')) return null;
     const obj = cloneObj(raw);
     if (!raw.id || doc.objects.some((o) => o.id === obj.id)) obj.id = genId();
     const def = SHAPE_DEFS[obj.type];
-    const p = {};
-    for (const k in def.params) p[k] = def.params[k].d;
-    obj.p = Object.assign(p, obj.p || {});
+    if (def) {
+      const p = {};
+      for (const k in def.params) p[k] = def.params[k].d;
+      obj.p = Object.assign(p, obj.p || {});
+    } else obj.p = {}; // label 无几何参数
     doc.objects.push(obj);
     if (obj.type === 'label') addLabelOverlay(obj);
     else addMeshForObj(obj);
@@ -901,7 +902,7 @@ export const board3dApi = {
       objects: [],
     };
     for (const o of data.objects) {
-      if (!o || !SHAPE_DEFS[o.type]) continue; // 跳过未知图元类型，避免脏数据进场景
+      if (!o || (!SHAPE_DEFS[o.type] && o.type !== 'label')) continue; // 跳过未知图元类型（label 锚点型需保留）
       const obj = cloneObj(o);
       obj.p = o.p && typeof o.p === 'object' ? Object.assign({}, o.p) : {};
       doc.objects.push(obj);
