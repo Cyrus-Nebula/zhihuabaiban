@@ -38,6 +38,24 @@
       .b3d-ai-panel { left: 12px; right: 12px; width: auto; top: 8px; bottom: 8px; }
     }
   </style>
+  <style>
+    /* 视角预设条（C1/C2）：自包含样式，刻意不改共享 css/style.css（避免与并行任务冲突） */
+    .b3d-view-presets {
+      position: absolute; left: 14px; top: 58px; z-index: 8;
+      display: flex; gap: 4px; background: rgba(255,255,255,.9);
+      border: 1px solid #e3e6f0; border-radius: 10px; padding: 4px;
+      box-shadow: 0 2px 10px rgba(20,20,40,.08);
+    }
+    .b3d-view-presets button {
+      border: 0; background: transparent; padding: 6px 10px; border-radius: 7px;
+      font-size: 12px; color: #3a3f57; cursor: pointer; font-family: inherit;
+    }
+    .b3d-view-presets button.active { background: #6549d5; color: #fff; }
+    @media (max-width: 720px) {
+      .b3d-view-presets { left: 8px; top: 52px; }
+      .b3d-view-presets button { padding: 6px 8px; font-size: 11px; }
+    }
+  </style>
 </head>
 <body class="board3d-page">
   <!-- 登录墙：未登录时覆盖整个画板页，登录后自动消失（见页脚网关脚本） -->
@@ -114,6 +132,13 @@
         <button data-mode="translate" class="active" type="button" title="移动">移动</button>
         <button data-mode="rotate" type="button" title="旋转">旋转</button>
         <button data-mode="scale" type="button" title="缩放">缩放</button>
+      </div>
+      <!-- 视角预设（C1）：规格由 js/board3d-view.js 纯函数层计算，配合顶栏「⟳ 视角」复位（C2） -->
+      <div class="b3d-view-presets" id="viewPresets" aria-label="视角预设">
+        <button data-preset="iso" class="active" type="button" title="等轴视角（默认机位）">等轴</button>
+        <button data-preset="front" type="button" title="正视：沿 -Z 方向观察">正视</button>
+        <button data-preset="top" type="button" title="俯视：沿 -Y 方向观察">俯视</button>
+        <button data-preset="right" type="button" title="侧视：沿 -X 方向观察">侧视</button>
       </div>
     </div>
 

@@ -13,6 +13,10 @@ import {
   normalizeShapeParams, createShapeGeometry, shapeMaterialConfig,
   transparentRenderOrder as depthRenderOrder,
 } from './board3d-geometry.js';
+// 视角变换与重置（C1/C2）：纯函数规格层，本文件只负责把规格套到真实相机上
+import {
+  resetViewSpec, normalizeViewSpec, viewPresetSpec, orbitViewSpec, zoomViewSpec,
+} from './board3d-view.js';
 
 const CFG = window.DAJIAO_CONFIG || {};
 const DEG = Math.PI / 180;
@@ -83,8 +87,11 @@ function init() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(BG_COLORS.white);
 
-  camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
-  camera.position.set(6, 5, 8);
+  // 默认机位由纯函数层给出（与历史 (6,5,8)/fov50 逐项一致，回归 tests/board3d_view.mjs 锁定）
+  const initialView = resetViewSpec();
+  camera = new THREE.PerspectiveCamera(initialView.fov, 1, initialView.near, initialView.far);
+  camera.position.set(...initialView.position);
+  camera.up.set(...initialView.up);
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.75));
   const dir = new THREE.DirectionalLight(0xffffff, 0.95);
@@ -403,7 +410,21 @@ function bindUI() {
   document.querySelectorAll('#set-bg .bg-swatch').forEach((b) => b.addEventListener('click', () => setView('bg', b.dataset.bg)));
 
   // 视角 / 导出 / 导入
-  document.getElementById('btn-reset-view').addEventListener('click', resetView);
+  // 视角预设（C1）：等轴 / 正视 / 俯视 / 侧视，规格来自 js/board3d-view.js 纯函数层
+  const presetBar = document.getElementById('viewPresets');
+  const markActivePreset = (name) => {
+    if (presetBar) presetBar.querySelectorAll('[data-preset]').forEach((b) =>
+      b.classList.toggle('active', b.dataset.preset === name));
+  };
+  document.getElementById('btn-reset-view').addEventListener('click', () => {
+    resetView();
+    markActivePreset('iso'); // 复位即回到等轴机位，按钮高亮同步
+  });
+  if (presetBar) presetBar.querySelectorAll('[data-preset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (setCameraPreset(btn.dataset.preset)) markActivePreset(btn.dataset.preset);
+    });
+  });
   document.getElementById('btn-export').addEventListener('click', () => { syncAllFromMeshes(); Store.saveContent(fileId, JSON.parse(JSON.stringify(doc))); Store.exportFile(fileId); });
   const importInput = document.getElementById('import-file');
   document.getElementById('btn-import').addEventListener('click', () => { if (importInput) importInput.click(); });
@@ -561,10 +582,44 @@ function endPointDrag() {
   if (orbit) orbit.enabled = true;
 }
 
+/**
+ * 把纯函数层产出的相机规格套到真实 Three.js 相机 + OrbitControls 上（C1/C2）。
+ * 规格统一经 normalizeViewSpec 清洗，杜绝 NaN / 相机与 target 重合 / up 翻转。
+ */
+function applyCameraSpec(spec) {
+  if (!camera) return false;
+  const s = normalizeViewSpec(spec);
+  camera.position.set(...s.position);
+  camera.up.set(...s.up);
+  if (orbit) {
+    orbit.target.set(...s.target);
+    orbit.update();
+  } else {
+    camera.lookAt(...s.target);
+  }
+  return true;
+}
+
+/** 切换命名视角预设：等轴 / 正视 / 右视 / 后视 / 左视 / 俯视 / 仰视 */
+function setCameraPreset(name) {
+  const spec = viewPresetSpec(name);
+  return spec ? applyCameraSpec(spec) : false;
+}
+
+/** 复位视角（C2）：相机位置、target、up 三者同时回到默认，不只是相机位置 */
 function resetView() {
-  camera.position.set(6, 5, 8);
-  orbit.target.set(0, 0, 0);
-  orbit.update();
+  return applyCameraSpec(resetViewSpec());
+}
+
+/** 当前相机规格读回（供 AI 读状态 / 无头回归核对；纯数据，不含 three 对象） */
+function currentCameraSpec() {
+  if (!camera) return resetViewSpec();
+  return normalizeViewSpec({
+    fov: camera.fov, near: camera.near, far: camera.far,
+    position: [camera.position.x, camera.position.y, camera.position.z],
+    target: orbit ? [orbit.target.x, orbit.target.y, orbit.target.z] : [0, 0, 0],
+    up: [camera.up.x, camera.up.y, camera.up.z],
+  });
 }
 
 // ============================================================
@@ -857,8 +912,26 @@ export const board3dApi = {
     scheduleSave();
   },
 
-  /** 视角复位 */
-  resetView() { resetView(); },
+  /** 视角复位（C2：相机位置 / target / up 同时复位） */
+  resetView() { return resetView(); },
+
+  /** 视角变换（C1）：相对轨道旋转 / 缩放 / 平移，delta 见 orbitViewSpec() */
+  orbitCamera(delta) {
+    if (!camera) return false;
+    return applyCameraSpec(orbitViewSpec(currentCameraSpec(), delta));
+  },
+
+  /** 视角缩放（C1）：factor > 1 拉远、< 1 拉近，半径自动钳制 */
+  zoomCamera(factor) {
+    if (!camera) return false;
+    return applyCameraSpec(zoomViewSpec(currentCameraSpec(), factor));
+  },
+
+  /** 命名视角预设（C1）：iso / front / right / back / left / top / bottom */
+  setCameraPreset(name) { return setCameraPreset(name); },
+
+  /** 当前相机规格读回（纯数据，供 AI 读状态与无头回归核对） */
+  getCameraSpec() { return currentCameraSpec(); },
 
   /**
    * 导出工程：序列化完整持久化结构 `{ v, bg, axes, grid, objects }` 为 JSON 字符串。
