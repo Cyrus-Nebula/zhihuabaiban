@@ -183,7 +183,29 @@
 > 与 `point`/`verify`/`probeVerify` 共存、空画板/未知 id）；`js/board.js` 的【查询读数】二次调用链路
 > 需在带浏览器 + LLM 环境目视确认（沙箱无法实例化真实 JSXGraph / 调 LLM）。
 
+## 派生量查询（inspect · derive）（本轮新增 2026-11-13 第四轮）
+
+> 落实连续两轮 TODO 交接项①：此前 `inspect` 只能回读元素的原始坐标 / 半径 / 定义域，AI 想用
+> 「两点距离 / 三点夹角 / 某点函数值 / 点到线距离」规划下一步构造时仍要心算或猜数（大角几何靠符号计算
+> 直接给出）。本轮让 `inspect` 在元素摘要之外，按 `measureValue` 同一套求值回读派生量（8 种 kind 全复用），
+> 读数经既有【查询读数】两阶段回读链路透传，`js/board.js` 零改动；纯查派生量时不再默认列出全部元素。
+> 三种写法：顶层 `kind` 简写、`derive` 数组批量、`id` + `x`/`xs` 查已注册函数值；单条失败宽容降级。
+> few-shot 见 `ai/board-prompt.js` 例18。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 50 | 查询派生量：两点距离、三点夹角、表达式取值、关系残差，支持顶层简写与 `derive` 批量 | `{"op":"inspect","kind":"distance","of":["A","H"]}` → 回 ``\|AH\|=4.000``；`{"op":"inspect","kind":"angle","of":["A","H","B"]}` → `∠AHB=90.0°`；`{"op":"inspect","kind":"evaluate","expr":"x^2-4","x":2}` → `evaluate(x^2-4,x=2)=0.000`；`{"op":"inspect","derive":[{"kind":"distance","of":["A","H"]},{"kind":"online","of":["H","lBC"]}]}` → 两条读数；`label:"高 AH"` → `高 AH=4.000` | ✅ | 纯查派生量（未给 `id`/`ids`）时 `items` 不含全部元素，避免读数噪音；`kind` 与 `measure`/`verify` 同源，读数口径一致；坏一条只回 `xxx(?)`，不得整批失败 |
+| 51 | 带 `x` 直接查已注册函数值（含批量 `xs` 与异常降级） | `{"op":"inspect","id":"f1","x":2}` → 元素摘要 `f1(function:"x^2-4"@[-5,5])` + `f1(2)=0.000`；`{"op":"inspect","id":"f1","xs":[-2,0,2]}` → `f1(-2)=0.000, f1(0)=-4.000, f1(2)=0.000`；`{"op":"inspect","id":"ghost","x":2}` → `ghost(不存在)` + `ghost(2)=?无函数表达式`；`{"op":"inspect","id":"f1","x":"abc"}` → `f1(x=?)` | ✅ | `x`/`xs` 只在 `id`（或 `target`）是**单个**已注册函数 id 时生效；表达式含滑动条变量时由引擎取当前值；非法 x / 非函数元素必须宽容降级，不能抛错 |
+| 52 | 两阶段回读完整回合：先查派生量，再用读数算半径继续构造（例18） | **第 1 轮**：`point` A(0,3)/B(-2,-1)/C(3,-1) → `polygon` → `line` lBC → `perpendicular` h → `intersect` H select:top → `function` f1 `x^2-4` → `inspect` ids:["H"] + `derive` [高 AH / ∠AHB / online(H,lBC)] → `inspect` id:"f1" xs:[0,2]（**不写 circle**）；系统回【查询读数】合并两条读数；**第 2 轮**：`circle` cH center:H radius:2 → `verify` distance(A,H)=4 → `verify` angle(A,H,B)=90 | ✅ | 第 1 轮不能写依赖未知半径的 `circle`；第 2 轮禁止再发 `inspect`/`measure`/`clear`、不重画三角形；半径必须落成数字 `2`，不能写 `4/2` 表达式；同一轮允许多条 `inspect`，读数合并回传；`isTransient` 已含 `inspect`，重放不重复查询 |
+
+> 状态 ✅：`js/executor.js` 的 `inspectValue` 派生量分支已用无头桩元素回归（旧形态输出逐字节不变、
+> 8 种 kind 求值、单条失败降级、`x`/`xs` 异常、纯派生量不列全元素、只读不进 `registry`）。
+> 前端【查询读数】二次调用链路仍需在带浏览器 + LLM 环境目视确认（与用例 47/48 同理）。
+
 ## 已知限制
+- `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
+  JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在
+  浏览器环境补测。派生量不画临时读数、不进 `doc.commands`，仍受两阶段回读「只回读一轮」约束。
 - `inspect` 两阶段回读由前端 `aiSend()` 驱动（与自检回读闭环同理，画板实例在浏览器侧）：读数来自 `executor` 注册表，需在带浏览器 + LLM 环境确认二次调用链路与面板展示（用例 47/48）；查询轮最多一次，不会与自检修正轮互相递归。
 - 沙箱无头环境无法实例化真实 JSXGraph，上述用例需在带浏览器的环境目视确认或补单测；命令序列本身已与 `js/executor.js` 协议逐条对齐。
 - `measure` 在前端画板生成临时读数并回传数值；read-back 闭环已在 `js/board.js` 接入（执行后用 measure 数值驱动 LLM 二次核对并自动修正），无需后端改造。沙箱无头环境无法跑真实 JSXGraph + LLM，闭环行为需在带浏览器的环境目视确认（用例 14/15/16/20/24）。

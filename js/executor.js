@@ -101,6 +101,19 @@
  *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
  *   ④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数。
  *
+ * 本轮（AI作图对标大角几何·增量·2026-11-13 第四轮）：只改 2D 协议，3D 分支零触碰。
+ *   落实上一轮 TODO 头号待办①——inspect 派生量查询（AI 不再需要心算 / 猜派生数值）：
+ *   (1) 新增 deriveName(d) / deriveReading(d)：复用 measureValue 的 8 种 kind 求值，
+ *       格式 "|AH|=4.000" / "∠AHB=90.0°" / "evaluate(x^2-4,x=2)=0.000"；
+ *   (2) inspectValue(cmd) 追加三种写法：顶层 kind 简写、derive 数组批量、id + x / xs 查已注册函数值；
+ *       单条求值失败宽容降级为 "xxx(?)"，不整批失败；reading 新增 derived 数组，text 合并摘要与派生量；
+ *   (3) 纯查派生量（未给 id/ids）时不再默认列出全部元素，避免读数噪音；旧 inspect 形态输出逐字节不变。
+ *   零改动 js/board.js：读数仍走既有【查询读数】两阶段回读（isTransient 已含 inspect，registry.set 前 continue）。
+ *   配套：ai/board-prompt.js 命令清单登记 +「派生量查询」小节 + 例18；docs 回归用例 50~52。
+ * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ derive 支持「符号化简」输出（如顶点式配方）；
+ *   ⑤ 给 inspect 派生量补无头单测脚本并纳入仓库 tests/。
+ *
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
  * 函数曲线的 expr 里直接写滑动条 id 即可（JSXGraph 会自动替换成 .Value()）。
@@ -1049,17 +1062,78 @@ export function createExecutor(board) {
    *   {"op":"inspect","ids":["H","c1"]}      查多个
    *   {"op":"inspect","ids":"__all__"}       查全部（等价 describe()）
    * 不给 id/ids/target 默认查全部；未知 id 回 "id(不存在)"，不抛错。
+   * 本轮新增「派生量查询」：带 kind / derive / x / xs 时，在元素摘要之外再回读由元素算出的
+   * 数值（距离 / 夹角 / 表达式取值 / 关系残差），见下方 deriveName / deriveReading。
+   * 纯查派生量（没给 id）时不默认列全部元素，避免读数噪音。
    */
+  /** inspect 派生量读数名：单条求值失败也要留个可读名字，不让整批查询失败。 */
+  function deriveName(d) {
+    const kind = String((d && d.kind) || 'distance').toLowerCase();
+    if (d && d.label) return String(d.label);
+    if (kind === 'distance') return '|' + (Array.isArray(d.of) ? d.of.join('') : '?') + '|';
+    if (kind === 'angle') return '∠' + (Array.isArray(d.of) ? d.of.join('') : '?');
+    if (kind === 'evaluate') return 'evaluate(' + String(d.expr) + ',x=' + String(d.x) + ')';
+    return kind + '(' + (Array.isArray(d.of) ? d.of.join(',') : '') + ')';
+  }
+
+  /** 单条派生量求值 → "名字=数值+单位"；复用 measureValue（纯计算，不画读数、不进注册表）。 */
+  function deriveReading(d) {
+    const m = measureValue(d);
+    const v = Number.isFinite(m.value) ? m.value.toFixed(m.kind === 'angle' ? 1 : 3) : '?';
+    return deriveName(d) + '=' + v + (m.unit || '');
+  }
+
   function inspectValue(cmd) {
     const raw = cmd.ids != null ? cmd.ids
       : (cmd.id != null ? cmd.id : (cmd.target != null ? cmd.target : null));
+
+    // —— 本轮新增：派生量查询（对标大角几何「符号计算 / 读状态后求量」）——
+    // 除「元素数值摘要」外，允许 AI 直接查询由这些元素算出的数值：两点距离、三点夹角、
+    // 表达式/函数在某 x 处的值、以及关系残差（点到线距离 / 共线 / 垂直 / 在圆上 …）。
+    // 求值完全复用 measureValue（纯计算，不画临时读数、不进注册表），因此与 measure/verify
+    // 读数天然一致，且 js/board.js 的【查询读数】两阶段回读链路零改动（只透传 reading.text）。
+    // 三种写法可混用、可叠加：
+    //   {"op":"inspect","kind":"distance","of":["A","H"]}                   顶层单条（简写）
+    //   {"op":"inspect","derive":[{"kind":"angle","of":["A","H","B"]}, …]}   批量
+    //   {"op":"inspect","id":"f1","x":2} / {"...","xs":[-1,0,2]}             查已注册函数在 x 处的值
+    // 单条失败只回 "xxx(?)"，绝不整批失败；旧命令（无 kind/derive/x/xs）行为逐字节不变。
+    const derives = [];
+    if (cmd.kind != null) derives.push(cmd);
+    if (Array.isArray(cmd.derive)) derives.push(...cmd.derive.filter((d) => d && typeof d === 'object'));
+    else if (cmd.derive && typeof cmd.derive === 'object') derives.push(cmd.derive);
+    const xs = cmd.xs != null
+      ? (Array.isArray(cmd.xs) ? cmd.xs : [cmd.xs])
+      : (cmd.x != null ? [cmd.x] : []);
+    const hasDerive = derives.length > 0 || xs.length > 0;
+
     let ids;
-    if (raw == null || raw === '__all__') ids = Array.from(registry.keys());
+    if (raw == null) ids = hasDerive ? [] : Array.from(registry.keys());
+    else if (raw === '__all__') ids = Array.from(registry.keys());
     else if (Array.isArray(raw)) ids = raw.map(String);
     else ids = [String(raw)];
     const items = ids.map((id) => registry.has(id) ? elementSummary(id, registry.get(id)) : id + '(不存在)');
-    const text = joinSummaries(items) || '（空画板，没有可查询的元素）';
-    return { items, text };
+
+    const derived = [];
+    for (const d of derives) {
+      try { derived.push(deriveReading(d)); }
+      catch (_) { derived.push(deriveName(d) + '(?)'); }   // 宽容降级：坏一条不拖垮整批
+    }
+    // 函数值简写：id/target 是单个已注册函数，带 x（或 xs 数组）时按注册表里的表达式求值。
+    if (xs.length && typeof raw === 'string' && raw !== '__all__') {
+      const fx = registry.get(raw);
+      for (const xv of xs) {
+        const x = Number(xv);
+        if (!Number.isFinite(x)) { derived.push(raw + '(x=?)'); continue; }
+        if (!fx || !fx.__aiExpr) { derived.push(raw + '(' + x + ')=?无函数表达式'); continue; }
+        try {
+          const m = measureValue({ kind: 'evaluate', expr: fx.__aiExpr, x });
+          derived.push(raw + '(' + x + ')=' + (Number.isFinite(m.value) ? m.value.toFixed(3) : '?'));
+        } catch (_) { derived.push(raw + '(' + x + ')=?'); }
+      }
+    }
+
+    const text = joinSummaries(items.concat(derived)) || '（空画板，没有可查询的元素）';
+    return { items, derived, text };
   }
 
   /** 导出自由点坐标 + 滑动条当前值（拖拽后保存用） */
