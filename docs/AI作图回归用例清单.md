@@ -134,6 +134,21 @@
 - [本轮新增 2026-11-12 第三轮] 外接圆 / 外心 few-shot 与回归用例（易错构造补全）：协议无原生外接圆 op，本轮在「核心工作流」第 2 步明确"外接圆需先算外心坐标"，并新增 `ai/board-prompt.js` 例11（直角三角形外心=斜边中点，一般三角形用垂直平分线交点法；末尾 `verify` kind:oncircle 三顶点共圆自检，pass:false 触发修正轮）；纯提示词增量，未改 `js/executor.js` 执行分支，无 3D / editor.html 改动；见用例 40。
 - [本轮新增 2026-11-12 第四轮] 读取画板状态升级为数值快照：`js/executor.js` 的 `describe()` 由 `id(类型)` 改为带出点坐标 / 线端点 / 圆心半径 / 多边形顶点 / 函数表达式与定义域 / 滑动条当前值（60 元素、2200 字符双上限），`execute()` 为 functiongraph 挂 `__aiExpr`/`__aiRange`；`ai/board-backend.js` 的 context 上限 1000→2400；`ai/board-prompt.js` 核心工作流第 1 步改用快照数值规划，新增「读取画板状态」小节与例12；见用例 41/42。纯 2D 增量，未碰 3D 分支 / `editor.html`。
 - [下一步·待办·本轮之后] ① 新增 `inspect` 命令让 AI 主动查询任意元素的数值（两阶段回读：先发查询、拿到读数再构造，需 `js/board.js` 把查询读数并入 read-back 闭环）；② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数；⑤ 补中位线 / 扇形弓形 / 函数图像平移演示 few-shot。
+- [本轮已完成 2026-11-13] 易错图形 few-shot 补全（落实待办⑤）：纯提示词增量，新增 `ai/board-prompt.js` 例13（中位线）、例14（扇形/弓形）、例15（函数图像平移演示）；回归用例见 43~46。全程只引用既有命令（`midpoint`/`segment`/`arc`/`slider`/`function`/`transform`/`verify`），未改 `js/executor.js` 执行分支、未碰 3D 分支 / `editor.html`。下一步回到待办①②③④（inspect 命令、自检状态条徽标、残差改善量收敛、probeVerify 回画 ✔ 读数）。
+
+## 易错图形补充：中位线 / 扇形弓形 / 函数图像平移（本轮新增 2026-11-13）
+
+> 落实上一轮 TODO 交接项⑤：补「易错图形 few-shot」覆盖缺口。这些图形都能用协议已有命令
+> （`midpoint`/`segment`/`arc`/`slider`/`function`/`transform`/`verify`）直接拼出，但此前 AI 没有可照抄的范式，
+> 容易拼错（中位线错连成中线、扇形漏两条半径、平移演示用多张静态图替代滑动条）。纯提示词增量，
+> 未改 `js/executor.js` 执行分支、未碰 3D 分支 / `editor.html`；few-shot 见 `ai/board-prompt.js` 例13~15。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 43 | 三角形 ABC 的中位线（连 AB、AC 中点） | 建三角形 → `midpoint` M of:[A,B]、N of:[A,C] → `segment` MN → `verify` kind:parallel of:[M,N,B,C] expect:0（MN∥BC）→ `verify` kind:distance of:[M,N] expect:4（=½\|BC\|） | ✅ | 中位线是「两邻边中点连线」≠「顶点到对边中点的中线」；别把 M/N 取成 BC 中点 |
+| 44 | 圆心原点、半径 3、第一象限 1/4 扇形 | `circle` c1 center:O r:3 → `point` P1(3,0) P2(0,3) → `arc` secArc center:O from:P1 to:P2 → `segment` r1 O→P1、r2 O→P2 → `verify` oncircle of:[P1/P2,c1] | ✅ | 扇形 = 圆弧 + 两条半径；别只画弧漏半径；arc 的 from/to 必须是圆上点 |
+| 45 | 弓形（弧 + 弦，不要半径） | 同用例 44 的 `arc` → 只连 `segment` chord from:P1 to:P2（不要两条半径） | ✅ | 弓形 = 弧 + 弦，扇形 = 弧 + 两半径；别把弓形画成整圆或多画半径 |
+| 46 | 画 y=x² 并动画演示向右平移 | `slider` t → `function` f1 expr:"(x-t)^2" → `animate` ids:["t"] pingpong:true speed:normal → `verify` evaluate expr:"(x-t)^2" x:0 expect:0 | ✅ | 平移演示一律用「滑动条 + 参数化表达式」，勿用多张静态图替代；`transform` by 是静态偏移、不能由滑动条驱动，故此处不用 transform |
 
 ## 已知限制
 - 沙箱无头环境无法实例化真实 JSXGraph，上述用例需在带浏览器的环境目视确认或补单测；命令序列本身已与 `js/executor.js` 协议逐条对齐。
