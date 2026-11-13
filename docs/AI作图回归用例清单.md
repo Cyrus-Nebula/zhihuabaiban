@@ -136,7 +136,8 @@
 - [下一步·待办·本轮之后] ① 新增 `inspect` 命令让 AI 主动查询任意元素的数值（两阶段回读：先发查询、拿到读数再构造，需 `js/board.js` 把查询读数并入 read-back 闭环）；② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数；⑤ 补中位线 / 扇形弓形 / 函数图像平移演示 few-shot。
 - [本轮已完成 2026-11-13] 易错图形 few-shot 补全（落实待办⑤）：纯提示词增量，新增 `ai/board-prompt.js` 例13（中位线）、例14（扇形/弓形）、例15（函数图像平移演示）；回归用例见 43~46。全程只引用既有命令（`midpoint`/`segment`/`arc`/`slider`/`function`/`transform`/`verify`），未改 `js/executor.js` 执行分支、未碰 3D 分支 / `editor.html`。下一步回到待办①②③④（inspect 命令、自检状态条徽标、残差改善量收敛、probeVerify 回画 ✔ 读数）。
 - [本轮已完成 2026-11-13 第二轮] `inspect` 主动查询命令 + 两阶段回读（落实待办①）：`js/executor.js` 新增 `inspect` 执行分支（抽出 `elementSummary(id, el)` 让 `describe()` 与查询读数共用同一格式；`inspectValue()` 支持 `id` / `ids:[]` / `ids:"__all__"`，只读注册表、不画图元/不画读数/不进文档，读数经 `execute` 的 `reading:{items,text}` 透传）；`js/board.js` 的 `aiSend()` 新增【查询读数】二次调用（只回读一轮、过滤 `clear`/`inspect`/`measure`，查询轮的 `verify` 并入 `origVerifies`/`readings` 自检闭环，`isTransient` 纳入 `inspect`）；`ai/board-prompt.js` 仅追加 2D 主干（命令清单登记、「主动查询」小节、例16），3D 分支零改动。见用例 47/48。
-- [下一步·待办] ① `inspect` 支持带 `x` 直接查函数值 / 两点距离等派生量；② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数；⑤ 继续补易错图形（切线、内/外接多边形、圆锥曲线第二定义、相似/位似变换）。
+- [本轮已完成 2026-11-13 第三轮] 切线 few-shot（落实待办⑤ 的「切线」缺口）：协议无原生 `tangent` op，新增 `ai/board-prompt.js` 例17，给出教科书式「辅助圆法」（以 OP 为直径作辅助圆 cM 与原圆相交取切点，连切点与外点；末尾 `verify` kind:angle=90° 自检 OT⟂PT 相切）；纯提示词增量，未改 `js/executor.js` 执行分支、未碰 3D 分支 / `editor.html`。回归用例见 49。下一步回到待办①②③④，⑤ 剩下内/外接多边形、圆锥曲线第二定义、相似/位似变换。
+- [下一步·待办] ① `inspect` 支持带 `x` 直接查函数值 / 两点距离等派生量；② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数；⑤ 继续补易错图形（内/外接多边形、圆锥曲线第二定义、相似/位似变换——切线已补）。
 
 ## 易错图形补充：中位线 / 扇形弓形 / 函数图像平移（本轮新增 2026-11-13）
 
@@ -151,6 +152,19 @@
 | 44 | 圆心原点、半径 3、第一象限 1/4 扇形 | `circle` c1 center:O r:3 → `point` P1(3,0) P2(0,3) → `arc` secArc center:O from:P1 to:P2 → `segment` r1 O→P1、r2 O→P2 → `verify` oncircle of:[P1/P2,c1] | ✅ | 扇形 = 圆弧 + 两条半径；别只画弧漏半径；arc 的 from/to 必须是圆上点 |
 | 45 | 弓形（弧 + 弦，不要半径） | 同用例 44 的 `arc` → 只连 `segment` chord from:P1 to:P2（不要两条半径） | ✅ | 弓形 = 弧 + 弦，扇形 = 弧 + 两半径；别把弓形画成整圆或多画半径 |
 | 46 | 画 y=x² 并动画演示向右平移 | `slider` t → `function` f1 expr:"(x-t)^2" → `animate` ids:["t"] pingpong:true speed:normal → `verify` evaluate expr:"(x-t)^2" x:0 expect:0 | ✅ | 平移演示一律用「滑动条 + 参数化表达式」，勿用多张静态图替代；`transform` by 是静态偏移、不能由滑动条驱动，故此处不用 transform |
+
+## 切线（辅助圆法）（本轮新增 2026-11-13 第三轮）
+
+> 落实上一轮 TODO 交接项⑤ 的「切线」缺口：协议无原生 `tangent` op，AI 容易硬猜切点坐标、或把切线画成
+> "过圆上某点的普通直线"。教科书式「辅助圆法」：以 OP 为直径作辅助圆 cM（圆心 M=OP 中点、半径 |OP|/2），
+> 据泰勒斯定理它与原圆 c1 的两交点即切点（∠OTP=90° ⇒ OT⟂PT），连 PT 即得切线。全程只用既有命令
+> （`point`/`circle`/`line`/`intersect`/`verify`），切点交给 `intersect` 的 `select` 取上/下，
+> 末尾用 `verify` kind:angle=90° 自检 OT⟂PT（等价于相切）。纯提示词增量，未改 `js/executor.js` 执行分支、
+> 未碰 3D 分支 / `editor.html`；few-shot 见 `ai/board-prompt.js` 例17。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 49 | 过圆外一点 P(7,0) 作圆 O(0,0) r=3 的两条切线 | 建圆 → `point` M(3.5,0)（OP 中点）→ `circle` cM center:M r:3.5（以 OP 为直径）→ `intersect` T1 of:[c1,cM] select:top、T2 select:bottom → `line` tg1 through:[P,T1]、tg2 through:[P,T2] → `verify` kind:angle of:[O,T1,P] expect:90 tol:0.5（OT⟂PT 即相切）×2 → `verify` oncircle of:[T1,c1] | ✅ | 无原生 tangent op：用「辅助圆 cM」求切点，别硬猜坐标；两交点用不同 `select`（top/bottom）分开取；末尾用 angle=90° 自检相切，pass:false 触发修正轮；P 在圆上则切线唯一、在圆内则无切线（勿硬画） |
 
 ## 主动查询（inspect · 两阶段回读）（本轮新增 2026-11-13 第二轮）
 
