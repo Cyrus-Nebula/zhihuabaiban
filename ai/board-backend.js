@@ -21,7 +21,7 @@
  */
 
 import {
-  BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, BOARD3D_MEASURE_PROMPT, isBoard3DIntent,
+  BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, BOARD3D_MEASURE_PROMPT, BOARD3D_MEASURE_LABEL_PROMPT, isBoard3DIntent,
 } from './board-prompt.js';
 import { DEFAULT_MODEL, resolveModel, supportsVision } from './models.js';
 
@@ -259,7 +259,7 @@ export async function handleBoardAi(request, env) {
   // （measure3d 空间量测）；2D 主干提示词逐字不变、零回归。
   const mode = resolveBoardMode(payload, message);
   const systemPrompt = mode === '3d'
-    ? BOARD3D_SYSTEM_PROMPT + BOARD3D_MEASURE_PROMPT
+    ? BOARD3D_SYSTEM_PROMPT + BOARD3D_MEASURE_PROMPT + BOARD3D_MEASURE_LABEL_PROMPT
     : BOARD_SYSTEM_PROMPT;
 
   // ---- 图片（视觉模型专用）----

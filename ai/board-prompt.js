@@ -772,3 +772,23 @@ export const BOARD3D_MEASURE_PROMPT = `
 # 补充铁律
 - measure3d 是 3D 命令；2D 的 measure / verify / point 等命令在本分支依旧不认识，不要输出。
 - 不要为了量测而新增辅助体或修改已有对象；量测本身不改变场景。`;
+
+
+/**
+ * ↓↓↓ 2026-11-14「独立自主 3D 画板」任务追加段落（measure3d 结果回注标注）↓↓↓
+ *
+ * 协作铁律：上方全部内容（2D 主干 + 既有 3D 段 + 2026-11-14 的 measure3d 段）逐字未动，
+ * 本段只追加、不覆盖、不删除。annotate 是 measure3d 命令的开关，不是新 op，
+ * 因此不新增 BOARD3D_*_OPS 条目（3D 命令白名单仍为 8 条，既有 7 条 + measure3d），
+ * 与 js/board3d-executor.js 的 BOARD3D_ALL_OPS 保持逐项一致。
+ * ============================================================ */
+
+/** 3D 量测结果回注标注追加段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到 measure3d 段之后） */
+export const BOARD3D_MEASURE_LABEL_PROMPT = `
+
+# 补充命令：量测结果回注标注（仅本 3D 分支可用，2026-11-14 追加）
+- measure3d 的 annotate 开关：在 measure3d 命令里加 "annotate":true，量测成功后会在结果锚点处自动落一个 label3d 标注，显示量测数值；
+  距离标在两端点中点、夹角标在顶点、中点标在中点自身坐标处。默认不写（或 false）时，量测只返回数值、不在场景里画任何东西（只读）。
+  · 示例：{"op":"measure3d","kind":"distance","from":"A","to":"B","annotate":true}
+  · 示例：{"op":"measure3d","kind":"angle","vertex":[0,0,0],"from":[1,0,0],"to":[0,1,0],"annotate":true}
+  · 标注文字由画板按真实数值生成，不要自己估算；annotate 仅为展示增强，不影响量测精度。`;

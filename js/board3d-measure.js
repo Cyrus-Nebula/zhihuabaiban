@@ -189,3 +189,41 @@ export function resolveMeasure3D(cmd, state) {
     text: `∠${name(1)}${name(0)}${name(2)} = ${value}°`,
   };
 }
+
+
+/**
+ * 量测结果回注标注（2026-11-14 增量 · 路线B「量测结果回注标注」）
+ *
+ * 把一条成功的 measure3d 结果转成可被 label3d 直接消费的坐标 + 文字：
+ *   - distance：锚点取两端点中点，文字为距离数值（distance 单位为空，仅显示数值）；
+ *   - midpoint：锚点即中点坐标本身，文字为 [x, y, z]；
+ *   - angle：锚点取顶点（vertex），文字为角度 "X°"。
+ * 纯函数、不碰 three / DOM，可在 Node 无头环境回归；失败（result 非法 / 无锚点）一律返回 null，
+ * 调用方（执行器）据此决定是否额外落一个 label3d（annotate:true 时由执行器负责落点）。
+ *
+ * @param {Object} result resolveMeasure3D 的返回值（需 ok:true 且含 points）
+ * @returns {{pos:number[], text:string}|null}
+ */
+export function measureToLabelSpec(result) {
+  if (!result || result.ok !== true || !Array.isArray(result.points)) return null;
+  const pts = result.points;
+  const kind = result.kind;
+  if (kind === 'distance') {
+    const a = pts[0], b = pts[1];
+    if (!Array.isArray(a) || !Array.isArray(b)) return null;
+    const mid = midpoint3D(a, b);
+    if (!mid) return null;
+    return { pos: mid, text: `${result.value}` };
+  }
+  if (kind === 'midpoint') {
+    const v = result.value;
+    if (!Array.isArray(v) || v.length !== 3 || !v.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+    return { pos: v.slice(), text: `[${v.map((n) => Math.round(n * 1000) / 1000).join(', ')}]` };
+  }
+  if (kind === 'angle') {
+    const v = pts[0];
+    if (!Array.isArray(v) || v.length !== 3 || !v.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+    return { pos: v.slice(), text: `${result.value}°` };
+  }
+  return null;
+}

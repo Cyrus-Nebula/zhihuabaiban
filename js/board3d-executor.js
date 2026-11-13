@@ -16,7 +16,7 @@
  * 扩展命令单独成组，以免与共享文件 ai/board-prompt.js 的既有协议一致性断言冲突。
  */
 
-import { resolveMeasure3D } from './board3d-measure.js';
+import { resolveMeasure3D, measureToLabelSpec } from './board3d-measure.js';
 
 /** 每种图元允许的几何参数键（与 js/board3d.js 的 SHAPE_DEFS.params 对齐） */
 export const BOARD3D_PARAM_KEYS = Object.freeze({
@@ -278,8 +278,23 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           let state = {};
           try { state = (a.getState ? a.getState() : {}) || {}; } catch (_) { state = {}; }
           const r = resolveMeasure3D(cmd, state);
+          let label = null;
+          // annotate:true 时额外落一个 label3d（量测默认只读；仅 annotate 显式开启写标注）。
+          // 结果锚点由 measureToLabelSpec 给出：距离→两端中点、夹角→顶点、中点→中点自身。
+          if (r.ok && cmd.annotate === true) {
+            const spec = measureToLabelSpec(r);
+            if (spec) {
+              const labelId = `b3d_m_${++autoSeq}`;
+              const labelObj = normalizeBoard3DObject(
+                { id: labelId, type: 'label', text: spec.text, pos: spec.pos }, 'label');
+              call('add', labelObj);
+              known.add(labelId);
+              types.set(labelId, 'label');
+              label = { id: labelId, pos: spec.pos.slice(), text: spec.text };
+            }
+          }
           results.push(r.ok
-            ? { op, ok: true, kind: r.kind, value: r.value, unit: r.unit, ids: r.ids, text: r.text }
+            ? { op, ok: true, kind: r.kind, value: r.value, unit: r.unit, ids: r.ids, text: r.text, label }
             : { op, ok: false, error: r.error });
           break;
         }
@@ -292,3 +307,4 @@ export function applyBoard3DCommands(commands, api, options = {}) {
   }
   return results;
 }
+
