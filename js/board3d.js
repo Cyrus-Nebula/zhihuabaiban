@@ -19,6 +19,11 @@ import {
 } from './board3d-view.js';
 // 设置项 / 属性面板输入（C5/C6）：纯函数层，把 UI 输入转换为模型状态
 import { resolveViewSettings, resolveInspectorField } from './board3d-settings.js';
+// gizmo 交互（C4）：模式白名单 / orbit 互斥 / 变换写回 obj 的纯函数层
+import {
+  DEFAULT_GIZMO_MODE, normalizeGizmoMode, gizmoModeState, orbitEnabledOnGizmoDrag,
+  shouldSuppressPick, meshTransformPatch, applyTransformPatch,
+} from './board3d-gizmo.js';
 
 const CFG = window.DAJIAO_CONFIG || {};
 const DEG = Math.PI / 180;
@@ -116,8 +121,11 @@ function init() {
   orbit.dampingFactor = 0.08;
 
   transform = new TransformControls(camera, renderer.domElement);
-  transform.setMode('translate');
-  transform.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
+  transform.setMode(DEFAULT_GIZMO_MODE);
+  // C4：gizmo 拖拽期间禁用 orbit；点拖拽（C3）会话中不允许 gizmo 事件提前恢复 orbit
+  transform.addEventListener('dragging-changed', (e) => {
+    orbit.enabled = orbitEnabledOnGizmoDrag(e.value, !!dragSession);
+  });
   transform.addEventListener('objectChange', onGizmoChange);
   scene.add(transform);
 
@@ -271,9 +279,10 @@ function applyTransform(mesh, obj) {
 }
 
 function writeObjFromMesh(obj, mesh) {
-  obj.pos = [mesh.position.x, mesh.position.y, mesh.position.z];
-  obj.rot = [mesh.rotation.x / DEG, mesh.rotation.y / DEG, mesh.rotation.z / DEG];
-  obj.scale = [mesh.scale.x, mesh.scale.y, mesh.scale.z];
+  // C4：全量写回委托纯函数层（脏输入回落 + scale 下限钳制，正常值下与原实现逐值等价）
+  const patch = meshTransformPatch(mesh, { fallback: obj, radiansToDegrees: 1 / DEG });
+  applyTransformPatch(obj, patch);
+  if (patch.clamped) mesh.scale.set(...patch.scale);  // 钳制后保持 mesh 与模型一致
 }
 
 // 几何参数变化：重建 geometry（保留当前变换）
@@ -354,7 +363,12 @@ function round(n) { return Math.round((n || 0) * 1000) / 1000; }
 
 function onGizmoChange() {
   if (!selectedMesh) return;
-  writeObjFromMesh(selected, selectedMesh);
+  // C4：按当前 gizmo 模式只写回受影响的字段（translate→pos / rotate→rot / scale→scale）
+  const patch = meshTransformPatch(selectedMesh, {
+    mode: transform.mode, fallback: selected, radiansToDegrees: 1 / DEG,
+  });
+  applyTransformPatch(selected, patch);
+  if (patch.clamped) selectedMesh.scale.set(...patch.scale);
   renderInspector();
   scheduleSave();
 }
@@ -450,10 +464,12 @@ function bindUI() {
   document.getElementById('inspectorBody').addEventListener('input', onInspectorInput);
   document.getElementById('insp-delete').addEventListener('click', deleteSelected);
 
-  // 变换模式
+  // 变换模式（C4）：data-mode 经白名单归一化后再喂给 setMode，高亮状态由纯函数层计算
   document.querySelectorAll('#gizmoModes button').forEach((b) => b.addEventListener('click', () => {
-    transform.setMode(b.dataset.mode);
-    document.querySelectorAll('#gizmoModes button').forEach((x) => x.classList.toggle('active', x === b));
+    const mode = normalizeGizmoMode(b.dataset.mode);
+    transform.setMode(mode);
+    const state = gizmoModeState(mode);
+    document.querySelectorAll('#gizmoModes button').forEach((x) => x.classList.toggle('active', !!state[x.dataset.mode]));
   }));
 
   // 拾取 + 点拖拽（C3：屏幕坐标反投影到工作面）
@@ -462,7 +478,7 @@ function bindUI() {
   canvas.addEventListener('pointerdown', (e) => {
     down = { x: e.clientX, y: e.clientY };
     gizmoActive = !!transform.axis;
-    if (gizmoActive || transform.dragging) return;
+    if (shouldSuppressPick(gizmoActive, transform.dragging)) return;
     tryStartPointDrag(e);
   }, { capture: true });
   window.addEventListener('pointermove', onDragPointerMove);
@@ -471,7 +487,7 @@ function bindUI() {
     const dist = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     down = null;
     endPointDrag();
-    if (gizmoActive || dist > 5 || transform.dragging) return;
+    if (dist > 5 || shouldSuppressPick(gizmoActive, transform.dragging)) return;
     pick(e);
   });
   // 指针在画布外抬起 / 取消 / 窗口失焦时兜底结束拖拽，避免 orbit 一直被禁用
