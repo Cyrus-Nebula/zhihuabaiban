@@ -135,6 +135,8 @@
 - [本轮新增 2026-11-12 第四轮] 读取画板状态升级为数值快照：`js/executor.js` 的 `describe()` 由 `id(类型)` 改为带出点坐标 / 线端点 / 圆心半径 / 多边形顶点 / 函数表达式与定义域 / 滑动条当前值（60 元素、2200 字符双上限），`execute()` 为 functiongraph 挂 `__aiExpr`/`__aiRange`；`ai/board-backend.js` 的 context 上限 1000→2400；`ai/board-prompt.js` 核心工作流第 1 步改用快照数值规划，新增「读取画板状态」小节与例12；见用例 41/42。纯 2D 增量，未碰 3D 分支 / `editor.html`。
 - [下一步·待办·本轮之后] ① 新增 `inspect` 命令让 AI 主动查询任意元素的数值（两阶段回读：先发查询、拿到读数再构造，需 `js/board.js` 把查询读数并入 read-back 闭环）；② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数；⑤ 补中位线 / 扇形弓形 / 函数图像平移演示 few-shot。
 - [本轮已完成 2026-11-13] 易错图形 few-shot 补全（落实待办⑤）：纯提示词增量，新增 `ai/board-prompt.js` 例13（中位线）、例14（扇形/弓形）、例15（函数图像平移演示）；回归用例见 43~46。全程只引用既有命令（`midpoint`/`segment`/`arc`/`slider`/`function`/`transform`/`verify`），未改 `js/executor.js` 执行分支、未碰 3D 分支 / `editor.html`。下一步回到待办①②③④（inspect 命令、自检状态条徽标、残差改善量收敛、probeVerify 回画 ✔ 读数）。
+- [本轮已完成 2026-11-13 第二轮] `inspect` 主动查询命令 + 两阶段回读（落实待办①）：`js/executor.js` 新增 `inspect` 执行分支（抽出 `elementSummary(id, el)` 让 `describe()` 与查询读数共用同一格式；`inspectValue()` 支持 `id` / `ids:[]` / `ids:"__all__"`，只读注册表、不画图元/不画读数/不进文档，读数经 `execute` 的 `reading:{items,text}` 透传）；`js/board.js` 的 `aiSend()` 新增【查询读数】二次调用（只回读一轮、过滤 `clear`/`inspect`/`measure`，查询轮的 `verify` 并入 `origVerifies`/`readings` 自检闭环，`isTransient` 纳入 `inspect`）；`ai/board-prompt.js` 仅追加 2D 主干（命令清单登记、「主动查询」小节、例16），3D 分支零改动。见用例 47/48。
+- [下一步·待办] ① `inspect` 支持带 `x` 直接查函数值 / 两点距离等派生量；② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数；⑤ 继续补易错图形（切线、内/外接多边形、圆锥曲线第二定义、相似/位似变换）。
 
 ## 易错图形补充：中位线 / 扇形弓形 / 函数图像平移（本轮新增 2026-11-13）
 
@@ -150,7 +152,25 @@
 | 45 | 弓形（弧 + 弦，不要半径） | 同用例 44 的 `arc` → 只连 `segment` chord from:P1 to:P2（不要两条半径） | ✅ | 弓形 = 弧 + 弦，扇形 = 弧 + 两半径；别把弓形画成整圆或多画半径 |
 | 46 | 画 y=x² 并动画演示向右平移 | `slider` t → `function` f1 expr:"(x-t)^2" → `animate` ids:["t"] pingpong:true speed:normal → `verify` evaluate expr:"(x-t)^2" x:0 expect:0 | ✅ | 平移演示一律用「滑动条 + 参数化表达式」，勿用多张静态图替代；`transform` by 是静态偏移、不能由滑动条驱动，故此处不用 transform |
 
+## 主动查询（inspect · 两阶段回读）（本轮新增 2026-11-13 第二轮）
+
+> 落实上一轮 TODO 交接项①：此前 AI 只能读「作图前」的状态快照，无法在同一轮里读取刚构造出的
+> 派生对象（交点/中点/圆半径/滑动条当前值）的精确数值，继续构造只能猜坐标。`inspect` 让 AI
+> 首轮先发查询，系统把读数以【查询读数】回填，AI 第二轮基于精确数值再构造（对标大角几何 MCP 式
+> 「读画板状态 → 再构造」）。`inspect` 只读：不画图元、不画读数、不进 `doc.commands`、重放不重复查询；
+> 查询只回读一轮（第二轮禁止再发 `inspect`/`measure`/`clear`），不会与自检闭环互相递归。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 47 | 画三角形 ABC 并作 BC 边上的高，再以垂足 H 为圆心、AH 的一半为半径画圆（H 是本轮才产生的交点，快照里没有） | **第 1 轮**：point A/B/C → `line` lBC → `perpendicular` h → `intersect` H of:[h,lBC] select:top → `inspect` ids:["H","A"]（**不写 circle**）→ 系统回【查询读数】H(intersection@(0,-1)), A(point@(0,3))；**第 2 轮**：`circle` cH center:H radius:2 → `verify` kind:distance of:["A","H"] expect:4 tol:0.05 | ✅ | 第 1 轮不要写依赖未知数值的命令；第 2 轮不要再发 `inspect`/`measure`/`clear`、不要重画三角形；读数格式与状态快照一致；半径由读数算出（AH=4→r=2） |
+| 48 | 查询已有元素数值：`inspect` 单 id / 多 id / `__all__` / 未知 id；确认只读不落文档 | `{"op":"inspect","id":"H"}` → reading.text="H(intersection@(0,-1))"；`{"op":"inspect","ids":["A","c1","a"]}` → 分别回点坐标/圆心半径/滑动条值；`{"op":"inspect","ids":"__all__"}` 与 `describe()` 等价；不写 id 默认查全部；`{"op":"inspect","id":"ghost"}` → "ghost(不存在)" 且 `ok:true`；执行后 `registry.size` 不变、`board.create` 调用数为 0、`describe()` 不变 | ✅ | `inspect` 的 `id` 是**查询目标**不是新建图元 id，执行器必须在 `registry.set` 之前 `continue`；未知 id 不得整批失败；`isTransient` 必须含 `inspect`，否则重放会重复查询 |
+
+> 状态 ✅：`js/executor.js` 已用无头桩元素回归 26/26（含 `describe()` 改动前后逐字节一致、`inspect` 各形态、
+> 与 `point`/`verify`/`probeVerify` 共存、空画板/未知 id）；`js/board.js` 的【查询读数】二次调用链路
+> 需在带浏览器 + LLM 环境目视确认（沙箱无法实例化真实 JSXGraph / 调 LLM）。
+
 ## 已知限制
+- `inspect` 两阶段回读由前端 `aiSend()` 驱动（与自检回读闭环同理，画板实例在浏览器侧）：读数来自 `executor` 注册表，需在带浏览器 + LLM 环境确认二次调用链路与面板展示（用例 47/48）；查询轮最多一次，不会与自检修正轮互相递归。
 - 沙箱无头环境无法实例化真实 JSXGraph，上述用例需在带浏览器的环境目视确认或补单测；命令序列本身已与 `js/executor.js` 协议逐条对齐。
 - `measure` 在前端画板生成临时读数并回传数值；read-back 闭环已在 `js/board.js` 接入（执行后用 measure 数值驱动 LLM 二次核对并自动修正），无需后端改造。沙箱无头环境无法跑真实 JSXGraph + LLM，闭环行为需在带浏览器的环境目视确认（用例 14/15/16/20/24）。
 - 本轮起 read-back 闭环由 `verify` 的 `pass:false` 精确触发（纯 `measure` 只展示读数、不再消耗一次 LLM 调用）；判定容差默认 `tol=0.05`，角度用例建议显式给 `tol:0.5`。闭环最多自动修正 3 轮（每轮静默复跑原始 verify 机器判定收敛，横跳 / 失败项变多 / 连续 2 轮无改善 / 达上限提前收手），不递归；`expect`/`expectRange` 的取值合理性由 AI 在规划阶段给出，仍需带浏览器环境回归确认（用例 29/30、37~39）。

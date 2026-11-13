@@ -2442,8 +2442,10 @@ async function aiSend() {
       let okCount = 0;
       const errs = [];
       const readings = [];   // measure / verify 回读值，供 read-back 闭环判定
-      // 自检读数与动画是临时动作，不该进文档（重放时只需重建几何，不必再算一遍读数）
-      const isTransient = (op) => op === 'measure' || op === 'verify' || op === 'animate';
+      const inspections = [];  // inspect 主动查询读数，供【查询读数】两阶段回读
+      const extraVerifies = []; // 查询回读轮产生的 verify，并入下方自检闭环的复判集合
+      // 自检读数、动画、主动查询都是临时动作，不该进文档（重放时只需重建几何，不必再算一遍读数）
+      const isTransient = (op) => op === 'measure' || op === 'verify' || op === 'animate' || op === 'inspect';
       for (const cmd of data.commands) {
         const r = executor.execute([cmd]);
         const res = r[0];
@@ -2455,6 +2457,9 @@ async function aiSend() {
             readings.push({ op: cmd.op, kind: cmd.kind, label: cmd.label, value: res.value,
               pass: cmd.op === 'verify' ? res.pass : null, expected: res.expected });
           }
+          if (cmd.op === 'inspect' && res.reading && res.reading.text) {
+            inspections.push(res.reading.text);
+          }
         } else if (res) {
           errs.push(`${cmd.op || '?'}(${res.error})`);
         }
@@ -2463,6 +2468,65 @@ async function aiSend() {
       if (errs.length) appendLog('ai', `已执行 ${okCount} 条命令，${errs.length} 条失败：` + errs.join('；'));
       saveNow();
       refreshObjects();
+
+      // ---- 主动查询 · 两阶段回读（对标大角几何 MCP 式「读画板状态 → 再构造」）----
+      // AI 首轮可先只发 inspect 查询派生对象（交点/中点/圆心半径/滑动条值）的精确数值；
+      // 系统把读数以【查询读数】回填，AI 第二轮据此输出真正的构造命令。
+      // 只回读一轮：二次调用里禁止再发 inspect / measure / clear（前端也过滤），避免无限循环；
+      // 允许带 verify，其读数并入下方自检闭环（readings / extraVerifies），不额外增加自检轮次。
+      // inspect 本身只读不画、不进 doc.commands（isTransient），重放时不会重复查询。
+      if (inspections.length) {
+        const readTxt = inspections.join('\n');
+        appendLog('ai', '【查询读数】' + readTxt);
+        try {
+          const qRes = await fetch(CFG.boardAiEndpoint || '/api/ai/board', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: '【查询读数】' + readTxt + '\n'
+                + '以上是你上一轮 inspect 查到的画板元素当前数值。请基于这些精确数值输出后续构造命令：'
+                + '坐标一律写成数字、严格遵守「先创建后引用」；可在末尾附 verify 自检。'
+                + '不要再发 inspect / measure / clear，不要重复画已经画好的部分；若已无需补图就输出空 commands。',
+              model,
+              context: executor.describe(),
+              history: chatHistory.slice(-10),
+            }),
+          });
+          const qData = await qRes.json().catch(() => ({}));
+          if (!qRes.ok || qData.ok === false) throw new Error(qData.error || 'HTTP ' + qRes.status);
+          if (qData.message) appendLog('ai', qData.message);
+          const followCmds = (Array.isArray(qData.commands) ? qData.commands : [])
+            .filter((c) => c && typeof c === 'object' && !['clear', 'inspect', 'measure'].includes(c.op));
+          let qOk = 0;
+          const qErrs = [];
+          for (const c of followCmds) {
+            const rr = executor.execute([c]);
+            const r2 = rr[0];
+            if (r2 && r2.ok) {
+              if (!isTransient(c.op)) doc.commands.push(c);
+              if (c.op === 'verify') {
+                extraVerifies.push(c);
+                if (Number.isFinite(r2.value)) {
+                  readings.push({ op: 'verify', kind: c.kind, label: c.label, value: r2.value,
+                    pass: r2.pass, expected: r2.expected });
+                }
+              }
+              qOk++;
+            } else if (r2) {
+              qErrs.push(`${c.op || '?'}(${r2.error})`);
+            }
+            await sleep(90);
+          }
+          if (followCmds.length) {
+            appendLog('ai', `【查询读数】按读数补发 ${qOk} 条构造命令`
+              + (qErrs.length ? `，${qErrs.length} 条失败：` + qErrs.join('；') : '。'));
+            saveNow();
+            refreshObjects();
+          }
+        } catch (e3) {
+          appendLog('ai', '【查询读数】二次构造未完成：' + e3.message);
+        }
+      }
 
       // ---- 自检回读闭环 · 多轮收敛（对标大角几何：读画板状态 → 判定 → 自动修正 → 复判）----
       // 恢复并升级 b79292af 的多轮修正（曾被 84815b71 重写 aiSend 时简化成一轮修正）：
@@ -2474,7 +2538,8 @@ async function aiSend() {
       //   4) 纯 measure（无 verify 断言）只在面板展示读数，不额外消耗 LLM 调用（沿用既有策略）。
       //   5) 面板逐轮给【自检状态条】：已自检 N 项，✔ x，✘ y，第 k/3 轮修正 / 已收敛 / 已收手。
       const MAX_FIX_ROUNDS = 3;
-      const origVerifies = (data.commands || []).filter((c) => c && c.op === 'verify');
+      // 首轮 + 查询回读轮的 verify 一起纳入复判集合（查询轮构造的图形也要被自检）
+      const origVerifies = (data.commands || []).concat(extraVerifies).filter((c) => c && c.op === 'verify');
       const fmtReading = (x, i) => {
         const name = x.label || `${x.kind || x.op}${readings.length > 1 ? i + 1 : ''}`;
         const v = Number(x.value).toFixed(x.kind === 'angle' ? 1 : 3) + (x.kind === 'angle' ? '°' : '');
