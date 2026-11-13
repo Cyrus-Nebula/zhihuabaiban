@@ -730,3 +730,45 @@ export function isBoard3DIntent(text) {
 }
 
 /* ↑↑↑ 3D 追加段落结束（2D 主干保持原样）↑↑↑ */
+
+/* ============================================================
+ * ↓↓↓ 2026-11-14「独立自主 3D 画板」任务追加段落（measure3d 空间量测）↓↓↓
+ *
+ * 协作铁律：上方全部内容（2D 主干 + 2026-11-08 的 3D 追加段）逐字未动，
+ * 本段只追加、不覆盖、不删除。既有 BOARD3D_PROMPT_OPS / BOARD3D_SYSTEM_PROMPT
+ * 保持不变（7 条命令），新命令以「追加段」形式由 ai/board-backend.js 拼接，
+ * 避免与「AI 对标大角几何」任务维护的 2D 主干产生任何冲突。
+ * 与 js/board3d-executor.js 的 BOARD3D_MEASURE_OPS 一一对应。
+ * ============================================================ */
+
+/** 3D 扩展命令 op（2026-11-14 追加，与 js/board3d-executor.js 的 BOARD3D_MEASURE_OPS 一致） */
+export const BOARD3D_MEASURE_PROMPT_OPS = Object.freeze(['measure3d']);
+
+/**
+ * 3D 系统提示词追加段：仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到
+ * BOARD3D_SYSTEM_PROMPT 之后；2D 分支完全不使用本段。
+ */
+export const BOARD3D_MEASURE_PROMPT = `
+
+# 补充命令：空间量测（仅本 3D 分支可用，2026-11-14 追加）
+- measure3d  {"op":"measure3d","kind":"distance","from":"A","to":"B"}  量测两点距离（对象中心或 label3d 标注锚点）。
+  · kind 可选：distance 距离 / angle 夹角 / midpoint 中点坐标。
+  · from / to / vertex 既可写已存在对象的 id，也可直接写坐标数组 [x,y,z]；也可用 points 数组按顺序列出点位。
+  · angle 需要三点：vertex 顶点 + from、to 两个端点，返回 0~180 度的夹角；顶点与端点重合会被拒绝。
+  · 可选 digits:0~6 控制小数位（默认 3 位）。量测是只读命令，不会改动画板对象。
+  · 示例：{"op":"measure3d","kind":"distance","from":"cube","to":"ball"}
+  · 示例：{"op":"measure3d","kind":"angle","vertex":[0,0,0],"from":[1,0,0],"to":[0,1,0]}
+  · 示例：{"op":"measure3d","kind":"midpoint","points":[[0,0,0],[2,2,2]]}
+- 量测结果由画板按当前场景真实坐标计算并返回，不要自己估算数值；把结论简要写进 message。
+
+== 例5：画正方体并量测体对角线 ==
+用户："画一个棱长 2 的正方体，量一下体对角线多长。"
+思路：先建正方体与两个对角顶点标注，再对两个标注 id 发 measure3d；引用同批命令里刚建好的 id 也有效。
+{"op":"add3d","id":"cube","type":"box","pos":[0,1,0],"params":{"w":2,"h":2,"d":2},"opacity":0.35}
+{"op":"label3d","id":"lblP","text":"P","pos":[-1,0,-1]}
+{"op":"label3d","id":"lblQ","text":"Q","pos":[1,2,1]}
+{"op":"measure3d","kind":"distance","from":"lblP","to":"lblQ"}
+
+# 补充铁律
+- measure3d 是 3D 命令；2D 的 measure / verify / point 等命令在本分支依旧不认识，不要输出。
+- 不要为了量测而新增辅助体或修改已有对象；量测本身不改变场景。`;

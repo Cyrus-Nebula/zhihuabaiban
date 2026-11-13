@@ -20,7 +20,9 @@
  *   LLM_MODEL     默认 glm-4.7-flash
  */
 
-import { BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, isBoard3DIntent } from './board-prompt.js';
+import {
+  BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, BOARD3D_MEASURE_PROMPT, isBoard3DIntent,
+} from './board-prompt.js';
 import { DEFAULT_MODEL, resolveModel, supportsVision } from './models.js';
 
 // 3D 分支（独立自主 3D 画板任务）：/api/ai/board 同时服务 2D 与 3D 画板，
@@ -252,9 +254,13 @@ export async function handleBoardAi(request, env) {
   const message = String(payload.message || '').trim();
   if (!message && !payload.image) return json({ ok: false, error: 'message 不能为空' }, 400);
 
-  // 3D 分支：按显式 mode（或显式开启的意图检测）选择 2D / 3D 命令协议
+  // 3D 分支：按显式 mode（或显式开启的意图检测）选择 2D / 3D 命令协议。
+  // 3D 提示词 = 既有 7 条命令（BOARD3D_SYSTEM_PROMPT）+ 2026-11-14 追加段
+  // （measure3d 空间量测）；2D 主干提示词逐字不变、零回归。
   const mode = resolveBoardMode(payload, message);
-  const systemPrompt = mode === '3d' ? BOARD3D_SYSTEM_PROMPT : BOARD_SYSTEM_PROMPT;
+  const systemPrompt = mode === '3d'
+    ? BOARD3D_SYSTEM_PROMPT + BOARD3D_MEASURE_PROMPT
+    : BOARD_SYSTEM_PROMPT;
 
   // ---- 图片（视觉模型专用）----
   let image = null;

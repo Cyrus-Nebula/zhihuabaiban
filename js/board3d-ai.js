@@ -74,6 +74,11 @@ async function send() {
       let line = `已执行 ${ok}/${results.length} 条 3D 命令`;
       if (bad.length) line += '；失败：' + bad.map((b) => `${b.op || '?'}(${b.error})`).join('、');
       appendLog('ai', line);
+      // measure3d 是只读量测命令：把画板按当前场景真实坐标算出的结果逐条展示，
+      // 数值以画板返回为准，避免 LLM 在 message 里凭空估算。
+      for (const m of results) {
+        if (m.ok && m.op === 'measure3d' && m.text) appendLog('ai', '量测：' + m.text);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

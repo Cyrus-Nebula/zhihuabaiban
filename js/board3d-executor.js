@@ -10,7 +10,13 @@
  *   { id, type, text, color, opacity, pos:[x,y,z], rot:[x,y,z], scale:[x,y,z], p:{几何参数} }
  *   type 白名单与 board3d.js 的 SHAPE_DEFS 一一对应；几何参数缺省值由 board3d.js 补齐
  *   （本文件只校验键名合法性，不复制一份默认值，避免两处漂移）。
+ *
+ * 2026-11-14 增量：新增只读量测命令 measure3d（距离 / 夹角 / 中点），
+ * 语义在 js/board3d-measure.js；既有 7 条命令的白名单 BOARD3D_OPS 保持不变，
+ * 扩展命令单独成组，以免与共享文件 ai/board-prompt.js 的既有协议一致性断言冲突。
  */
+
+import { resolveMeasure3D } from './board3d-measure.js';
 
 /** 每种图元允许的几何参数键（与 js/board3d.js 的 SHAPE_DEFS.params 对齐） */
 export const BOARD3D_PARAM_KEYS = Object.freeze({
@@ -32,6 +38,16 @@ export const BOARD3D_TYPES = Object.freeze(Object.keys(BOARD3D_PARAM_KEYS));
 export const BOARD3D_OPS = Object.freeze([
   'add3d', 'label3d', 'update3d', 'remove3d', 'clear3d', 'view3d', 'reset3d',
 ]);
+
+/**
+ * 扩展命令（2026-11-14）：空间量测 measure3d，只读、不改动画板对象。
+ * 单独成组，既有 BOARD3D_OPS 仍恒为 7 条 —— ai/board-prompt.js 是共享文件，
+ * 按协作铁律只追加段落，因此两侧既有白名单必须保持逐项一致。
+ */
+export const BOARD3D_MEASURE_OPS = Object.freeze(['measure3d']);
+
+/** 3D 分支完整命令集（既有 7 条 + 本轮扩展），供文档 / 回归核对 */
+export const BOARD3D_ALL_OPS = Object.freeze([...BOARD3D_OPS, ...BOARD3D_MEASURE_OPS]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
 
@@ -253,6 +269,18 @@ export function applyBoard3DCommands(commands, api, options = {}) {
         case 'reset3d': {
           call('resetView');
           results.push({ op, ok: true });
+          break;
+        }
+        case 'measure3d': {
+          // 只读量测：读「当前」状态而非循环开始时的快照，
+          // 这样同一批命令里先 add3d / label3d 再量测刚建好的对象也能按 id 解析到。
+          // 不要求 WebGL 就绪（getState 失败时降级为空场景，整批命令不中断）。
+          let state = {};
+          try { state = (a.getState ? a.getState() : {}) || {}; } catch (_) { state = {}; }
+          const r = resolveMeasure3D(cmd, state);
+          results.push(r.ok
+            ? { op, ok: true, kind: r.kind, value: r.value, unit: r.unit, ids: r.ids, text: r.text }
+            : { op, ok: false, error: r.error });
           break;
         }
         default:
