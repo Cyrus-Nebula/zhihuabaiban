@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="ui-v2">
+<html lang="zh-CN" class="ui-v2 ui-v3">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -206,6 +206,12 @@
         </button>
       </div>
 
+      <!-- v3：作图 / 查询两段切换（查询只读，走 executor.inspect） -->
+      <div class="ai-mode" id="aiMode" role="tablist" aria-label="AI 模式">
+        <button class="on" data-mode="draw" type="button" role="tab" aria-selected="true">作图</button>
+        <button data-mode="query" type="button" role="tab" aria-selected="false">查询</button>
+      </div>
+
       <div id="view-chat" class="ai-view">
         <div id="ai-log" class="ai-log"></div>
         <div id="ai-img-preview" class="ai-img-preview hidden">
@@ -296,6 +302,10 @@
         <div id="rec-list" class="rec-list"></div>
       </div>
     </aside>
+    <div class="v3-statusbar" id="v3StatusBar" aria-label="画板状态">
+      <span data-v3="objects">对象 0</span><span>网格 26px</span><span>测量值 #C0392B</span>
+      <span class="right">缩放 适应 · JSXGraph 本地引擎</span>
+    </div>
   </main>
 
   <div id="toast" class="toast hidden"></div>

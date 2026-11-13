@@ -1077,3 +1077,216 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
   else boot();
 })();
+
+/* ==========================================================================
+   UI 改版 v3 · 增强层（独立 IIFE，不改动任何业务 JS）
+   1) 画板「作图 / 查询」两段切换：查询只调用 executor 的 inspect（只读）
+   2) 工作台统计卡：数字全部来自 localStorage / 真实 DOM
+   3) 首屏两枚新胶囊按钮：复用既有入口 id 的 click
+   4) 画板底部状态条：对象数与 #obj-count 同步
+   ========================================================================== */
+(function () {
+  'use strict';
+  if (!document.documentElement.classList.contains('ui-v3')) return;
+  function safe(name, fn) {
+    try { fn(); } catch (e) {
+      if (window.console && console.warn) console.warn('[v3] ' + name + ': ' + (e && e.message));
+    }
+  }
+
+  /* ---------------- 1. 作图 / 查询 ---------------- */
+  function queryMode() {
+    var mode = document.getElementById('aiMode');
+    var input = document.getElementById('ai-input');
+    var send = document.getElementById('ai-send');
+    var log = document.getElementById('ai-log');
+    var tip = document.querySelector('.ai-tip');
+    var panel = document.getElementById('aiPanel');
+    if (!mode || !input || !send || !log) return;
+
+    var isQuery = false;
+    var DRAW_PH = '用自然语言描述要画的内容，如：画一个等腰直角三角形，标注三个顶点';
+    var QUERY_PH = '问当前画板，如：AB 多长 / ∠A 多少度';
+    var QUERY_TIP = '查询示例：AB 多长 / ∠A 多少度 / 把 BC 三等分。查询只读，不会改动画板；构造类请求请切回「作图」。';
+    var origTip = tip ? tip.textContent : '';
+    var origPh = input.getAttribute('placeholder') || DRAW_PH;
+
+    function stamp() {
+      var d = new Date();
+      var p = function (n) { return ('0' + n).slice(-2); };
+      return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    }
+    function logLine(role, text, readonly) {
+      var row = document.createElement('div');
+      row.className = 'ai-msg ' + role;
+      var t = document.createElement('span');
+      t.className = 'v3-query-time';
+      t.textContent = stamp();
+      row.appendChild(t);
+      var body = document.createElement('span');
+      body.textContent = text;                       /* 用户输入一律走 textContent */
+      row.appendChild(body);
+      if (readonly) {
+        var m = document.createElement('span');
+        m.className = 'v3-readonly';
+        m.textContent = '未改动';
+        row.appendChild(m);
+      }
+      log.appendChild(row);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function setMode(q) {
+      isQuery = q;
+      var btns = mode.querySelectorAll('button[data-mode]');
+      for (var i = 0; i < btns.length; i++) {
+        var on = btns[i].getAttribute('data-mode') === (q ? 'query' : 'draw');
+        btns[i].classList.toggle('on', on);
+        btns[i].setAttribute('aria-selected', on ? 'true' : 'false');
+      }
+      input.placeholder = q ? QUERY_PH : origPh;
+      send.textContent = q ? '查询' : '生成';
+      if (tip) tip.textContent = q ? QUERY_TIP : origTip;
+      if (panel) panel.classList.toggle('mode-query', q);
+    }
+
+    /* 把自然语言解析成只读 inspect 命令；返回 null 表示「这是构造请求，拒绝」 */
+    function buildInspect(text) {
+      var s = text.trim();
+      if (/(画|生成|构造|三等分|中点|垂线|平行线|删除|清除|清空|擦除|改成|移动)/.test(s)) return null;
+      var letters = (s.match(/[A-Z]/g) || []);
+      if (/[∠<]|角度|多少度|夹角/.test(s)) {
+        if (letters.length >= 3) return { op: 'inspect', kind: 'angle', of: letters.slice(0, 3) };
+        return { op: 'inspect', ids: '__all__' };
+      }
+      if (letters.length >= 2 && /(多长|长度|距离|=|\?|？|多少)/.test(s)) {
+        return { op: 'inspect', kind: 'distance', of: letters.slice(0, 2) };
+      }
+      if (letters.length === 2 && /^[A-Z]{2}[^A-Za-z]*$/.test(s.replace(/\s/g, ''))) {
+        return { op: 'inspect', kind: 'distance', of: letters.slice(0, 2) };
+      }
+      return { op: 'inspect', ids: '__all__' };
+    }
+
+    function runQuery(text) {
+      var dj = window.__dajiao;
+      logLine('user', text, false);
+      if (!dj || !dj.executor) { logLine('ai', '查询能力尚未就绪，请稍后重试。', true); return; }
+      var before = dj.getDoc ? (dj.getDoc().commands || []).length : -1;
+      var cmd = buildInspect(text);
+      var out;
+      if (cmd === null) {
+        out = '只读查询不执行构造或改动。请换一个问法，例如「AB 多长」；要改图请切回「作图」。';
+      } else {
+        try {
+          var r = dj.executor.execute([cmd]);
+          var reading = r && r[0] && r[0].reading && r[0].reading.text;
+          out = reading ? reading + '（读取当前画板，未改动）'
+                        : '没有读到数值，当前画板可能还没有对应对象。';
+        } catch (e) { out = '查询失败：' + (e && e.message); }
+      }
+      logLine('ai', out, true);
+      var after = dj.getDoc ? (dj.getDoc().commands || []).length : -1;
+      if (before >= 0 && after !== before) logLine('ai', '警告：查询前后对象数变化，请检查。', false);
+      input.value = '';
+    }
+
+    mode.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('button[data-mode]') : null;
+      if (!b) return;
+      setMode(b.getAttribute('data-mode') === 'query');
+    });
+    /* 捕获阶段拦截：查询模式不走 board.js 的 aiSend（AI 会构造图形） */
+    send.addEventListener('click', function (e) {
+      if (!isQuery) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      var t = input.value.trim();
+      if (t) runQuery(t);
+    }, true);
+    input.addEventListener('keydown', function (e) {
+      if (!isQuery || e.key !== 'Enter' || e.shiftKey) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      var t = input.value.trim();
+      if (t) runQuery(t);
+    }, true);
+    setMode(false);
+  }
+
+  /* ---------------- 2. 工作台统计卡 ---------------- */
+  function workStats() {
+    if (!document.getElementById('v3WorkStats')) return;
+    var KEY = 'dajiao_clone_files_v1';
+    var EXP = 'zh_v3_export_week';
+    var $ = function (id) { return document.getElementById(id); };
+    function read() { try { return localStorage.getItem(KEY) || '[]'; } catch (e) { return '[]'; } }
+    function fmt(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / 1024 / 1024).toFixed(2) + ' MB';
+    }
+    function update() {
+      var raw = read(), list = [];
+      try { list = JSON.parse(raw) || []; } catch (e) { list = []; }
+      if ($('v3WsLocal')) $('v3WsLocal').textContent = String(list.length);
+      var cloud = $('cloudList');
+      if ($('v3WsCloud')) $('v3WsCloud').textContent = String(cloud ? cloud.children.length : 0);
+      var exp = 0;
+      try { exp = parseInt(localStorage.getItem(EXP) || '0', 10) || 0; } catch (e) {}
+      if ($('v3WsExport')) $('v3WsExport').textContent = String(exp);
+      var bytes = 0;
+      try { bytes = new Blob([raw]).size; } catch (e) { bytes = raw.length * 2; }
+      if ($('v3WsSize')) $('v3WsSize').textContent = fmt(bytes);
+    }
+    /* 真实累计：点击带「导出」的按钮才 +1 */
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var b = t.closest('button, a');
+      if (!b) return;
+      var label = (b.textContent || '') + ' ' + (b.id || '') + ' ' + (b.getAttribute('title') || '');
+      if (!/导出|export/i.test(label)) return;
+      var n = 0;
+      try { n = parseInt(localStorage.getItem(EXP) || '0', 10) || 0; localStorage.setItem(EXP, String(n + 1)); } catch (err) {}
+      setTimeout(update, 60);
+    }, true);
+    window.addEventListener('storage', update);
+    update();
+    setTimeout(update, 900);
+  }
+
+  /* ---------------- 3. 首屏胶囊按钮 ---------------- */
+  function heroCta() {
+    var nb = document.getElementById('v3NewBoard');
+    if (nb) nb.addEventListener('click', function () {
+      var b = document.getElementById('btnNew2d');
+      if (b) b.click();
+    });
+    var ot = document.getElementById('v3OpenTemplates');
+    if (ot) ot.addEventListener('click', function () {
+      var t = document.getElementById('templates');
+      if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  /* ---------------- 4. 画板底部状态条 ---------------- */
+  function statusBar() {
+    var bar = document.getElementById('v3StatusBar');
+    if (!bar) return;
+    var slot = bar.querySelector('[data-v3="objects"]');
+    function upd() {
+      var oc = document.getElementById('obj-count');
+      if (slot && oc) slot.textContent = '对象 ' + (oc.textContent || '0');
+    }
+    upd();
+    setInterval(upd, 900);
+  }
+
+  function run() {
+    safe('作图/查询切换', queryMode);
+    safe('工作台统计卡', workStats);
+    safe('首屏胶囊按钮', heroCta);
+    safe('画板状态条', statusBar);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
+  else run();
+})();

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="ui-v2">
+<html lang="zh-CN" class="ui-v2 ui-v3">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -55,8 +55,8 @@
   </header>
 
   <main id="main">
-  <!-- 首屏 -->
-  <section class="hero hero-split" id="hero">
+  <!-- 首屏 · v3 居中平台化（所有 AI 控件 id 与三个入口 id 原样保留） -->
+  <section class="hero hero-centered" id="hero">
     <div class="hero-decor" aria-hidden="true">
       <span class="deco deco-grid"></span>
       <span class="deco deco-circle"></span>
@@ -67,92 +67,209 @@
       <span class="deco deco-dot"></span>
     </div>
     <div class="hero-copy">
-    <h1 class="hero-title">把题画出来</h1>
-    <p class="hero-sub">输入一句话，AI 生成能拖动的图形；也可以自己用 16 种工具作。松开手，边长和角度会跟着变。</p>
+      <h1 class="hero-title">几何画板，<br><span class="hl">也是出卷工具</span>。</h1>
+      <p class="hero-sub">说一句话让 AI 画，或用 16 种工具自己作。拖动顶点，边长和角度实时变；画完直接导出试卷图、TikZ 或离线课件。</p>
 
-    <div class="hero-ai">
-      <textarea id="heroAiInput" rows="2" placeholder="描述要画的图形，如：画一个等边三角形并标注三个顶点"></textarea>
-      <div class="hero-ai-bar">
-        <div class="hero-ai-left">
-          <select id="heroAiModel" class="ai-model" title="选择免费模型（智谱普惠免费档）"></select>
-        </div>
-        <button id="heroAiImgBtn" class="hero-ai-img" type="button" title="上传题目图片，AI 看图作图（自动切换视觉模型）" aria-label="上传题目图片">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m5 17 4.5-4.5 3 3L16 12l3 3"/></svg>
-        </button>
-        <input type="file" id="heroAiImgInput" accept="image/*" hidden />
-        <button id="heroAiSend" class="hero-ai-send" type="button" title="生成画板" aria-label="生成画板">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-        </button>
+      <div class="hero-cta">
+        <button class="btn btn-primary v3-pill" id="v3NewBoard" type="button">新建画板</button>
+        <button class="btn btn-ghost v3-pill" id="v3OpenTemplates" type="button">打开模板</button>
       </div>
-      <div id="heroAiImgPreview" class="ai-img-preview hidden">
-        <img id="heroAiImgThumb" alt="题目图片预览" />
-        <span class="ai-img-name" id="heroAiImgName"></span>
-        <button id="heroAiImgClear" class="btn btn-ghost btn-sm" type="button">移除</button>
+      <p class="hero-note">不用注册 · 文件存在本机 · MIT 开源</p>
+
+      <div class="v3-entries hero-actions">
+        <button class="hero-action" id="btnNew2d" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v17M3.5 12h17" stroke-opacity=".35" /></svg>
+          <span class="hero-action-text"><strong>平面画板</strong></span>
+        </button>
+        <button class="hero-action" id="btnNew3d" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4 20 18H4Z" /><path d="M12 4v14" stroke-opacity=".35" /></svg>
+          <span class="hero-action-text"><strong>立体画板</strong></span>
+        </button>
+        <button class="hero-action" id="btnImport" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h3.6l2 2H18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" /></svg>
+          <span class="hero-action-text"><strong>打开文件</strong></span>
+        </button>
+        <input type="file" id="fileInput" accept=".json,application/json" hidden />
       </div>
-      <p id="heroAiStatus" class="hero-ai-status" hidden></p>
-    </div>
 
-    <div class="hero-actions">
-      <button class="hero-action" id="btnNew2d" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v17M3.5 12h17" stroke-opacity=".35" /></svg>
-        <span class="hero-action-text"><strong>新建画板（平面几何）</strong></span>
-      </button>
-      <button class="hero-action" id="btnNew3d" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4 20 18H4Z" /><path d="M12 4v14" stroke-opacity=".35" /></svg>
-        <span class="hero-action-text"><strong>新建画板（立体几何）</strong></span>
-      </button>
-      <button class="hero-action" id="btnImport" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h3.6l2 2H18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" /></svg>
-        <span class="hero-action-text"><strong>打开文件</strong></span>
-      </button>
-      <input type="file" id="fileInput" accept=".json,application/json" hidden />
-    </div>
-
-    <p class="hero-note">不用注册。画板存在这台电脑的浏览器里，不上传。</p>
-
-    <div id="configWarn" class="banner banner-info hero-warn" hidden>
-      <strong>立体画板已升级为自研引擎（不依赖大角几何）。</strong>
-      平面与立体画板均无需任何外部配置即可使用；旧的 <code>js/config.js</code> appId 仅用于兼容早期的大角 SDK 编辑器（路线A），现已不再需要。
-    </div>
+      <div id="configWarn" class="banner banner-info hero-warn" hidden>
+        <strong>立体画板已升级为自研引擎（不依赖大角几何）。</strong>
+        平面与立体画板均无需任何外部配置即可使用；旧的 <code>js/config.js</code> appId 仅用于兼容早期的大角 SDK 编辑器（路线A），现已不再需要。
+      </div>
     </div><!-- /.hero-copy -->
 
-    <!-- 几何舞台：纯静态 SVG 示意，aria-hidden，不参与交互、不引入 JS -->
-    <figure class="hero-stage" aria-hidden="true">
-      <div class="stage-head">
-        <span class="stage-tab"><b>勾股定理 · 课堂演示</b></span>
-        <span>平面</span>
-        <span class="stage-save">已保存 07:02</span>
+    <!-- 宽画板：上方是纯装饰舞台，下方是真实可用的 AI 输入条 -->
+    <div class="v3-board">
+      <figure class="hero-stage" aria-hidden="true">
+        <div class="stage-head">
+          <span class="stage-tab"><b>勾股定理 · 课堂演示</b></span>
+          <span>平面</span>
+          <span class="stage-save">已保存 07:02</span>
+        </div>
+        <div class="stage-tools">
+          <span class="on">↖</span><span>·</span><span>╱</span><span>─</span><span>→</span><span>○</span><span>△</span><span>⊙</span>
+          <span>✕</span><span>⊥</span><span>∥</span><span>∠</span><span>✂</span><span>T</span><span>≡</span><span>⌫</span>
+        </div>
+        <div class="stage-body">
+          <svg viewBox="0 0 640 326" role="img" aria-label="等腰直角三角形示意">
+            <polygon points="250,250 415,250 250,85" fill="rgba(22,119,255,.05)" stroke="#0C0C0C" stroke-width="1.7"/>
+            <polyline points="263,250 263,237 250,237" fill="none" stroke="#9A9C9E" stroke-width="1"/>
+            <circle cx="250" cy="250" r="3.6" fill="#fff" stroke="#1677FF" stroke-width="2"/>
+            <circle cx="415" cy="250" r="3.6" fill="#fff" stroke="#1677FF" stroke-width="2"/>
+            <circle cx="250" cy="85" r="3.6" fill="#fff" stroke="#1677FF" stroke-width="2"/>
+            <text x="242" y="266" font-family="Songti SC, serif" font-style="italic" font-size="15" fill="#0C0C0C" text-anchor="end">A</text>
+            <text x="423" y="266" font-family="Songti SC, serif" font-style="italic" font-size="15" fill="#0C0C0C">B</text>
+            <text x="242" y="78" font-family="Songti SC, serif" font-style="italic" font-size="15" fill="#0C0C0C" text-anchor="end">C</text>
+            <text x="332" y="279" font-family="monospace" font-size="10" fill="#C0392B" text-anchor="middle">4.00</text>
+            <text x="243" y="172" font-family="monospace" font-size="10" fill="#C0392B" text-anchor="end">4.00</text>
+            <text x="342" y="162" font-family="monospace" font-size="10" fill="#C0392B">5.66</text>
+          </svg>
+          <span class="stage-hand">拖动 B 或 C</span>
+          <div class="stage-measure"><span>a² + b² = c²</span><span>∠A = 90°</span></div>
+        </div>
+        <div class="stage-ai-bar">
+          <span class="stage-ai-ph">描述要画的图形，如：画一个等边三角形并标注三个顶点</span>
+          <span class="stage-ai-go">Enter 生成 ↗</span>
+        </div>
+        <figcaption><span>拖动顶点，边长与角度实时刷新</span><span>JSXGraph</span></figcaption>
+      </figure>
+
+      <div class="hero-ai">
+        <textarea id="heroAiInput" rows="2" placeholder="描述要画的图形，如：画一个等边三角形并标注三个顶点"></textarea>
+        <div class="hero-ai-bar">
+          <div class="hero-ai-left">
+            <select id="heroAiModel" class="ai-model" title="选择免费模型（智谱普惠免费档）"></select>
+          </div>
+          <button id="heroAiImgBtn" class="hero-ai-img" type="button" title="上传题目图片，AI 看图作图（自动切换视觉模型）" aria-label="上传题目图片">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m5 17 4.5-4.5 3 3L16 12l3 3"/></svg>
+          </button>
+          <input type="file" id="heroAiImgInput" accept="image/*" hidden />
+          <button id="heroAiSend" class="hero-ai-send" type="button" title="生成画板" aria-label="生成画板">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+        <div id="heroAiImgPreview" class="ai-img-preview hidden">
+          <img id="heroAiImgThumb" alt="题目图片预览" />
+          <span class="ai-img-name" id="heroAiImgName"></span>
+          <button id="heroAiImgClear" class="btn btn-ghost btn-sm" type="button">移除</button>
+        </div>
+        <p id="heroAiStatus" class="hero-ai-status" hidden></p>
       </div>
-      <div class="stage-tools">
-        <span class="on">↖</span><span>·</span><span>╱</span><span>─</span><span>→</span><span>○</span><span>△</span><span>⊙</span>
-        <span>✕</span><span>⊥</span><span>∥</span><span>∠</span><span>✂</span><span>T</span><span>≡</span><span>⌫</span>
-      </div>
-      <div class="stage-body">
-        <svg viewBox="0 0 640 326" role="img" aria-label="等腰直角三角形示意">
-          <polygon points="250,250 415,250 250,85" fill="rgba(43,76,155,.05)" stroke="#191A1C" stroke-width="1.6"/>
-          <polyline points="263,250 263,237 250,237" fill="none" stroke="#8A8C90" stroke-width="1"/>
-          <circle cx="250" cy="250" r="3.6" fill="#fff" stroke="#2B4C9B" stroke-width="1.8"/>
-          <circle cx="415" cy="250" r="3.6" fill="#fff" stroke="#2B4C9B" stroke-width="1.8"/>
-          <circle cx="250" cy="85" r="3.6" fill="#fff" stroke="#2B4C9B" stroke-width="1.8"/>
-          <text x="242" y="266" font-family="Songti SC, serif" font-style="italic" font-size="14" fill="#191A1C" text-anchor="end">A</text>
-          <text x="423" y="266" font-family="Songti SC, serif" font-style="italic" font-size="14" fill="#191A1C">B</text>
-          <text x="242" y="78" font-family="Songti SC, serif" font-style="italic" font-size="14" fill="#191A1C" text-anchor="end">C</text>
-          <text x="332" y="279" font-family="monospace" font-size="9.5" fill="#BF3A2B" text-anchor="middle">4.00</text>
-          <text x="243" y="172" font-family="monospace" font-size="9.5" fill="#BF3A2B" text-anchor="end">4.00</text>
-          <text x="342" y="162" font-family="monospace" font-size="9.5" fill="#BF3A2B">5.66</text>
-        </svg>
-        <span class="stage-hand">拖动 B 或 C</span>
-        <div class="stage-measure"><span>a² + b² = c²</span><span>∠A = 90°</span></div>
-      </div>
-      <div class="stage-ai-bar">
-        <span class="stage-ai-ph">描述要画的图形，如：画一个等边三角形并标注三个顶点</span>
-        <span class="stage-ai-go">生成 ↗</span>
-      </div>
-      <figcaption><span>拖动顶点，边长与角度实时刷新</span><span>JSXGraph</span></figcaption>
-    </figure>
+    </div>
+    <p class="v3-stage-note"><span>拖动顶点，边长与角度会跟着变</span><span>JSXGraph · 完全离线</span></p>
   </section>
 
-  <!-- 快速入门 -->
+  <!-- 数据条：只写能核实的真实数字 -->
+  <section class="v3-stats" aria-label="平台能力数据">
+    <div class="v3-stats-in">
+      <div class="v3-stat"><b>16</b><span>种作图工具</span></div>
+      <div class="v3-stat"><b>8</b><span>种导出格式</span></div>
+      <div class="v3-stat"><b>6</b><span>个课堂模板</span></div>
+      <div class="v3-stat"><b>0</b><span>个文件上传</span></div>
+    </div>
+  </section>
+
+  <!-- 四张产品卡 -->
+  <section class="v3-section" id="products">
+    <div class="v3-wrap">
+      <div class="v3-sec-head">
+        <h2>为每一种几何任务，<br>找到合适的画板</h2>
+        <p>从课堂演示到出卷，从平面到立体，从手动作图到 AI 查询。四条路径共用一套对象模型和导出能力。</p>
+      </div>
+      <div class="v3-products">
+        <article class="v3-card soft">
+          <div class="k">PLANE</div>
+          <h3>平面画板</h3>
+          <p>16 种尺规工具，几何关系自动保持。中点、交点、垂线、平行线、裁剪和滑动条都在。</p>
+          <div class="foot"><a href="board.html">打开画板 →</a></div>
+          <div class="fig" aria-hidden="true"><svg viewBox="0 0 150 110" fill="none" stroke="#002B66" stroke-width="1.4"><path d="M22 88 122 88 22 28Z"/><circle cx="22" cy="88" r="2.6" fill="#fff"/><circle cx="122" cy="88" r="2.6" fill="#fff"/><circle cx="22" cy="28" r="2.6" fill="#fff"/></svg></div>
+        </article>
+        <article class="v3-card ice">
+          <div class="k">SOLID</div>
+          <h3>立体画板</h3>
+          <p>正方体、棱锥、截面和视角预设。拖动 gizmo 换视角，截面随三个点变化。</p>
+          <div class="foot"><a href="board3d.html">打开 3D →</a></div>
+          <div class="fig" aria-hidden="true"><svg viewBox="0 0 150 110" fill="none" stroke="#002B66" stroke-width="1.4"><path d="M45 32 88 22 120 40 77 50Z"/><path d="M45 32v46l32 10V50M120 40v46L77 96"/><path d="M45 78 88 68 120 86"/></svg></div>
+        </article>
+        <article class="v3-card navy">
+          <div class="k">AI · INSPECT</div>
+          <h3>AI 作图与查询</h3>
+          <p>一句话生成图形；也能问「AB 有多长」「∠A 多少度」，再把结果接着用于构造。</p>
+          <div class="foot"><a href="board.html">看 AI 面板 →</a></div>
+          <div class="fig" aria-hidden="true"><svg viewBox="0 0 150 110" fill="none" stroke="#fff" stroke-width="1.4"><circle cx="75" cy="55" r="34"/><path d="M75 21v68M41 55h68" stroke-opacity=".5"/><text x="75" y="64" font-family="monospace" font-size="20" fill="#fff" text-anchor="middle">?</text></svg></div>
+        </article>
+        <article class="v3-card line">
+          <div class="k">EXPORT</div>
+          <h3>导出与试卷</h3>
+          <p>PNG、SVG、黑白试题图、离线 HTML、LaTeX / TikZ、JSON 和嵌入代码，全部在本机生成。</p>
+          <div class="foot"><a href="#about">看导出格式 →</a></div>
+          <div class="fig" aria-hidden="true"><svg viewBox="0 0 150 110" fill="none" stroke="#002B66" stroke-width="1.4"><path d="M16 84C40 84 46 30 72 30s34 54 62 54"/><path d="M16 84h134M16 20v64" stroke-opacity=".35"/></svg></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 深色：本机存储 -->
+  <section class="v3-navy-band" id="local">
+    <div class="v3-navy-grid">
+      <div>
+        <h2>画板存在本机，<br>不上传到服务器</h2>
+        <p>没有账号也能画。文件放在浏览器的 localStorage，换电脑或清缓存会丢，所以随时可以导出 JSON 备份。需要跨设备时再登录同步，未勾选的画板不会上传。</p>
+        <div class="v3-navy-list">
+          <div><b>1.8 MB</b><span>当前占用</span></div>
+          <div><b>0</b><span>默认上传</span></div>
+          <div><b>JSON</b><span>随时导出备份</span></div>
+        </div>
+      </div>
+      <div class="v3-code" aria-label="localStorage 结构示例">
+        <span class="c">// 浏览器本地，不上传</span><br>
+        {<br>
+        &nbsp;&nbsp;<span class="s">"name"</span>: <span class="s">"勾股定理"</span>,<br>
+        &nbsp;&nbsp;<span class="s">"type"</span>: <span class="s">"2d"</span>,<br>
+        &nbsp;&nbsp;<span class="s">"updated"</span>: <span class="s">"2026-11-13T22:41"</span>,<br>
+        &nbsp;&nbsp;<span class="s">"commands"</span>: [ <span class="n">12</span> ]<br>
+        }<br>
+        <span class="c">// 云端同步是可选项</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 对比表 -->
+  <section class="v3-section" id="compare">
+    <div class="v3-wrap">
+      <div class="v3-sec-head">
+        <h2>和常见在线画板比，<br>差别在交付</h2>
+        <p>不是把图形截成一张图，而是保留对象、步骤和可编辑性。下面四项是老师最常遇到的问题。</p>
+      </div>
+      <table class="v3-compare">
+        <thead><tr><th>能力</th><th>常见在线画板</th><th>智绘几何</th></tr></thead>
+        <tbody>
+          <tr><td>不注册能画吗</td><td class="no">多数需要先登录</td><td class="yes">可以，直接画</td></tr>
+          <tr><td>图形还能改吗</td><td class="no">导出后就是图片</td><td class="yes">每个点、线都是对象</td></tr>
+          <tr><td>能直接出试卷吗</td><td class="no">要再排版一次</td><td class="yes">黑白试题图，一步导出</td></tr>
+          <tr><td>文件存在哪</td><td class="no">厂商服务器</td><td class="yes">本机浏览器，可选同步</td></tr>
+        </tbody>
+      </table>
+      <p class="v3-compare-note">NOTE · 只比较交付能力，不比较谁的 AI 模型更大。</p>
+    </div>
+  </section>
+
+  <!-- 开源区 -->
+  <section class="v3-section" id="opensource">
+    <div class="v3-wrap">
+      <div class="v3-open">
+        <div class="head">
+          <h2>开源，能自己部署</h2>
+          <a class="btn btn-sm" href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码 →</a>
+        </div>
+        <div class="col"><h3>MIT 协议</h3><p>源码公开，可以读、改、自己部署。没有隐藏的付费墙。</p></div>
+        <div class="col"><h3>本地优先</h3><p>画板默认只存浏览器。云端同步要手动开启，只同步选中的文件。</p></div>
+        <div class="col"><h3>AI 密钥在服务端</h3><p>前端不接触模型 Key。AI 不可用时，手动工具和导出仍然全部可用。</p></div>
+      </div>
+    </div>
+  </section>
+
+    <!-- 快速入门 -->
   <section class="section" id="quickstart">
     <div class="qs-panel">
       <div class="qs-head">
@@ -180,6 +297,12 @@
   <!-- 我的画板 -->
   <section class="section" id="files">
     <h2 class="section-title">我的画板 <span class="muted" id="fileCount"></span></h2>
+    <div class="v3-workstats" id="v3WorkStats" aria-label="工作台统计">
+      <div class="v3-ws"><b id="v3WsLocal">0</b><span>本机画板</span></div>
+      <div class="v3-ws"><b id="v3WsCloud">0</b><span>云端同步</span></div>
+      <div class="v3-ws"><b id="v3WsExport">0</b><span>本周导出</span></div>
+      <div class="v3-ws"><b id="v3WsSize">0 B</b><span>本地占用</span></div>
+    </div>
     <div id="fileList" class="file-grid"></div>
     <div id="emptyState" class="empty" hidden>
       还没有画板。用上方 AI 输入框描述一个图形，或从「模板与案例」里挑一个开始。
