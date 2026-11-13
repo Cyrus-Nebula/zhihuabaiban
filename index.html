@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="ui-v2">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/unslop.css" />
   <link rel="stylesheet" href="css/site-improve.css" />
+  <link rel="stylesheet" href="css/redesign.css" />
 </head>
 <body class="landing">
   <a class="skip-link" href="#main">跳到主要内容</a>
@@ -55,7 +56,7 @@
 
   <main id="main">
   <!-- 首屏 -->
-  <section class="hero" id="hero">
+  <section class="hero hero-split" id="hero">
     <div class="hero-decor" aria-hidden="true">
       <span class="deco deco-grid"></span>
       <span class="deco deco-circle"></span>
@@ -65,8 +66,9 @@
       <span class="deco deco-blob"></span>
       <span class="deco deco-dot"></span>
     </div>
-    <h1 class="hero-title">智绘几何</h1>
-    <p class="hero-sub">强大而直观的几何图形创建和编辑工具，让数学可视化变得简单</p>
+    <div class="hero-copy">
+    <h1 class="hero-title">把题画出来</h1>
+    <p class="hero-sub">输入一句话，AI 生成能拖动的图形；也可以自己用 16 种工具作。松开手，边长和角度会跟着变。</p>
 
     <div class="hero-ai">
       <textarea id="heroAiInput" rows="2" placeholder="描述要画的图形，如：画一个等边三角形并标注三个顶点"></textarea>
@@ -106,10 +108,48 @@
       <input type="file" id="fileInput" accept=".json,application/json" hidden />
     </div>
 
+    <p class="hero-note">不用注册。画板存在这台电脑的浏览器里，不上传。</p>
+
     <div id="configWarn" class="banner banner-info hero-warn" hidden>
       <strong>立体画板已升级为自研引擎（不依赖大角几何）。</strong>
       平面与立体画板均无需任何外部配置即可使用；旧的 <code>js/config.js</code> appId 仅用于兼容早期的大角 SDK 编辑器（路线A），现已不再需要。
     </div>
+    </div><!-- /.hero-copy -->
+
+    <!-- 几何舞台：纯静态 SVG 示意，aria-hidden，不参与交互、不引入 JS -->
+    <figure class="hero-stage" aria-hidden="true">
+      <div class="stage-head">
+        <span class="stage-tab"><b>勾股定理 · 课堂演示</b></span>
+        <span>平面</span>
+        <span class="stage-save">已保存 07:02</span>
+      </div>
+      <div class="stage-tools">
+        <span class="on">↖</span><span>·</span><span>╱</span><span>─</span><span>→</span><span>○</span><span>△</span><span>⊙</span>
+        <span>✕</span><span>⊥</span><span>∥</span><span>∠</span><span>✂</span><span>T</span><span>≡</span><span>⌫</span>
+      </div>
+      <div class="stage-body">
+        <svg viewBox="0 0 640 326" role="img" aria-label="等腰直角三角形示意">
+          <polygon points="250,250 415,250 250,85" fill="rgba(43,76,155,.05)" stroke="#191A1C" stroke-width="1.6"/>
+          <polyline points="263,250 263,237 250,237" fill="none" stroke="#8A8C90" stroke-width="1"/>
+          <circle cx="250" cy="250" r="3.6" fill="#fff" stroke="#2B4C9B" stroke-width="1.8"/>
+          <circle cx="415" cy="250" r="3.6" fill="#fff" stroke="#2B4C9B" stroke-width="1.8"/>
+          <circle cx="250" cy="85" r="3.6" fill="#fff" stroke="#2B4C9B" stroke-width="1.8"/>
+          <text x="242" y="266" font-family="Songti SC, serif" font-style="italic" font-size="14" fill="#191A1C" text-anchor="end">A</text>
+          <text x="423" y="266" font-family="Songti SC, serif" font-style="italic" font-size="14" fill="#191A1C">B</text>
+          <text x="242" y="78" font-family="Songti SC, serif" font-style="italic" font-size="14" fill="#191A1C" text-anchor="end">C</text>
+          <text x="332" y="279" font-family="monospace" font-size="9.5" fill="#BF3A2B" text-anchor="middle">4.00</text>
+          <text x="243" y="172" font-family="monospace" font-size="9.5" fill="#BF3A2B" text-anchor="end">4.00</text>
+          <text x="342" y="162" font-family="monospace" font-size="9.5" fill="#BF3A2B">5.66</text>
+        </svg>
+        <span class="stage-hand">拖动 B 或 C</span>
+        <div class="stage-measure"><span>a² + b² = c²</span><span>∠A = 90°</span></div>
+      </div>
+      <div class="stage-ai-bar">
+        <span class="stage-ai-ph">描述要画的图形，如：画一个等边三角形并标注三个顶点</span>
+        <span class="stage-ai-go">生成 ↗</span>
+      </div>
+      <figcaption><span>拖动顶点，边长与角度实时刷新</span><span>JSXGraph</span></figcaption>
+    </figure>
   </section>
 
   <!-- 快速入门 -->

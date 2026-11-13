@@ -1043,18 +1043,29 @@
       safe('#11/#25 关于与页脚', aboutAndFooter);
     }
     if (isBoard) {
-      // 第四轮：顶栏首行对齐样式随 JS 注入，优先于可能被缓存的旧 CSS
-      safe('顶栏首行视觉对齐', alignTopbarHead);
+      /* 2026-11-13 · UI 改版 v2 兼容
+       * 下面 6 个模块是为旧的「单行横排工具条」设计的：会把 16 个工具搬进
+       * 侧拉抽屉、把顶栏撑成 44px、重复包装函数面板、折叠顶栏按钮。v2 改成
+       * 200/1fr/320 三栏工具轨后必须跳过，否则两套布局互抢 DOM。
+       * 判断依据只有 <html class="ui-v2">；去掉该类即完整恢复旧行为。
+       * 其余交互（手动保存并同步、离开确认、模型文案、Tab aria、
+       * 保存状态、即时校验、窄屏弹层夹进视口）在 v2 下全部继续生效。 */
+      var v2Layout = document.documentElement.classList.contains('ui-v2');
+      if (!v2Layout) {
+        // 第四轮：顶栏首行对齐样式随 JS 注入，优先于可能被缓存的旧 CSS
+        safe('顶栏首行视觉对齐', alignTopbarHead);
+        safe('#12 工具栏分组', toolbarGroups);
+        safe('#14 函数作图区', fnPanel);
+        safe('#14 函数独立面板', fnIndependentPanel);
+        safe('#12 更多 ▾ 折叠', moreMenu);
+        // 第三轮（手机实拍反馈）：侧拉工具
+        safe('工具侧拉抽屉', toolsDrawer);
+      }
       safe('#6 模型文案', modelLabels);
-      safe('#12 工具栏分组', toolbarGroups);
-      safe('#14 函数作图区', fnPanel);
-      safe('#14 函数独立面板', fnIndependentPanel);
-      safe('#12 更多 ▾ 折叠', moreMenu);
       safe('#15 Tab aria', tabAria);
       safe('#16 保存状态', saveDirty);
       safe('#24 Emoji 统一', stripEmoji);
-      // 第三轮（手机实拍反馈）：侧拉工具 / 手动保存并同步 / 离开确认
-      safe('工具侧拉抽屉', toolsDrawer);
+      // 第三轮（手机实拍反馈）：手动保存并同步 / 离开确认
       safe('手动保存并同步', manualSyncSave);
       safe('离开确认', exitConfirm);
     }

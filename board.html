@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="ui-v2">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="vendor/jsxgraph.css" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/site-improve.css" />
+  <link rel="stylesheet" href="css/redesign.css" />
 </head>
 <body class="board-page">
   <!-- 登录墙：未登录时覆盖整个画板页，登录后自动消失（见页脚网关脚本） -->
@@ -139,40 +140,57 @@
     <input id="file-import" type="file" accept=".json,application/json" hidden />
   </header>
 
+  <main class="board-main rail-layout">
   <div class="toolbar" id="toolbar">
-    <span class="toolbar-label">工具</span>
-    <button class="tool active" data-tool="select" type="button" title="选择/拖拽对象">选择</button>
-    <button class="tool" data-tool="point" type="button" title="点击画板添加点">点</button>
-    <button class="tool" data-tool="segment" type="button" title="点击两点画线段">线段</button>
-    <button class="tool" data-tool="line" type="button" title="点击两点画直线">直线</button>
-    <button class="tool" data-tool="ray" type="button" title="先点起点，再点经过的点">射线</button>
-    <button class="tool" data-tool="circle" type="button" title="先点圆心，再点圆上一点">圆</button>
-    <button class="tool" data-tool="polygon" type="button" title="依次点击顶点，回车结束">多边形</button>
-    <button class="tool" data-tool="midpoint" type="button" title="点击两个点取中点">中点</button>
-    <button class="tool" data-tool="intersect" type="button" title="点击两条线/圆取交点">交点</button>
-    <button class="tool" data-tool="perpendicular" type="button" title="先点一条线，再点线外一点">垂线</button>
-    <button class="tool" data-tool="parallel" type="button" title="先点一条线，再点线外一点">平行线</button>
-    <button class="tool" data-tool="angle" type="button" title="依次点起点、顶点、终点">角</button>
-    <button class="tool" data-tool="trim" type="button" title="分段裁剪：先点一条线/圆，再在它上面点两点，取中间一段（圆变弧、线变段，无需重画）">裁剪</button>
-    <button class="tool" data-tool="text" type="button" title="点击画板放置文本">文本</button>
-    <button class="tool" data-tool="slider" type="button" title="点击画板放置滑动条：可调范围的数值参数控件">滑动条</button>
-    <button class="tool" data-tool="delete" type="button" title="点击对象删除（级联删除依赖对象）">删除</button>
-    <span class="toolbar-sep"></span>
-    <button id="btn-undo" class="tool" type="button" title="撤销 (Ctrl+Z)" disabled>撤销</button>
-    <button id="btn-redo" class="tool" type="button" title="重做 (Ctrl+Y)" disabled>重做</button>
-    <button id="btn-poly-done" class="tool hidden" type="button" title="结束多边形绘制">完成多边形</button>
-    <span class="toolbar-sep"></span>
-    <span class="toolbar-label">函数</span>
-    <input id="fn-input" type="text" placeholder="如 x^2 或 sin(x)" />
-    <span class="toolbar-label" title="定义域：曲线只画在这个 x 区间内">x∈</span>
-    <input id="fn-from" class="fn-range" type="number" step="0.5" value="-10" title="定义域左端" aria-label="定义域左端" />
-    <span class="toolbar-label">~</span>
-    <input id="fn-to" class="fn-range" type="number" step="0.5" value="10" title="定义域右端" aria-label="定义域右端" />
-    <button id="btn-fn-add" class="btn small" type="button">添加曲线</button>
+    <div class="toolbar-label">作图</div>
+    <div class="tool-grid">
+      <button class="tool active" data-tool="select" type="button" title="选择/拖拽对象">选择</button>
+      <button class="tool" data-tool="point" type="button" title="点击画板添加点">点</button>
+      <button class="tool" data-tool="segment" type="button" title="点击两点画线段">线段</button>
+      <button class="tool" data-tool="line" type="button" title="点击两点画直线">直线</button>
+      <button class="tool" data-tool="ray" type="button" title="先点起点，再点经过的点">射线</button>
+      <button class="tool" data-tool="circle" type="button" title="先点圆心，再点圆上一点">圆</button>
+      <button class="tool" data-tool="polygon" type="button" title="依次点击顶点，回车结束">多边形</button>
+      <button class="tool" data-tool="midpoint" type="button" title="点击两个点取中点">中点</button>
+      <button class="tool" data-tool="intersect" type="button" title="点击两条线/圆取交点">交点</button>
+      <button class="tool" data-tool="perpendicular" type="button" title="先点一条线，再点线外一点">垂线</button>
+      <button class="tool" data-tool="parallel" type="button" title="先点一条线，再点线外一点">平行线</button>
+      <button class="tool" data-tool="angle" type="button" title="依次点起点、顶点、终点">角</button>
+      <button class="tool" data-tool="trim" type="button" title="分段裁剪：先点一条线/圆，再在它上面点两点，取中间一段（圆变弧、线变段，无需重画）">裁剪</button>
+      <button class="tool" data-tool="text" type="button" title="点击画板放置文本">文本</button>
+      <button class="tool" data-tool="slider" type="button" title="点击画板放置滑动条：可调范围的数值参数控件">滑动条</button>
+      <button class="tool" data-tool="delete" type="button" title="点击对象删除（级联删除依赖对象）">删除</button>
+    </div>
+
+    <div class="rail-actions">
+      <button id="btn-undo" class="tool" type="button" title="撤销 (Ctrl+Z)" disabled>撤销</button>
+      <button id="btn-redo" class="tool" type="button" title="重做 (Ctrl+Y)" disabled>重做</button>
+      <button id="btn-poly-done" class="tool hidden" type="button" title="结束多边形绘制">完成多边形</button>
+    </div>
+
+    <div class="fn-block">
+      <div class="toolbar-label">函数</div>
+      <div class="fn-row">
+        <span class="pre">y =</span>
+        <input id="fn-input" type="text" placeholder="如 x^2 或 sin(x)" />
+      </div>
+      <div class="fn-domain">
+        <span class="pre">x∈</span>
+        <input id="fn-from" class="fn-range" type="number" step="0.5" value="-10" title="定义域左端" aria-label="定义域左端" />
+        <span>~</span>
+        <input id="fn-to" class="fn-range" type="number" step="0.5" value="10" title="定义域右端" aria-label="定义域右端" />
+        <button id="btn-fn-add" class="btn small" type="button">添加曲线</button>
+      </div>
+      <div class="fn-note">定义域默认 -10 ~ 10；支持 x^2、sin(x) 等表达式</div>
+    </div>
+
     <span id="tool-hint" class="tool-hint"></span>
+    <div class="rail-tip">
+      <div><b>V</b> 选择　<b>P</b> 点　<b>L</b> 线段</div>
+      <div><b>⌘Z</b> 撤销　<b>⌘Y</b> 重做</div>
+    </div>
   </div>
 
-  <main class="board-main">
     <div id="box" class="board-box"></div>
     <aside class="ai-panel" id="aiPanel">
       <div class="ai-head">
