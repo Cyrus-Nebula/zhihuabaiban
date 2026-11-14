@@ -216,6 +216,22 @@
 |---|------|-----------|------|------|
 | 54 | 画圆 O(0,0) R=2，再画内接正六边形与外切正方形；自检共圆/相切 | `point` O(0,0) → `circle` c1 R=2；**内接正六边形** `point` A(2,0)/B(1,1.732)/C(-1,1.732)/D(-2,0)/E(-1,-1.732)/F(1,-1.732) → `polygon` hex；**外切正方形** `point` P1(2,2)/P2(-2,2)/P3(-2,-2)/P4(2,-2) → `polygon` sq（顶点到圆心 2√2≈2.828）；`verify` oncircle(A,c1)=0、oncircle(F,c1)=0、`verify` distance(O,P1)=2.828 tol:0.05 | ⬜ | 顶点坐标是算出数字不要写表达式/插值；内接顶点在圆上、外切顶点距圆心 R/cos(180°/n)（正方形 R√2、正三角 2R），别把外切顶点放错；末尾用 oncircle 核内接共圆、distance 核外切半径，见 `ai/board-prompt.js` 例20 |
 
+## 符号化简 / 顶点式配方（inspect kind:vertex，本轮新增 2026-11-14 第三轮）
+
+> 落实 TODO 交接项④「派生量支持符号化简」：对标大角几何的符号计算能力，AI 不必心算配方。
+> `js/executor.js` 新增 `quadraticCoeffs(expr)`（三点求值反推 a,b,c + 第四点校验确为二次式）
+> 与 `vertexReading(d)`，`inspect` 派生量新增 `kind:"vertex"`，回读配方文本 / 顶点 / 对称轴 / 最值；
+> 读数仍走既有【查询读数】两阶段回读（`js/board.js` 零改动）。few-shot 见 `ai/board-prompt.js` 例21。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 55 | 配方读数：查已注册函数 / 直接给表达式 / 批量混查 / 异常降级 | `function` f1 `x^2-4*x+1` → `{"op":"inspect","kind":"vertex","id":"f1"}` → 回 `vertex(f1:"x^2-4*x+1"): y=(x-2)^2-3; 顶点(2,-3); 轴 x=2; 最小值-3; a=1`；`{"op":"inspect","kind":"vertex","expr":"2*x^2+8*x+3"}` → `y=2(x+2)^2-5; 顶点(-2,-5)`；`(x-2)^2-3` 展开式同样能配方；`{"op":"inspect","kind":"vertex","expr":"x^2-4x+1"}` 省略乘号也回同一配方（执行器补齐隐式乘）；`{"op":"inspect","derive":[{"kind":"vertex","of":["f1"]},{"kind":"distance","of":["A","B"]}]}` 与数值派生量混查；`expr:"x^3+1"` → `?非二次多项式`；无 expr/id → `?无函数表达式` | ✅ | 三点采样 + 第 4 点校验才认定二次式，避免 x³ / sin 被误判；只读、不进 `registry`、不画读数；既有 8 种 kind 输出逐字节不变；`vertex` 是 inspect 专用，measure/verify 不认 |
+| 56 | 两阶段回读完整回合：先查配方，再落点画轴并 verify（例21） | **第 1 轮**：`function` f1 `x^2-4*x+1` from:-3 to:6 → `inspect` kind:vertex id:f1（**不写 point/line**）；系统回【查询读数】带 `顶点(2,-3); 轴 x=2`；**第 2 轮**：`point` V(2,-3) → `label` → `point` S1(2,-5)/S2(2,4) → `line` axis through:[S1,S2] → `style` dash:2 → `verify` evaluate(x=2) expect:-3、`verify` evaluate(x=1) expect:-2、`verify` evaluate(x=3) expect:-2（tol:0.001） | ⬜ | 顶点别抄成 (-2,-3)/(2,3)；轴要先建两个点再 `line through`（不能裸坐标）；第 2 轮禁止再发 `inspect`/`measure`/`clear`、不重画 f1；读数落成数字不要写表达式 |
+
+> 状态：用例 55 已用无头桩回归 17/17 全通过（配方系数 / 隐式乘与因式连乘 / 负首项 / 异常降级 /
+> 既有 8 种 kind 与旧 x/xs 形态输出不变 / 只读 / 例21 三条 verify 全 pass）；用例 56 的两阶段回读链路
+> 需在带浏览器 + LLM 环境目视确认（与用例 47/48 同理）。表达式含滑动条变量时依赖引擎取当前值。
+
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
   JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在

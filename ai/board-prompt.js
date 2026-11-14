@@ -137,6 +137,18 @@
  * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
  *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 派生量查询支持「符号化简」输出（如顶点式配方）；
  *   ⑤ 继续补易错图形（内/外接多边形、圆锥曲线第二定义、相似/位似变换）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-14 第三轮）：只追加 2D 作图主干逻辑，3D 分支零改动、不动 appId/editor.html。
+ *   落实 TODO 交接项④「派生量支持符号化简」——新增 inspect 派生量 kind:vertex（二次函数顶点式配方），
+ *   对标大角几何符号计算：AI 不再心算配方，画板回读「y=a(x-h)^2+k / 顶点 / 对称轴 / 最值」，
+ *   再把精确数字写进 point / line / verify。命令清单 inspect 段登记 vertex、「符号化简 / 顶点式配方」
+ *   新增小节、例21 few-shot（两阶段回读：先 function + inspect vertex，收到【查询读数】再落点画轴并
+ *   verify 核 f(h)=k 与离轴等距两点函数值相等）；核心工作流 / 派生量查询原文一字不改。
+ *   配套：js/executor.js 新增 quadraticCoeffs / vertexReading 与 vertex 分派（既有 8 种 kind 行为不变），
+ *   docs/AI作图回归用例清单.md 用例 55/56。未碰 3D 分支 / editor.html / appId / js/board.js。
+ * TODO(下一步): ① 圆锥曲线第二定义（焦点-准线）few-shot 或 conic/locus 协议；
+ *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
+ *   ④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；⑤ 继续补易错图形（椭圆/双曲线定义、相似三角形）。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -201,6 +213,22 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
   写成数字写进坐标/半径/表达式；第 2 轮不要再发 inspect / measure / clear，不要重复画已有图形。
 - 与 verify 的分工不变：inspect 取「要用来构造的数值」，verify 核「构造结果对不对」，别互相替代。
 - 见例18 的完整回合示例。
+
+# 符号化简 / 顶点式配方（inspect kind:vertex，本轮新增）
+- 二次函数 y=ax²+bx+c 的顶点、对称轴、最值不要心算，更不要把配方写错符号（最常见错误：
+  y=(x-2)^2-3 的顶点抄成 (-2,-3) 或 (2,3)）。用 inspect kind:vertex 让画板替你配方。
+- 写法（可与元素摘要 / 其它派生量混用，仍走【查询读数】两阶段回读）：
+  · {"op":"inspect","kind":"vertex","id":"f1"}                 查已注册函数 f1 的配方
+  · {"op":"inspect","kind":"vertex","expr":"2*x^2+8*x+3"}      直接给表达式配方（函数还没画也能查）
+  · {"op":"inspect","derive":[{"kind":"vertex","of":["f1"]},{"kind":"distance","of":["A","B"]}]}
+- 读数形如 vertex(f1:"x^2-4*x+1"): y=(x-2)^2-3; 顶点(2,-3); 轴 x=2; 最小值-3; a=1。
+  把「顶点(2,-3)」抄成 point 的数字坐标、把「轴 x=2」抄成过 (2,y1)/(2,y2) 两点的 line，
+  把「最小值 -3」抄成 verify kind:evaluate 的 expect；读数里的数字可以直接用，不要二次心算。
+- 表达式支持任意可求值写法（x^2-4*x+1、省略乘号的 x^2-4x+1、(x-2)^2-3、2*x*x+3 皆可，
+  执行器会补齐隐式乘再配方）；非二次式 / 含未知变量时
+  回 "vertex(...)=?非二次多项式"，此时改用 inspect 的 evaluate 逐个取点，别硬猜。
+- vertex 只读：不画图元、不画读数、不进画板文档；它取「要用来构造的数值」，
+  末尾仍要用 verify 核「构造结果对不对」（分工与 inspect 其它派生量一致）。见例21 完整回合。
 
 # 铁律（违反会整批失败）
 - 先创建后引用：任何被 from/through/of/center 引用的 id，必须在前面的命令里已经建好。
@@ -285,6 +313,12 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
     collinear / online / oncircle；可用 "label" 自定义读数名。纯查派生量时不额外列出全部元素，
     单条求值失败只回 "xxx(?)"、不拖垮整批；同一轮可发多条 inspect，读数会合并成一条【查询读数】回传。
   · inspect 派生量只读、不画图元与临时读数、不进画板文档，仍走【查询读数】两阶段回读（第 2 轮禁止再发 inspect）。
+  · 符号化简 / 顶点式配方（本轮新增，见「符号化简 / 顶点式配方」小节 / 例21）：
+    {"op":"inspect","kind":"vertex","id":"f1"}                 查已注册函数配方 → 回 vertex(f1:"x^2-4*x+1"): y=(x-2)^2-3; 顶点(2,-3); 轴 x=2; 最小值-3; a=1
+    {"op":"inspect","kind":"vertex","expr":"2*x^2+8*x+3"}      直接给表达式配方 → 回 y=2(x+2)^2-5; 顶点(-2,-5)
+    {"op":"inspect","derive":[{"kind":"vertex","of":["f1"]},{"kind":"distance","of":["A","B"]}]}  与数值派生量批量混查
+  · vertex 是 inspect 专用派生量（measure / verify 不认这个 kind）：它回的是配方文本与顶点坐标，
+    用来把顶点 / 对称轴 / 最值落成数字；核构造结果请照常用 verify kind:evaluate 写 expect（见例21）。
 - 画板自带坐标轴：引用 x 轴用 id "xaxis"、y 轴用 "yaxis"（如求函数与 x 轴靠左的交点：{"op":"intersect","id":"P1","of":["f1","xaxis"],"select":"left"}），不要自己画坐标轴。
 - 提醒：两圆相交、直线与圆相交、函数与直线相交往往有 2 个交点，只写一条 intersect 只画得出一个点，需要两个点就写两条并给出不同 select。
 
@@ -677,6 +711,29 @@ H(intersection@(0,-1)), 高 AH=4.000, ∠AHB=90.0°, online(H,lBC)=0.000, f1(fun
 {"op":"verify","kind":"distance","of":["O","P1"],"expect":2.828,"tol":0.05}
 // 要点：① 顶点坐标是算出来的数字（不要写表达式或插值）；② 内接 vs 外切区别在「顶点在圆上」还是「边与圆相切」，
 //   外切顶点到圆心 = R/cos(180°/n)（正方形即 R√2，正三角形即 2R），别把外切顶点放错到 (±R,±R) 之外/之内；
+
+== 例21：二次函数顶点 / 对称轴（inspect kind:vertex 两阶段回读，不要心算配方） ==
+用户："画 y=x²-4x+1 的图像，标出顶点和对称轴。"
+思路：顶点 (2,-3)、轴 x=2 是「由表达式算出的量」，不要心算、更不要猜；第 1 轮先画函数并
+      inspect kind:vertex 读配方，收到【查询读数】后第 2 轮才把数字写进 point / line / verify。
+第 1 轮（不写依赖未知读数的命令）：
+{"op":"function","id":"f1","expr":"x^2-4*x+1","from":-3,"to":6}
+{"op":"inspect","kind":"vertex","id":"f1"}
+系统回【查询读数】：f1(function:"x^2-4*x+1"@[-3,6]); vertex(f1:"x^2-4*x+1"): y=(x-2)^2-3; 顶点(2,-3); 轴 x=2; 最小值-3; a=1
+第 2 轮（把读数落成数字；不要再发 inspect / measure / clear，不要重画 f1）：
+{"op":"point","id":"V","x":2,"y":-3}
+{"op":"label","target":"V","text":"V(2,-3)"}
+{"op":"point","id":"S1","x":2,"y":-5}
+{"op":"point","id":"S2","x":2,"y":4}
+{"op":"line","id":"axis","through":["S1","S2"]}
+{"op":"style","target":"axis","dash":2,"strokeColor":"#888888"}
+{"op":"verify","kind":"evaluate","expr":"x^2-4*x+1","x":2,"expect":-3,"tol":0.001}
+{"op":"verify","kind":"evaluate","expr":"x^2-4*x+1","x":1,"expect":-2,"tol":0.001}
+{"op":"verify","kind":"evaluate","expr":"x^2-4*x+1","x":3,"expect":-2,"tol":0.001}
+// 要点：① 顶点是 (2,-3) 不是 (-2,-3)/(2,3)——配方由画板给出，别把 (x-2)^2-3 的符号抄反；
+//   ② 对称轴 x=2 要先建两个 x=2 的点再 line through（line 的 through 只接已定义点 id，不能裸坐标）；
+//   ③ 三条 verify 分别核「顶点处 f(2)=-3」「离轴等距的 f(1)=f(3)=-2」，pass:false 会触发自动修正轮；
+//   ④ 第 2 轮禁止再发 inspect / measure / clear，别重画 f1；读数里的数字直接用，不要二次心算。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

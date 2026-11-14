@@ -118,6 +118,22 @@
  * 动态联动：凡是能写常数的地方（point 的 x/y、circle 的 radius）都可以写滑动条 id，
  * 执行器会把它翻译成取值函数，拖动滑动条时几何体实时跟着变。
  * 函数曲线的 expr 里直接写滑动条 id 即可（JSXGraph 会自动替换成 .Value()）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-14 第三轮）：只改 2D 协议，3D 分支零触碰。
+ *   落实上一轮 TODO 交接项④「derive 支持符号化简」——新增 inspect 派生量 kind:"vertex"
+ *   （二次函数顶点式配方，对标大角几何的符号计算）：AI 不必心算配方，画板直接回读
+ *   「y=a(x-h)^2+k / 顶点 / 对称轴 / 最值」，再把精确数字写进 point / line / verify 期望值。
+ *   (1) 新增 quadraticCoeffs(expr)：复用 evalExprAt 在 x=-1,0,1 三点取值反推 a,b,c，
+ *       再以 x=2 校验确为二次多项式（非二次式 / 含不可求值变量一律宽容降级，不抛错）；
+ *       因此 (x-2)^2-3 / 2*x^2+8x+3 等任意可求值写法都能配方，无需另写符号解析器。
+ *   (2) 新增 vertexReading(d)：表达式可取 d.expr，或按 d.id / target / of[0] 读已注册函数的
+ *       __aiExpr；输出单条文本读数，走既有 reading.text →【查询读数】链路，js/board.js 零改动。
+ *   (3) deriveName / deriveReading 各加一个 vertex 分支；既有 8 种 kind 行为逐字节不变。
+ *   配套：ai/board-prompt.js 命令清单登记 +「符号化简 / 顶点式配方」小节 + 例21；docs 用例 55/56。
+ *   未触碰 3D 分支 / editor.html / appId / js/board.js。
+ * TODO(下一步): ① 圆锥曲线第二定义（焦点-准线）few-shot 或 conic/locus 协议；
+ *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
+ *   ④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；⑤ 给 2D inspect 派生量补入库无头单测脚本。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -1086,11 +1102,83 @@ export function createExecutor(board) {
     if (kind === 'distance') return '|' + (Array.isArray(d.of) ? d.of.join('') : '?') + '|';
     if (kind === 'angle') return '∠' + (Array.isArray(d.of) ? d.of.join('') : '?');
     if (kind === 'evaluate') return 'evaluate(' + String(d.expr) + ',x=' + String(d.x) + ')';
+    if (kind === 'vertex') return 'vertex(' + String((d && (d.id || d.expr || (Array.isArray(d.of) ? d.of[0] : null))) || '?') + ')';
     return kind + '(' + (Array.isArray(d.of) ? d.of.join(',') : '') + ')';
+  }
+
+  /**
+   * 纯算术降级环境补隐式乘（JessieCode 环境本来就能解析，原样求值即可）：
+   * 4x→4*x、2x^2→2*x^2、x(x-2)→x*(x-2)、(x-1)(x+2)→(x-1)*(x+2)、-x^2→-(x^2)。
+   * 只在 vertex 配方内部作为「原式求值失败后的重试变体」使用，不改 evalExprAt 的既有行为。
+   */
+  function normalizePolyExpr(expr) {
+    return String(expr)
+      .replace(/(^|[+\-])\s*-\s*x\^2/g, '$1-(x^2)')
+      .replace(/(\d)\s*(?=x\b)/gi, '$1*')
+      .replace(/([x)])\s*(?=\()/gi, '$1*')
+      .replace(/(\))\s*(?=x\b)/gi, '$1*');
+  }
+
+  /**
+   * 二次函数配方（inspect kind:"vertex"，本轮新增）：用数值采样反推 a,b,c，避免另写符号解析器。
+   * 取 f(-1), f(0), f(1) 解出 a=(f(1)+f(-1)-2f(0))/2、b=(f(1)-f(-1))/2、c=f(0)，
+   * 再以 f(2) 校验是否确为二次多项式（排除 x^3 / sin(x) / 含未知变量被误判）。
+   * 求值复用 evalExprAt（JessieCode 优先、受限算术回退）；原式求值失败时再试一次
+   * normalizePolyExpr 补齐隐式乘的变体，故 (x-2)^2-3 / x^2-4x+1 等写法都能配方。
+   */
+  function quadraticCoeffs(expr) {
+    const variants = [String(expr)];
+    const normalized = normalizePolyExpr(String(expr));
+    if (normalized !== String(expr)) variants.push(normalized);
+    for (const e of variants) {
+      const f = (x) => evalExprAt(e, x);
+      const c = f(0), p = f(1), m = f(-1);
+      if (![c, p, m].every(Number.isFinite)) continue;
+      const a = (p + m - 2 * c) / 2;
+      const b = (p - m) / 2;
+      if (!Number.isFinite(a) || !Number.isFinite(b) || Math.abs(a) < 1e-9) continue;
+      const t = f(2);
+      if (!Number.isFinite(t) || Math.abs(t - (4 * a + 2 * b + c)) > 1e-6 * Math.max(1, Math.abs(t))) continue;
+      return { a, b, c };
+    }
+    return null;
+  }
+
+  const qfmt = (v) => String(Number(v.toFixed(3)));
+
+  /**
+   * 单条 vertex 读数：配方字符串 + 顶点 / 对称轴 / 最值 / 首项系数，
+   * 供 AI 把「顶点(h,k)」落成 point 数字坐标、「轴 x=h」落成 line、最值写进 verify 的 expect。
+   * 表达式可取 d.expr，或按 d.id / target / of[0] 读已注册函数的 __aiExpr；只读、不画图元。
+   */
+  function vertexReading(d) {
+    let expr = d && d.expr != null ? String(d.expr) : '';
+    let src = '';
+    if (!expr && d) {
+      const ref = d.id != null ? d.id : (d.target != null ? d.target : (Array.isArray(d.of) ? d.of[0] : null));
+      if (ref != null) {
+        const el = registry.get(String(ref));
+        if (el && el.__aiExpr) { expr = String(el.__aiExpr); src = String(ref) + ':'; }
+      }
+    }
+    if (!expr) return deriveName(d) + '=?无函数表达式';
+    const q = quadraticCoeffs(expr);
+    if (!q) return deriveName(d) + '=?非二次多项式';
+    const h = -q.b / (2 * q.a);
+    const k = q.c - q.b * q.b / (4 * q.a);
+    const A = qfmt(q.a), H = qfmt(h), K = qfmt(k);
+    const lead = Math.abs(q.a - 1) < 1e-9 ? '' : (Math.abs(q.a + 1) < 1e-9 ? '-' : A);
+    const shift = Math.abs(h) < 1e-9 ? 'x' : (h > 0 ? '(x-' + H + ')' : '(x+' + qfmt(-h) + ')');
+    const tail = k >= 0 ? '+' + K : '-' + qfmt(-k);
+    const form = 'y=' + lead + shift + '^2' + (Math.abs(k) < 1e-9 ? '' : tail);
+    const extremum = (q.a > 0 ? '最小值' : '最大值') + qfmt(k);
+    return 'vertex(' + src + '"' + expr + '"): ' + form + '; 顶点(' + H + ',' + K + '); 轴 x=' + H
+      + '; ' + extremum + '; a=' + A;
   }
 
   /** 单条派生量求值 → "名字=数值+单位"；复用 measureValue（纯计算，不画读数、不进注册表）。 */
   function deriveReading(d) {
+    if (String((d && d.kind) || '').toLowerCase() === 'vertex') return vertexReading(d);
     const m = measureValue(d);
     const v = Number.isFinite(m.value) ? m.value.toFixed(m.kind === 'angle' ? 1 : 3) : '?';
     return deriveName(d) + '=' + v + (m.unit || '');
@@ -1109,6 +1197,7 @@ export function createExecutor(board) {
     //   {"op":"inspect","kind":"distance","of":["A","H"]}                   顶层单条（简写）
     //   {"op":"inspect","derive":[{"kind":"angle","of":["A","H","B"]}, …]}   批量
     //   {"op":"inspect","id":"f1","x":2} / {"...","xs":[-1,0,2]}             查已注册函数在 x 处的值
+    //   {"op":"inspect","kind":"vertex","id":"f1"} / {"...","expr":"x^2-4x+1"}  二次函数符号化简（本轮新增，见 vertexReading）
     // 单条失败只回 "xxx(?)"，绝不整批失败；旧命令（无 kind/derive/x/xs）行为逐字节不变。
     const derives = [];
     if (cmd.kind != null) derives.push(cmd);
