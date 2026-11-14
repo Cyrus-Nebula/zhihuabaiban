@@ -881,42 +881,7 @@ html.ui-v3 body.landing .v3-card .fig{
 html.ui-v3 body.landing .v3-card.navy .fig{opacity:.5}
 html.ui-v3 body.landing .v3-card .fig svg{width:100%;height:100%;display:block}
 
-/* ---------- 9. 深海军蓝本机区 ---------- */
-html.ui-v3 body.landing .v3-navy-band{background:var(--v3-navy);color:#fff;padding:68px 32px}
-html.ui-v3 body.landing .v3-navy-grid{
-  max-width:1080px;margin:0 auto;display:grid;grid-template-columns:1.05fr .95fr;gap:54px;align-items:center;
-}
-html.ui-v3 body.landing .v3-navy-band h2{
-  font-size:36px;line-height:1.25;font-weight:620;letter-spacing:-.02em;margin:0 0 12px;color:#fff;
-}
-html.ui-v3 body.landing .v3-navy-band p{font-size:13.5px;line-height:1.85;color:#C7D8EC;max-width:440px;margin:0}
-html.ui-v3 body.landing .v3-navy-list{margin-top:22px;display:flex;gap:34px;flex-wrap:wrap}
-html.ui-v3 body.landing .v3-navy-list b{display:block;font-size:28px;font-weight:620;line-height:1.2;color:#fff}
-html.ui-v3 body.landing .v3-navy-list span{font-size:11px;color:#9DB6D8}
-html.ui-v3 body.landing .v3-code{
-  background:var(--v3-navy2);border:1px solid #0A3A78;border-radius:var(--v3-card);
-  padding:20px 22px;font-family:var(--v3-mono);font-size:11.5px;line-height:2;color:#BBD0E8;
-  overflow:auto;
-}
-html.ui-v3 body.landing .v3-code .c{color:#6E90B5}
-html.ui-v3 body.landing .v3-code .s{color:#8FD3C8}
-html.ui-v3 body.landing .v3-code .n{color:#F2C27B}
-
-/* ---------- 10. 对比表 ---------- */
-html.ui-v3 body.landing .v3-compare{width:100%;border-collapse:collapse;font-size:13px}
-html.ui-v3 body.landing .v3-compare th{
-  text-align:left;font-size:11px;font-weight:400;color:var(--v3-gray2);
-  padding:0 14px 12px;border-bottom:1px solid var(--v3-line);
-}
-html.ui-v3 body.landing .v3-compare td{
-  padding:16px 14px;border-bottom:1px solid var(--v3-line);vertical-align:top;line-height:1.6;color:var(--v3-ink);
-}
-html.ui-v3 body.landing .v3-compare td:first-child{color:var(--v3-gray);width:24%}
-html.ui-v3 body.landing .v3-compare .no{color:var(--v3-gray2)}
-html.ui-v3 body.landing .v3-compare .yes{color:var(--v3-navy);font-weight:500}
-html.ui-v3 body.landing .v3-compare-note{font-size:11px;color:var(--v3-gray2);margin-top:12px}
-
-/* ---------- 11. 开源区 ---------- */
+/* ---------- 10. 开源区（首页入口 + 开放平台页共用） ---------- */
 html.ui-v3 body.landing .v3-open{
   background:var(--v3-ice);border-radius:var(--v3-lg);padding:42px;
   display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;
@@ -927,6 +892,21 @@ html.ui-v3 body.landing .v3-open .head .btn{margin-left:auto;background:#fff;col
 html.ui-v3 body.landing .v3-open .col{border-top:1px solid rgba(0,43,102,.14);padding-top:16px}
 html.ui-v3 body.landing .v3-open .col h3{font-size:16px;font-weight:600;margin:0 0 6px;color:var(--v3-ink)}
 html.ui-v3 body.landing .v3-open .col p{font-size:12px;line-height:1.8;color:#4A5A6E;margin:0}
+
+/* 首页：开源入口（精简为一行） */
+html.ui-v3 body.landing .v3-open-link{
+  display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;
+  background:var(--v3-ice);border-radius:var(--v3-lg);padding:28px 36px;
+}
+html.ui-v3 body.landing .v3-open-link h2{font-size:26px;font-weight:620;letter-spacing:-.02em;line-height:1.25;margin:0 0 6px;color:var(--v3-navy)}
+html.ui-v3 body.landing .v3-open-link p{font-size:13px;line-height:1.7;color:var(--v3-gray);margin:0}
+html.ui-v3 body.landing .v3-ol-url{font-family:var(--v3-mono);font-size:12px;color:var(--v3-navy);background:rgba(22,119,255,.08);padding:1px 7px;border-radius:6px;white-space:nowrap}
+/* 开放平台页 open.html */
+html.ui-v3 body.landing .v3-open-cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}
+html.ui-v3 body.landing .v3-sub{font-size:18px;font-weight:600;color:var(--v3-ink);margin:34px 0 14px}
+html.ui-v3 body.landing .v3-steps{margin:0;padding-left:20px;max-width:780px}
+html.ui-v3 body.landing .v3-steps li{font-size:13.5px;line-height:1.9;color:var(--v3-ink);margin-bottom:6px}
+html.ui-v3 body.landing .v3-steps code{font-family:var(--v3-mono);font-size:12px;background:var(--v3-ice);padding:1px 6px;border-radius:5px;color:var(--v3-navy)}
 
 /* ---------- 12. 原有区块：密度与色调对齐 ---------- */
 html.ui-v3 body.landing .section{padding:56px 32px}
@@ -1049,9 +1029,7 @@ html.ui-v3 body.board3d-page .topbar{background:#fff;border-bottom:1px solid var
 /* ---------- 17. 响应式 ---------- */
 @media (max-width:1180px){
   html.ui-v3 body.landing .v3-stats{padding:0 24px}
-  html.ui-v3 body.landing .v3-section,
-  html.ui-v3 body.landing .v3-navy-band{padding-left:24px;padding-right:24px}
-  html.ui-v3 body.landing .v3-navy-grid{gap:32px}
+  html.ui-v3 body.landing .v3-section{padding-left:24px;padding-right:24px}
 }
 @media (max-width:980px){
   html.ui-v3 body.landing .site-nav{height:56px;padding:0 18px}
@@ -1062,8 +1040,6 @@ html.ui-v3 body.board3d-page .topbar{background:#fff;border-bottom:1px solid var
   html.ui-v3 body.landing .stage-body{height:230px}
   html.ui-v3 body.landing .v3-section{padding:52px 20px}
   html.ui-v3 body.landing .v3-sec-head h2{font-size:30px}
-  html.ui-v3 body.landing .v3-navy-band{padding:52px 20px}
-  html.ui-v3 body.landing .v3-navy-grid{grid-template-columns:1fr;gap:28px}
   html.ui-v3 body.landing .v3-open{grid-template-columns:1fr;gap:18px;padding:28px}
   html.ui-v3 body.landing .v3-open .head{flex-wrap:wrap}
   html.ui-v3 body.landing .section{padding:42px 20px}
@@ -1113,12 +1089,7 @@ html.ui-v3 body.board3d-page .topbar{background:#fff;border-bottom:1px solid var
   html.ui-v3 body.landing .v3-products{grid-template-columns:1fr;gap:12px}
   html.ui-v3 body.landing .v3-card{min-height:200px;padding:22px}
   html.ui-v3 body.landing .v3-card .fig{width:110px;height:82px;opacity:.45}
-  html.ui-v3 body.landing .v3-navy-band{padding:42px 16px}
-  html.ui-v3 body.landing .v3-navy-band h2{font-size:28px}
-  html.ui-v3 body.landing .v3-code{font-size:10px;padding:16px}
   html.ui-v3 body.landing .v3-open{padding:22px}
-  html.ui-v3 body.landing .v3-compare th,
-  html.ui-v3 body.landing .v3-compare td{padding-left:6px;padding-right:6px;font-size:11.5px}
   html.ui-v3 body.landing .section{padding:36px 16px}
   html.ui-v3 body.landing .v3-workstats{gap:8px}
   html.ui-v3 body.landing .v3-ws{padding:14px}

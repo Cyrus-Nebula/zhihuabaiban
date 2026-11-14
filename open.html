@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="ui-v2 ui-v3">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>开放平台 · 智绘几何（开源与自部署）</title>
+  <meta name="description" content="智绘几何以 MIT 协议完全开源：协议说明、本地优先设计与自部署步骤。" />
+  <meta name="theme-color" content="#6549d5" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/manrope@5/index.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/unslop.css" />
+  <link rel="stylesheet" href="css/site-improve.css" />
+  <link rel="stylesheet" href="css/redesign.css" />
+</head>
+<body class="landing open-page">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <!-- 顶部导航 -->
+  <header class="site-nav">
+    <a class="site-brand" href="index.html">
+      <svg class="site-logo" viewBox="0 0 48 48" aria-hidden="true">
+        <defs>
+          <linearGradient id="logoGrad" x1="6" y1="6" x2="42" y2="42" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#3E44D9" />
+            <stop offset="0.45" stop-color="#6549D5" />
+            <stop offset="1" stop-color="#9444DA" />
+          </linearGradient>
+        </defs>
+        <rect x="3" y="3" width="42" height="42" rx="12" fill="url(#logoGrad)" />
+        <path d="M16 32 L32 16 M16 16 L32 32" stroke="#fff" stroke-width="3" stroke-linecap="round" />
+        <circle cx="24" cy="24" r="5.5" fill="none" stroke="#fff" stroke-width="3" />
+      </svg>
+      <span class="site-name">智绘几何</span>
+    </a>
+    <nav class="site-links" id="siteLinks">
+      <a href="index.html#quickstart">快速入门</a>
+      <a href="index.html#templates">资源库</a>
+      <a href="index.html#files">我的画板</a>
+      <a href="index.html#about">关于</a>
+    </nav>
+    <button class="btn btn-primary btn-sm site-cta" id="navNewBoard" type="button" title="新建平面画板并开始作图">＋ 新建画板</button>
+    <span class="auth-anchor">
+      <button class="btn btn-ghost btn-sm site-auth" id="authBtn" type="button">登录</button>
+    </span>
+    <button class="nav-toggle" id="navToggle" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="siteLinks">
+      <span class="nav-toggle-line" aria-hidden="true"></span>
+      <span class="nav-toggle-line" aria-hidden="true"></span>
+    </button>
+  </header>
+
+  <main id="main">
+    <section class="v3-section" id="open">
+      <div class="v3-wrap">
+        <div class="v3-sec-head">
+          <h2>开源，能自己部署</h2>
+          <p>智绘几何以 MIT 协议完全开源。你可以读源码、改功能、自己部署一套独立的几何画板，没有任何隐藏的付费墙。</p>
+        </div>
+
+        <div class="v3-open">
+          <div class="head">
+            <h2>开放平台</h2>
+            <a class="btn btn-sm" href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码 →</a>
+          </div>
+          <div class="col"><h3>MIT 协议</h3><p>源码公开，可以读、改、自己部署。没有隐藏的付费墙。</p></div>
+          <div class="col"><h3>本地优先</h3><p>画板默认只存浏览器。云端同步要手动开启，只同步选中的文件。</p></div>
+          <div class="col"><h3>AI 密钥在服务端</h3><p>前端不接触模型 Key。AI 不可用时，手动工具和导出仍然全部可用。</p></div>
+        </div>
+
+        <div class="v3-open-cta">
+          <a class="btn btn-primary v3-pill" href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">查看 GitHub 源码 →</a>
+          <a class="btn btn-ghost v3-pill" href="index.html">返回首页</a>
+        </div>
+
+        <h3 class="v3-sub">自己部署</h3>
+        <ol class="v3-steps">
+          <li>克隆仓库 <code>Cyrus-Nebula/zhihuabaiban</code>（MIT 协议，可自由修改与再分发）。</li>
+          <li>在 Cloudflare Pages / Vercel / 任意静态托管中创建项目，发布目录设为仓库根目录，无需构建命令。</li>
+          <li>发布后即是一套独立的几何画板；<strong>16 种手动作图工具与全部导出格式无需任何外部配置即可使用</strong>。</li>
+          <li>AI 作图需在服务端配置你自己的模型 Key（仅服务端可用，前端不接触）；不配置也能正常用手动工具作图与导出。</li>
+        </ol>
+
+        <h3 class="v3-sub">依赖与协议</h3>
+        <ol class="v3-steps">
+          <li>平面画板：<a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a>（LGPL，本地加载，不依赖外网）。</li>
+          <li>AI 作图：免费 LLM（智谱 GLM 普惠免费档），Key 仅放在服务端。</li>
+          <li>立体画板：自研引擎（不依赖外部 SDK）。</li>
+          <li>整站以 MIT 协议开源，不收集任何个人数据。</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>平面画板 · <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a>（LGPL）｜AI · 智谱 GLM 免费模型｜立体画板 · 自研引擎</p>
+    <p>开源项目 · <a href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码</a>（MIT）｜本站不收集任何个人数据</p>
+  </footer>
+
+  <button class="fab-help" id="fabHelp" type="button" title="帮助：查看关于与常见问题" aria-label="帮助">?</button>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/models.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/site-improve.js"></script>
+</body>
+</html>

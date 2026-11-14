@@ -209,62 +209,15 @@
     </div>
   </section>
 
-  <!-- 深色：本机存储 -->
-  <section class="v3-navy-band" id="local">
-    <div class="v3-navy-grid">
-      <div>
-        <h2>画板默认存在本机，<br>同步由你决定</h2>
-        <p>登录免费账号后即可作图。文件放在浏览器的 localStorage，换电脑或清缓存会丢，所以随时可以导出 JSON 备份。需要跨设备时点「保存并同步」，只会同步当前画板。</p>
-        <div class="v3-navy-list">
-          <div><b>1.8 MB</b><span>当前占用</span></div>
-          <div><b>0</b><span>默认上传</span></div>
-          <div><b>JSON</b><span>随时导出备份</span></div>
-        </div>
-      </div>
-      <div class="v3-code" aria-label="localStorage 结构示例">
-        <span class="c">// 浏览器本地，不上传</span><br>
-        {<br>
-        &nbsp;&nbsp;<span class="s">"name"</span>: <span class="s">"勾股定理"</span>,<br>
-        &nbsp;&nbsp;<span class="s">"type"</span>: <span class="s">"2d"</span>,<br>
-        &nbsp;&nbsp;<span class="s">"updated"</span>: <span class="s">"2026-11-13T22:41"</span>,<br>
-        &nbsp;&nbsp;<span class="s">"commands"</span>: [ <span class="n">12</span> ]<br>
-        }<br>
-        <span class="c">// 云端同步是可选项</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- 对比表 -->
-  <section class="v3-section" id="compare">
-    <div class="v3-wrap">
-      <div class="v3-sec-head">
-        <h2>和常见在线画板比，<br>差别在交付</h2>
-        <p>画板工程保存在本机浏览器，保留点线对象与作图命令，下次打开可继续编辑；导出 PNG / SVG 是定稿图片。下面四项按当前版本实际功能列出。</p>
-      </div>
-      <table class="v3-compare">
-        <thead><tr><th>能力</th><th>常见在线画板</th><th>智绘几何</th></tr></thead>
-        <tbody>
-          <tr><td>不注册能画吗</td><td class="no">多数需要先登录</td><td>也要登录：免费账号，画板页有登录墙</td></tr>
-          <tr><td>图形还能改吗</td><td class="no">导出图片后不可再改</td><td class="yes">工程可继续编辑，导出 JSON 可再导入</td></tr>
-          <tr><td>能直接出试卷吗</td><td class="no">图形与题文要分开排版</td><td class="yes">黑白试题图 PNG / SVG 一键导出，题文另排</td></tr>
-          <tr><td>文件存在哪</td><td class="no">多保存在厂商服务器</td><td class="yes">本机 localStorage，登录后可手动同步</td></tr>
-        </tbody>
-      </table>
-      <p class="v3-compare-note">NOTE · 以上按当前版本实际实现列出；AI 作图需登录并联网调用服务端模型。</p>
-    </div>
-  </section>
-
-  <!-- 开源区 -->
+  <!-- 开源入口：完整内容见开放平台 open.html -->
   <section class="v3-section" id="opensource">
     <div class="v3-wrap">
-      <div class="v3-open">
-        <div class="head">
+      <div class="v3-open-link">
+        <div class="v3-ol-text">
           <h2>开源，能自己部署</h2>
-          <a class="btn btn-sm" href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码 →</a>
+          <p>完整源码、协议与自部署说明，见开放平台 <span class="v3-ol-url">geora.de5.net/open</span>。</p>
         </div>
-        <div class="col"><h3>MIT 协议</h3><p>源码公开，可以读、改、自己部署。没有隐藏的付费墙。</p></div>
-        <div class="col"><h3>本地优先</h3><p>画板默认只存浏览器。云端同步要手动开启，只同步选中的文件。</p></div>
-        <div class="col"><h3>AI 密钥在服务端</h3><p>前端不接触模型 Key。AI 不可用时，手动工具和导出仍然全部可用。</p></div>
+        <a class="btn btn-primary v3-pill" href="open.html">开放平台 ↗</a>
       </div>
     </div>
   </section>
