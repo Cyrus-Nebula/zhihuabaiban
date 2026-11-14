@@ -30,6 +30,8 @@ export const BOARD3D_PARAM_KEYS = Object.freeze({
   plane: ['w', 'h'],
   line: ['x1', 'y1', 'z1', 'x2', 'y2', 'z2'],
   point: ['s'],
+  circle: ['r'],
+  polygon: ['n', 'r'],
   label: [],
 });
 

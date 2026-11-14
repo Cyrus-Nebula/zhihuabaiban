@@ -44,6 +44,8 @@ const SHAPE_DEFS = {
   plane:    { name: '平面',     params: { w: { d: 3, l: '宽' }, h: { d: 3, l: '高' } } },
   line:     { name: '线段',     params: { x1: { d: -1.5 }, y1: { d: 0 }, z1: { d: 0 }, x2: { d: 1.5 }, y2: { d: 0 }, z2: { d: 0 } } },
   point:    { name: '点',       params: { s: { d: 0.18, l: '大小' } } },
+  circle:   { name: '圆面',     params: { r: { d: 1.2, l: '半径' } } },
+  polygon:  { name: '多边形',   params: { n: { d: 6, l: '边数' }, r: { d: 1.2, l: '外接半径' } } },
 };
 
 const BG_COLORS = { white: 0xf5f7fb, beige: 0xf3ecdd, dark: 0x1a1d24 };

@@ -787,8 +787,8 @@ export const BOARD3D_SYSTEM_PROMPT = `你是「智绘几何」立体画板（3D�
 
 # 命令协议（只认下列 3D 命令；不要输出 point / line / circle / measure 等 2D 命令）
 - add3d     {"op":"add3d","id":"cube","type":"box","pos":[0,1,0],"params":{"w":2,"h":2,"d":2},"color":"#4f6bed","opacity":1}
-  · type 可选：box 立方体 / sphere 球 / cylinder 圆柱 / cone 圆锥 / pyramid 四棱锥 / prism 三棱柱 / tetra 正四面体 / plane 平面 / line 线段 / point 点。
-  · params 按 type 给：box{w,h,d}；sphere{r}；cylinder{rt,rb,h}（rt=上半径，rb=下半径，不等即圆台）；cone{r,h}；pyramid{s,h}（s=底边长）；prism{r,h}；tetra{s}（棱长）；plane{w,h}（默认水平放置）；line{x1,y1,z1,x2,y2,z2}（两端点的局部坐标）；point{s}（点半径）。省略 params 则用画板默认值。
+  · type 可选：box 立方体 / sphere 球 / cylinder 圆柱 / cone 圆锥 / pyramid 四棱锥 / prism 三棱柱 / tetra 正四面体 / plane 平面 / circle 圆面 / polygon 多边形面 / line 线段 / point 点。
+  · params 按 type 给：box{w,h,d}；sphere{r}；cylinder{rt,rb,h}（rt=上半径，rb=下半径，不等即圆台）；cone{r,h}；pyramid{s,h}（s=底边长）；prism{r,h}；tetra{s}（棱长）；plane{w,h}（默认水平放置）；circle{r}（圆面，默认水平放置，双面临界）；polygon{n,r}（n 边正多边形面，n=3~12，外接半径 r，默认水平放置）；line{x1,y1,z1,x2,y2,z2}（两端点的局部坐标）；point{s}（点半径）。省略 params 则用画板默认值。
   · 可选字段：rot:[rx,ry,rz]、scale:[sx,sy,sz]、color:"#rrggbb"、opacity:0.1~1（小于 1 为半透明，适合叠加看内部）。
 - label3d   {"op":"label3d","id":"lblA","text":"A","pos":[-1,2,1],"color":"#1f2937"}  文字标注，锚定 3D 空间一点，随视角旋转/缩放始终跟随不脱离；主要用来标顶点。
 - update3d  {"op":"update3d","id":"cube","pos":[2,1,0],"rot":[0,45,0],"params":{"w":3},"color":"#e11d48","opacity":0.5}  修改已存在对象，只写要改的字段（pos/rot/scale/color/opacity/text/params 任选）。
@@ -830,6 +830,14 @@ export const BOARD3D_SYSTEM_PROMPT = `你是「智绘几何」立体画板（3D�
 {"op":"clear3d"}
 {"op":"view3d","bg":"dark","axes":true,"grid":false}
 {"op":"add3d","id":"cyl","type":"cylinder","pos":[0,1.2,0],"params":{"rt":1,"rb":1,"h":2.4},"color":"#93c5fd"}
+
+== 例5：圆面 + 正六边形面（多边形面） ==
+用户："画一个半径 1 的圆面，再画一个边长约 2 的正六边形面放在它旁边。"
+思路：圆面用 circle{r:1}；正六边形外接半径 r 与边长相等（正六边形边长 = 外接半径），故 n=6、r=2 即边长 2；两者默认水平放在 XZ 面，用 pos 错开 x 避免重叠。
+{"op":"add3d","id":"disc","type":"circle","pos":[0,0,0],"params":{"r":1},"color":"#4f6bed","opacity":0.6}
+{"op":"add3d","id":"hex","type":"polygon","pos":[4,0,0],"params":{"n":6,"r":2},"color":"#0ea5e9","opacity":0.6}
+{"op":"label3d","id":"lblHex","text":"边长2","pos":[4,0.1,0],"color":"#1f2937"}
+提示：polygon 是「正多边形面」，n 取 3 为三角形面、4 为正方形面、6 为正六边形面；想用任意顶点坐标的多边形请用多个 line 描边代替。
 
 # 当前画板对象
 用户消息里会附一份「当前画板对象」列表（形如 id(type@[x,y,z])）。引用其中的 id 前先确认存在；不存在就先 add3d。用户说"在现有图形上改"时基于已有 id 用 update3d 或追加，不要 clear3d。

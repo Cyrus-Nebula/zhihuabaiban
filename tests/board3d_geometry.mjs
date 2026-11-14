@@ -74,7 +74,7 @@ const geo = (type, params) => createShapeGeometry(THREE, type, params === undefi
 /* ---------------- A. 规格与协议一致性 ---------------- */
 section('A. 图元规格：键 / 默认值 / 协议一致性');
 {
-  assert(BOARD3D_SHAPE_TYPES.length === 11, '图元共 11 种（10 网格 + label 锚点）');
+  assert(BOARD3D_SHAPE_TYPES.length === 13, '图元共 13 种（11 网格 + label 锚点 + circle/polygon）');
   assert(JSON.stringify([...BOARD3D_SHAPE_TYPES]) === JSON.stringify([...BOARD3D_TYPES]),
     '内核图元白名单与 AI 执行器 BOARD3D_TYPES 顺序一致');
   let keysAligned = true;
@@ -101,7 +101,7 @@ section('A. 图元规格：键 / 默认值 / 协议一致性');
       for (const k of Object.keys(expected)) if (!near(expected[k], got[k], 1e-9)) defaultsAligned = false;
     }
   }
-  assert(checked === 10 && defaultsAligned, 'SHAPE_DEFS 的 10 组默认参数与 BOARD3D_SHAPE_DEFAULTS 逐项一致');
+  assert(checked === 12 && defaultsAligned, 'SHAPE_DEFS 的 12 组默认参数与 BOARD3D_SHAPE_DEFAULTS 逐项一致');
 
   const d = defaultShapeParams('box');
   d.w = 999;
@@ -260,6 +260,42 @@ section('G. B5 平面 / 线段 / 点：双面可见、端点可编辑、大小�
   assert(near(bounds(pt).max[0], 0.18), '点默认大小 0.18');
   assert(near(bounds(geo('point', { s: 0.5 })).max[1], 0.5), '点大小可调');
   assert(finiteGeom(pt), '点几何有限');
+}
+
+/* ---------------- G2. Circle3D 圆面 / Polygon3D 多边形面 ---------------- */
+section('G2. Circle3D 圆面 / Polygon3D 多边形面：水平放置、双面临界、边数钳制');
+{
+  const ci = geo('circle');
+  const cb = bounds(ci);
+  assert(triangles(ci) === 64, '圆面 64 段近似 → 64 个三角面');
+  assert(verts(ci).every((v) => near(v[1], 0)), 'rotateX(-90°) 后圆面水平（y 恒为 0）');
+  assert(near(cb.max[0], 1.2) && near(cb.max[2], 1.2) && near(cb.min[0], -1.2), '半径 r=1.2 映射到 XZ 平面');
+  assert(shapeMaterialConfig('circle', 1).side === 'double', '圆面材质 DoubleSide（背面可见）');
+  assert(finiteGeom(ci), '圆面无 NaN 顶点');
+
+  const hex = geo('polygon', { n: 6, r: 2 });
+  const hb = bounds(hex);
+  assert(triangles(hex) === 6, '正六边形面（n=6）6 个三角面');
+  assert(verts(hex).every((v) => near(v[1], 0)), '多边形面水平（y 恒为 0）');
+  // 正六边形外接半径 r=2：顶点到中心距离 = 2（包围盒在 Z 方向因朝向只到 ±√3，故用外接半径校验而非 bbox Z）
+  const hexR = Math.max(...verts(hex).map((v) => Math.hypot(v[0], v[2])));
+  assert(near(hexR, 2) && near(hb.max[0], 2), '正六边形外接半径 r=2 映射到 XZ 平面');
+  assert(shapeMaterialConfig('polygon', 1).side === 'double', '多边形面材质 DoubleSide');
+  assert(finiteGeom(hex), '多边形面无 NaN 顶点');
+  // 边数 n 钳制到 [3,12]：2→3、20→12，且非整数四舍五入
+  const tri = geo('polygon', { n: 2, r: 1 });
+  assert(triangles(tri) === 3, 'n=2 钳制到 3（三角面）');
+  const dode = geo('polygon', { n: 20, r: 1 });
+  assert(triangles(dode) === 12, 'n=20 钳制到 12');
+  const roundN = geo('polygon', { n: 3.6, r: 1 });
+  assert(triangles(roundN) === 4, 'n=3.6 四舍五入为 4');
+  // 脏参数：缺 n / 负数 / 字符串 → 回落默认 n=6
+  const dirty = normalizeShapeParams('polygon', { n: null, r: -3 });
+  assert(dirty.n === 6 && dirty.r === DIM_MIN, 'polygon 脏参数：n 回落默认 6、r 钳制到下限');
+  assert(normalizeShapeParams('polygon', { bogus: 1 }).n === 6, 'polygon 未知键 n 回落默认 6');
+  // 协议一致性：executor 参数键对齐
+  assert(JSON.stringify(BOARD3D_PARAM_KEYS.circle) === JSON.stringify(['r']), 'circle 参数键与执行器一致');
+  assert(JSON.stringify(BOARD3D_PARAM_KEYS.polygon) === JSON.stringify(['n', 'r']), 'polygon 参数键与执行器一致');
 }
 
 /* ---------------- H. B6 组合体与材质 / 透明排序 ---------------- */

@@ -73,9 +73,14 @@ section('A. 3D 协议两侧一致性 / 2D 主干未被破坏');
   assert(!BOARD_SYSTEM_PROMPT.includes('add3d'), '2D 主干未被注入 3D 命令');
   assert(BOARD_SYSTEM_PROMPT.includes('verify') && BOARD_SYSTEM_PROMPT.includes('例8'),
     '2D 主干的 verify / 例8 内容仍在（另一任务成果未被删）');
-  assert(BOARD3D_TYPES.length === 11, '3D 图元白名单 11 种（含 label）');
+  assert(BOARD3D_TYPES.length === 13, '3D 图元白名单 13 种（含 label、circle、polygon）');
   assert(BOARD3D_PARAM_KEYS.label.length === 0, 'label 无几何参数');
   assert(BOARD3D_PARAM_KEYS.line.length === 6, 'line 端点参数 6 个');
+  assert(BOARD3D_SYSTEM_PROMPT.includes('circle') && BOARD3D_SYSTEM_PROMPT.includes('polygon'),
+    '3D 提示词已登记 circle 圆面 / polygon 多边形面 两种图元类型');
+  assert(JSON.stringify(BOARD3D_PARAM_KEYS.circle) === JSON.stringify(['r']) &&
+    JSON.stringify(BOARD3D_PARAM_KEYS.polygon) === JSON.stringify(['n', 'r']),
+    'circle/polygon 参数键与几何纯函数层一致');
 }
 
 /* ---------------- B. 3D 意图检测 ---------------- */
@@ -140,6 +145,20 @@ section('E. 3D 命令执行器 applyBoard3DCommands()');
   const lbl = api.objects.find((o) => o.id === 'lblA');
   assert(lbl.type === 'label' && lbl.text === 'A' && lbl.rot.join() === '0,0,0', 'label3d 规范化为 label 对象');
   assert(JSON.stringify(lbl.pos) === '[-1,2,1]', 'label3d 锚点坐标正确');
+
+  // circle / polygon（本轮新增图元）经执行器落到场景，参数键正确校验
+  const api2 = mockApi();
+  const r2 = applyBoard3DCommands([
+    { op: 'add3d', id: 'disc', type: 'circle', pos: [0, 0, 0], params: { r: 1 } },
+    { op: 'add3d', id: 'hex', type: 'polygon', pos: [4, 0, 0], params: { n: 6, r: 2 } },
+  ], api2);
+  assert(r2.length === 2 && r2.every((x) => x.ok), '圆面 + 多边形面：2 条命令全部成功');
+  const disc = api2.objects.find((o) => o.id === 'disc');
+  const hex = api2.objects.find((o) => o.id === 'hex');
+  assert(disc.type === 'circle' && disc.p.r === 1, 'circle 几何参数 r 正确写入');
+  assert(hex.type === 'polygon' && hex.p.n === 6 && hex.p.r === 2, 'polygon 几何参数 n/r 正确写入');
+  const badN = applyBoard3DCommands([{ op: 'add3d', id: 'p2', type: 'polygon', params: { n: 2, r: 1 } }], mockApi());
+  assert(badN[0].ok && mockApi().objects.length >= 0, 'polygon 命令可正常执行（n 钳制在执行器下游几何层）');
 }
 
 {

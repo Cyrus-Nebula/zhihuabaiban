@@ -29,6 +29,8 @@ export const BOARD3D_SHAPE_KEYS = Object.freeze({
   plane: ['w', 'h'],
   line: ['x1', 'y1', 'z1', 'x2', 'y2', 'z2'],
   point: ['s'],
+  circle: ['r'],
+  polygon: ['n', 'r'],
   label: [], // 锚点型，无 3D 几何（HTML 叠加层）
 });
 
@@ -44,6 +46,8 @@ export const BOARD3D_SHAPE_DEFAULTS = Object.freeze({
   plane: Object.freeze({ w: 3, h: 3 }),
   line: Object.freeze({ x1: -1.5, y1: 0, z1: 0, x2: 1.5, y2: 0, z2: 0 }),
   point: Object.freeze({ s: 0.18 }),
+  circle: Object.freeze({ r: 1.2 }),
+  polygon: Object.freeze({ n: 6, r: 1.2 }),
   label: Object.freeze({}),
 });
 
@@ -86,6 +90,8 @@ export function normalizeShapeParams(type, raw) {
   for (const k of keys) {
     const n = num(src[k]);
     if (n === null) { out[k] = def[k]; continue; }
+    // polygon 边数：整数，钳制到 [3,12]（CircleGeometry 至少 3 段，过多无意义）
+    if (k === 'n') { out[k] = Math.min(12, Math.max(3, Math.round(n))); continue; }
     const isCoord = k[0] === 'x' || k[0] === 'y' || k[0] === 'z';
     if (isCoord) out[k] = Math.min(COORD_LIMIT, Math.max(-COORD_LIMIT, n));
     else out[k] = Math.min(DIM_MAX, Math.max(DIM_MIN, n));
@@ -132,6 +138,17 @@ export function createShapeGeometry(THREE, type, params) {
     }
     case 'line':  return lineGeometry(THREE, p);
     case 'point': return new THREE.SphereGeometry(p.s, 16, 12);
+    case 'circle': {
+      const g = new THREE.CircleGeometry(p.r, 64); // 圆面：64 段近似为光滑圆盘
+      g.rotateX(-Math.PI / 2);                     // 默认水平放置（与 plane 同口径）
+      return g;
+    }
+    case 'polygon': {
+      const seg = Math.max(3, Math.min(64, Math.round(p.n) || 6)); // n 边正多边形面（CircleGeometry 段数=N）
+      const g = new THREE.CircleGeometry(p.r, seg);
+      g.rotateX(-Math.PI / 2);                     // 默认水平放置
+      return g;
+    }
     default:      return null; // label（HTML 叠加层）/ 未知类型：无 3D 几何
   }
 }
@@ -148,7 +165,7 @@ export function shapeMaterialConfig(type, opacity) {
     opacity: op,
     transparent: op < 1,
     depthWrite: op >= 1,
-    side: type === 'plane' ? 'double' : 'front',
+    side: (type === 'plane' || type === 'circle' || type === 'polygon') ? 'double' : 'front',
   };
 }
 
