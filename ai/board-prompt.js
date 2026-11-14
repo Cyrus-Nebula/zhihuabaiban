@@ -6,6 +6,14 @@
  * 自检(measure/verify)"四阶段工作流；把对象引用/命令顺序收紧成铁律；针对易错图形
  * （三角形高线/角平分线、二次函数顶点式、几何变换）补 few-shot。
  *
+ * 本轮（AI作图对标大角几何·增量·2026-11-14）：只追加 2D 作图主干逻辑，3D 命令分支不触碰、不动 appId/editor.html。
+ *   落实待办⑤「相似/位似变换」缺口——给 2D transform op 新增 type=scale（位似比 k + center，半径随 |k| 缩放）：
+ *   改 js/executor.js 的 transformFn（新增 scale 分支）+ transform 执行分支（圆/多边形半径乘 |k|）+ 头部协议注释；
+ *   本文件在 transform 命令清单登记 scale，并新增 例19（位似/相似变换 few-shot，含 verify 核对位似比）；顺手修了 例5 的重复注释行。
+ *   纯 2D 增量，未碰 3D 分支 / editor.html / 另一任务负责的文件。回归用例见 docs/AI作图回归用例清单.md。
+ * TODO(下一步): ① 内/外接多边形（正 n 边形内接/外切圆，纯提示词 few-shot，可照例19 思路补）、② 圆锥曲线第二定义（焦点-准线，需新增 locus/ conic 协议或辅助圆法 few-shot）、
+ *   ③ inspect 带 x 直接查函数值 / 两点距离等派生量、④ 自检状态条做成 AI 面板固定 DOM 徽标、⑤ 收敛判定引入「残差改善量」。
+ *
  * read-back 闭环（测量→与预期不符则自动修正，对标大角几何 MCP 式读画板状态后改图）：
  * 已落地——js/board.js 的 aiSend() 在执行命令后收集 measure 回读数值，回传给 LLM 二次核对，
  * 不符则自动补发修正命令（前端驱动，因画板实例在浏览器侧）；ai/board-prompt.js 第 4 步已约定
@@ -241,7 +249,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - style      {"op":"style","target":"tri","color":"#3E44D9","strokeWidth":2,"dash":0,"fill":true,"hidden":false}  样式（dash:0 实线，1/2/3 虚线疏密递增；color 同时改描边与填充；fill:true 加半透明底色；hidden:true 隐藏元素）
   · 细粒度样式（本轮新增，见例8）："strokeColor"/"fillColor" 分开指定描边与填充色；"opacity":0~1 整体透明度（同时作用于描边与填充），"fillOpacity":0~1 单独调填充；"labelColor" 改标签文字颜色、"labelSize" 改标签字号（像素）、"labelOpacity" 改标签透明度。只改外观、不新建图元，可在作图末尾多次追加。
   · 例：{"op":"style","target":"tri","strokeColor":"#1D4ED8","fillColor":"#93C5FD","fillOpacity":0.15,"opacity":0.85}、{"op":"style","target":"A","labelColor":"#E11D48","labelSize":16}
-- transform  {"op":"transform","id":"tri2","of":"tri","type":"translate","by":[3,1]} | {"op":"transform","id":"tri3","of":"tri","type":"rotate","angle":90,"center":"O"} | {"op":"transform","id":"triS","of":"tri","type":"reflect","axis":"lBC"}  几何变换（把 of 指向的已有元素整份复制并按 type 平移/旋转/反射：translate 用 by:[dx,dy]；rotate 用 angle(度) 与 center(点id或[x,y]，省缺原点)；reflect 用 axis(直线/线段id) 关于该线对称，或省略 axis 用 center 做中心对称）。支持 point/segment/line/polygon/circle，新副本以 id 命名。
+- transform  {"op":"transform","id":"tri2","of":"tri","type":"translate","by":[3,1]} | {"op":"transform","id":"tri3","of":"tri","type":"rotate","angle":90,"center":"O"} | {"op":"transform","id":"triS","of":"tri","type":"reflect","axis":"lBC"} | {"op":"transform","id":"triH","of":"tri","type":"scale","k":2,"center":"O"}  几何变换（把 of 指向的已有元素整份复制并按 type 平移/旋转/反射/位似：translate 用 by:[dx,dy]；rotate 用 angle(度) 与 center(点id或[x,y]，省缺原点)；reflect 用 axis(直线/线段id) 关于该线对称，或省略 axis 用 center 做中心对称；scale 用 k(位似比) 与 center(省缺原点) 做位似/相似变换，|k|>1 放大、0<|k|<1 缩小、k<0 反向）。支持 point/segment/line/ray/polygon/circle，新副本以 id 命名。
 - measure    {"op":"measure","kind":"distance","of":["A","B"]} | {"op":"measure","kind":"angle","of":["A","B","C"]} | {"op":"measure","kind":"evaluate","expr":"x^2","x":2}  测量/自检（回读数值，画板上给临时灰色读数，不污染画板）
 - verify     {"op":"verify","kind":"angle","of":["A","H","B"],"expect":90,"tol":0.5} | {"op":"verify","kind":"distance","of":["A","H"],"expectRange":[3,5]} | {"op":"verify","kind":"evaluate","expr":"3-(x-2)^2","x":2,"expect":3,"rtol":0.01}  带期望值的自检断言（本轮新增，优先于裸 measure）
   · 在 measure 的三种 kind（distance/angle/evaluate）之上加期望值，由执行器机器判定 pass:true/false：expect 目标值 + tol 绝对容差（默认 0.05）或 rtol 相对容差；expectRange:[lo,hi] 判区间。不给期望字段则只回读不判定（等价 measure）。
@@ -376,7 +384,6 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 {"op":"style","target":"h","dash":2,"hidden":false}                    // 辅助垂线改成虚线（dash≠0）
 {"op":"style","target":"H","color":"#0EA5E9"}                          // 垂足改色
 {"op":"label","target":"A","text":"顶点A"}                             // 给点加/改标签文字
-// 自检：measure 量 ∠AHB 应≈90°；style/label 仅改外观，不影响几何关系，可自由追加
 // 自检：measure 量 ∠AHB 应≈90°；style/label 仅改外观，不影响几何关系，可自由追加
 
 == 例6：自检回读闭环（收到【自检回读】后只发修正命令，对标大角几何 MCP 式读画板状态后改图） ==
@@ -612,6 +619,23 @@ H(intersection@(0,-1)), 高 AH=4.000, ∠AHB=90.0°, online(H,lBC)=0.000, f1(fun
 // 要点：① 第 1 轮不能写 circle（半径未知），别把 "4/2" 这种表达式当坐标/半径写进去；
 //   ② 派生量与元素摘要可一起查，同一轮允许多条 inspect，但第 2 轮绝不再发 inspect / measure / clear；
 //   ③ 读数一律落成数字（radius:2），不要重复画三角形；④ 末尾 verify 自检照常，与 inspect 不冲突。
+
+== 例19：位似 / 相似变换（用原生 transform type=scale，不要再手算缩放坐标） ==
+用户："画一个三角形，再以原点为位似中心、位似比 2 把它放大成相似形；并确认放大后顶点到原点的距离是原来的 2 倍。"
+思路：先建原三角形 → 直接对整份 tri 发一条 transform（type=scale，k:2，center 可省即原点），副本命名 triH；
+      执行器按 新点 = 中心 + k·(原点-中心) 自动算好每个顶点的放大落点，圆/多边形半径随 |k| 缩放。
+      如需缩放比 0.5 就写 k:0.5；k 为负（如 k:-1）即反向位似（含中心对称，等价于 reflect center）。
+{"op":"point","id":"O","x":0,"y":0,"fixed":true}   // 位似中心（原点，固定不动）
+{"op":"point","id":"A","x":1,"y":1}
+{"op":"point","id":"B","x":3,"y":1}
+{"op":"point","id":"C","x":2,"y":3}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"transform","id":"triH","of":"tri","type":"scale","k":2,"center":"O"}
+// 整份副本的顶点不会单独命名；要逐顶点核对距离，就对一个已命名的点单独做 scale 并用 verify 判定：
+{"op":"transform","id":"Ap","of":"A","type":"scale","k":2,"center":"O"}   // Ap 应在 (2,2)，|OAp|=√8≈2.828，恰为 |OA|=√2≈1.414 的 2 倍
+{"op":"verify","kind":"distance","of":["O","Ap"],"expect":2.828,"tol":0.05}  // 2.828 ≈ 2×1.414，确认位似比生效
+// 注意：transform 的 of 必须是已存在的元素 id（point/segment/line/polygon/circle 皆可），新副本以 id 命名、为静态落点；
+//       center 可写点 id 或 [x,y]（省缺原点）。不要再逐点手算乘以 k 的坐标——既易错又冗长。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

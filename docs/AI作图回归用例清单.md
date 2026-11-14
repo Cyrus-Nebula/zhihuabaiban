@@ -50,6 +50,7 @@
 | 17 | 几何变换：向右平移 3 上移 1 | 原 `point`/`polygon` tri → `transform` id:tri2 of:tri type:translate by:[3,1] | ✅ | 本轮起有原生 transform op，不再手算坐标；of 必须已存在 |
 | 21 | 几何变换：绕原点逆时针旋转 90° | `transform` id:tri3 of:tri type:rotate angle:90 center:[0,0]（center 省缺即原点） | ✅ | 角度用度；center 可写点 id 或 [x,y] |
 | 22 | 几何变换：关于直线 BC 对称 | 先 `line` lBC through:[B,C] → `transform` id:triS of:tri type:reflect axis:lBC | ✅ | 轴对称用 axis（直线/线段 id）；中心对称则用 center |
+| 53 | 几何变换：以原点为位似中心、位似比 2 放大三角形（相似/位似变换） | 原 `polygon` tri → `transform` id:triH of:tri type:scale k:2 center:[0,0]（整份副本落点，圆/多边形半径随 \|k\| 缩放）；逐顶点核对可对单点 `transform` Ap of:A type:scale k:2 center:[0,0] → `verify` kind:distance of:["O","Ap"] expect:2.828 tol:0.05 | ⬜ | 本轮（2026-11-14）起有原生 scale（位似/相似）：k>1 放大、0<k<1 缩小、k<0 反向（含中心对称）；center 省缺即原点；不要再逐点手算乘以 k 的坐标；见 `ai/board-prompt.js` 例19 |
 
 ## 样式与标注（线型 / 颜色 / 标签，本轮新增）
 
@@ -138,6 +139,7 @@
 - [本轮已完成 2026-11-13 第二轮] `inspect` 主动查询命令 + 两阶段回读（落实待办①）：`js/executor.js` 新增 `inspect` 执行分支（抽出 `elementSummary(id, el)` 让 `describe()` 与查询读数共用同一格式；`inspectValue()` 支持 `id` / `ids:[]` / `ids:"__all__"`，只读注册表、不画图元/不画读数/不进文档，读数经 `execute` 的 `reading:{items,text}` 透传）；`js/board.js` 的 `aiSend()` 新增【查询读数】二次调用（只回读一轮、过滤 `clear`/`inspect`/`measure`，查询轮的 `verify` 并入 `origVerifies`/`readings` 自检闭环，`isTransient` 纳入 `inspect`）；`ai/board-prompt.js` 仅追加 2D 主干（命令清单登记、「主动查询」小节、例16），3D 分支零改动。见用例 47/48。
 - [本轮已完成 2026-11-13 第三轮] 切线 few-shot（落实待办⑤ 的「切线」缺口）：协议无原生 `tangent` op，新增 `ai/board-prompt.js` 例17，给出教科书式「辅助圆法」（以 OP 为直径作辅助圆 cM 与原圆相交取切点，连切点与外点；末尾 `verify` kind:angle=90° 自检 OT⟂PT 相切）；纯提示词增量，未改 `js/executor.js` 执行分支、未碰 3D 分支 / `editor.html`。回归用例见 49。下一步回到待办①②③④，⑤ 剩下内/外接多边形、圆锥曲线第二定义、相似/位似变换。
 - [下一步·待办] ① `inspect` 支持带 `x` 直接查函数值 / 两点距离等派生量；② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数；⑤ 继续补易错图形（内/外接多边形、圆锥曲线第二定义、相似/位似变换——切线已补）。
+- [本轮已完成 2026-11-14] 相似/位似变换协议（落实待办⑤ 的「相似/位似变换」缺口）：给 2D `transform` op 新增 `type=scale`（位似比 k + center，圆/多边形半径随 |k| 缩放）。`js/executor.js` 的 `transformFn` 新增 scale 分支、transform 执行分支对圆/多边形半径乘 |k|、头部协议注释登记；`ai/board-prompt.js` 在 transform 命令清单登记 scale 并新增 例19 few-shot（含 `verify` 核对位似比），顺手修了 例5 的重复注释行。只追加 2D 作图主干逻辑，未碰 3D 分支 / `editor.html` / 另一任务负责的文件。回归用例见 53。下一步：内/外接多边形、圆锥曲线第二定义（待办⑤ 余下缺口）、inspect 带 x 查派生量、自检状态条固定徽标、残差改善量收敛。
 
 ## 易错图形补充：中位线 / 扇形弓形 / 函数图像平移（本轮新增 2026-11-13）
 

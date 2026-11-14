@@ -38,8 +38,9 @@
  *               online        {kind,of:[P,lineId]|[P,A,B],expect:0,tol:0.05}  点 P 在直线上（残差=点到线距离；第二项可填直线/线段 id 或两点）
  *               oncircle      {kind,of:[P,circleId],expect:0,tol:0.05}  点 P 在圆上（残差=|P到圆心距离-半径|）
  *             · 关系断言只判定「成立与否」（残差夹在容差内即 pass:true），不回读具体距离/角度；label 可另起中文名
- *   transform {id,of,type,by?|angle?|center?|axis?}  几何变换：把 of 元素平移/旋转/反射成一份新副本（以 id 命名），
- *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?)；支持 point/segment/line/ray/polygon/circle
+ *   transform {id,of,type,by?|angle?|center?|axis?|k?}  几何变换：把 of 元素平移/旋转/反射/位似成一份新副本（以 id 命名），
+ *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?) / scale(k,center?)（位似比 k：|k|>1 放大、0<|k|<1 缩小、k<0 反向；半径随 |k| 缩放）；
+ *                                                            支持 point/segment/line/ray/polygon/circle
  *   animate    {id|ids,pingpong?,speed?}             动画：让指定滑动条（id 或 ids，或 "__all__"）自动连续改值，依赖它的几何实时播放；speed: slow/normal/fast，pingpong:true 往复。仅前端播放，不进文档
  *   move      {id,x,y} | {id,v}                      增量修正：就地移动已存在的自由点 / 改滑动条当前值（不新建图元、不改 id）。
  *                                                    同 id 重新 point 会被 execute 判「id 重复定义」而失败，自检自动修正改坐标一律用 move；
@@ -579,7 +580,16 @@ export function createExecutor(board) {
       const [cx, cy] = centerOf(cmd.center); // 关于点中心对称（省缺原点）
       return (x, y) => [2 * cx - x, 2 * cy - y];
     }
-    throw new Error('transform.type 只能是 translate / rotate / reflect');
+    if (type === 'scale') {
+      // 位似 / 相似变换（本轮新增，落实待办⑤「相似/位似变换」缺口）：
+      // 以 center 为位似中心、k 为位似比，把 (x,y) 映到 center + k·(x-center)。
+      // k 可正可负：|k|>1 放大、0<|k|<1 缩小、k<0 反向（含中心对称）。半径随 |k| 缩放。
+      const k = Number(cmd.k);
+      if (!Number.isFinite(k)) throw new Error('transform.type=scale 需要数值 k（位似比，如 2 或 0.5）');
+      const [cx, cy] = centerOf(cmd.center);
+      return (x, y) => [cx + k * (x - cx), cy + k * (y - cy)];
+    }
+    throw new Error('transform.type 只能是 translate / rotate / reflect / scale');
   }
 
   function build(cmd) {
@@ -837,11 +847,14 @@ export function createExecutor(board) {
         //   rotate:    {type:'rotate', angle:角度(度), center:'O'|[x,y]（省缺绕原点）}  旋转
         //   reflect:   {type:'reflect', axis:'l1'（直线/线段 id，关于该线对称）}
         //                       | {center:'O'|[x,y]（关于该点中心对称，省缺原点）}
+        //   scale:     {type:'scale', k:位似比, center:'O'|[x,y]（省缺原点）}         位似/相似变换
+        //                       | k 可正可负：|k|>1 放大、0<|k|<1 缩小、k<0 反向（含中心对称）；圆/多边形半径随 |k| 缩放
         // 支持 point / segment / line / ray / polygon / circle；副本为静态落点（不随源拖拽实时
         // 联动），但回放/保存时按命令重建，行为稳定。type 非法时抛错由外层捕获。
         const src = resolve(cmd.of);
         if (!src) throw new Error('transform.of 引用的元素不存在');
         const f = transformFn(cmd, resolve);
+        const scaleK = (String(cmd.type || '').toLowerCase() === 'scale') ? Math.abs(Number(cmd.k)) : 1;
         const et = src.elType;
         if (et === 'point') {
           const [nx, ny] = f(src.X(), src.Y());
@@ -851,7 +864,7 @@ export function createExecutor(board) {
         }
         if (et === 'circle') {
           const [cx, cy] = f(src.center.X(), src.center.Y());
-          const r = typeof src.Radius === 'function' ? src.Radius() : 1;
+          const r = (typeof src.Radius === 'function' ? src.Radius() : 1) * scaleK;
           return board.create('circle', [[cx, cy], r], opt);
         }
         if (et === 'polygon') {
