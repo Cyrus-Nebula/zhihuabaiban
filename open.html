@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>开放平台 · 智绘几何（开源与自部署）</title>
-  <meta name="description" content="智绘几何以 MIT 协议完全开源：协议说明、本地优先设计与自部署步骤。" />
+  <title>开源免费 · 智绘几何</title>
+  <meta name="description" content="智绘几何以 MIT 协议完全开源，源码在 GitHub，可自由使用。" />
   <meta name="theme-color" content="#6549d5" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
@@ -54,40 +54,13 @@
     <section class="v3-section" id="open">
       <div class="v3-wrap">
         <div class="v3-sec-head">
-          <h2>开源，能自己部署</h2>
-          <p>智绘几何以 MIT 协议完全开源。你可以读源码、改功能、自己部署一套独立的几何画板，没有任何隐藏的付费墙。</p>
+          <h2>开源免费</h2>
+          <p>智绘几何以 MIT 协议完全开源，源码都在 GitHub。没有付费墙，可自由使用。</p>
         </div>
-
-        <div class="v3-open">
-          <div class="head">
-            <h2>开放平台</h2>
-            <a class="btn btn-sm" href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码 →</a>
-          </div>
-          <div class="col"><h3>MIT 协议</h3><p>源码公开，可以读、改、自己部署。没有隐藏的付费墙。</p></div>
-          <div class="col"><h3>本地优先</h3><p>画板默认只存浏览器。云端同步要手动开启，只同步选中的文件。</p></div>
-          <div class="col"><h3>AI 密钥在服务端</h3><p>前端不接触模型 Key。AI 不可用时，手动工具和导出仍然全部可用。</p></div>
-        </div>
-
         <div class="v3-open-cta">
-          <a class="btn btn-primary v3-pill" href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">查看 GitHub 源码 →</a>
+          <a class="btn btn-primary v3-pill" href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码 →</a>
           <a class="btn btn-ghost v3-pill" href="index.html">返回首页</a>
         </div>
-
-        <h3 class="v3-sub">自己部署</h3>
-        <ol class="v3-steps">
-          <li>克隆仓库 <code>Cyrus-Nebula/zhihuabaiban</code>（MIT 协议，可自由修改与再分发）。</li>
-          <li>在 Cloudflare Pages / Vercel / 任意静态托管中创建项目，发布目录设为仓库根目录，无需构建命令。</li>
-          <li>发布后即是一套独立的几何画板；<strong>16 种手动作图工具与全部导出格式无需任何外部配置即可使用</strong>。</li>
-          <li>AI 作图需在服务端配置你自己的模型 Key（仅服务端可用，前端不接触）；不配置也能正常用手动工具作图与导出。</li>
-        </ol>
-
-        <h3 class="v3-sub">依赖与协议</h3>
-        <ol class="v3-steps">
-          <li>平面画板：<a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a>（LGPL，本地加载，不依赖外网）。</li>
-          <li>AI 作图：免费 LLM（智谱 GLM 普惠免费档），Key 仅放在服务端。</li>
-          <li>立体画板：自研引擎（不依赖外部 SDK）。</li>
-          <li>整站以 MIT 协议开源，不收集任何个人数据。</li>
-        </ol>
       </div>
     </section>
   </main>
