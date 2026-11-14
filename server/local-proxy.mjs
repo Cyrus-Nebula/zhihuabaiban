@@ -3,7 +3,7 @@
  *
  * 运行：
  *   LLM_API_KEY=你的key node server/local-proxy.mjs
- * 可选：LLM_BASE_URL / LLM_MODEL / PORT（默认 8787）
+ * 可选：LLM_BASE_URL / GENERATION_BASE_URL / LLM_MODEL / PORT（默认 8787）
  *
  * 免费 LLM 示例：
  *   智谱 GLM-4.7-Flash（默认，免费，200K 上下文）:
@@ -11,19 +11,24 @@
  *   Google Gemini（免费档）:
  *     LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/ \
  *     LLM_MODEL=gemini-2.5-flash LLM_API_KEY=xxx node server/local-proxy.mjs
+ *   生成模型（CogView / CogVideoX）另配前缀：
+ *     GENERATION_BASE_URL=https://open.bigmodel.cn/api/paas/v4
  *
- * 前端（画板页/编辑器顶栏）还能在请求里带 model 覆盖（白名单见 ai/models.js），
- * 可选 glm-4.7-flash / glm-4.6v-flash（视觉）/ glm-4-flash-250414 / glm-4-flash，
+ * 前端（画板页/编辑器顶栏）还能在请求里带 model 覆盖（白名单见 ai/models.js）。
+ * 对话模型 7 款：glm-4.7-flash / glm-4.5-flash / glm-4-flash-250414 /
+ * glm-4-flash / glm-4.6v-flash / glm-4.1v-thinking-flash / glm-4v-flash，
+ * 其中带 V 的 3 款支持图片输入；生成模型 2 款：cogview-3-flash / cogvideox-flash。
  * 全部智谱普惠免费档，一个 Key 通用。
  *
  * 静态页另起一个端口：
  *   python3 -m http.server 8000
  * 浏览器打开 http://localhost:8000
- * js/config.js 的 aiEndpoint 指向 http://localhost:8787/api/ai/run
+ * js/config.js 的三个端点可指向 http://localhost:8787/...
  */
 import http from 'node:http';
 import { handleAiRun } from '../ai/ai-backend.js';
 import { handleBoardAi } from '../ai/board-backend.js';
+import { handleGenerate } from '../ai/generate-backend.js';
 
 const PORT = Number(process.env.PORT || 8787);
 
@@ -38,10 +43,12 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// 路由表：/api/ai/run = 路线A（SDK编辑器，SSE流）；/api/ai/board = 路线B（自建画板，JSON）
+// 路由表：run = 路线A（SDK编辑器，SSE流）；board = 路线B（自建画板，JSON）；
+// generate = 生成模型（文生图 / 文生视频，JSON）
 const ROUTES = {
   '/api/ai/run': handleAiRun,
   '/api/ai/board': handleBoardAi,
+  '/api/ai/generate': handleGenerate,
 };
 
 const server = http.createServer(async (req, res) => {
@@ -56,7 +63,7 @@ const server = http.createServer(async (req, res) => {
   const handler = ROUTES[url.pathname];
   if (!handler || req.method !== 'POST') {
     res.writeHead(404, { 'Content-Type': 'application/json', ...CORS });
-    res.end(JSON.stringify({ error: 'not found, use POST /api/ai/run 或 /api/ai/board' }));
+    res.end(JSON.stringify({ error: 'not found, use POST /api/ai/run / /api/ai/board / /api/ai/generate' }));
     return;
   }
 
@@ -95,4 +102,5 @@ server.listen(PORT, () => {
   console.log(`[local-proxy] 免费 AI 代理已启动: http://localhost:${PORT}`);
   console.log(`[local-proxy] 路线A(SDK编辑器): POST /api/ai/run`);
   console.log(`[local-proxy] 路线B(自建画板):  POST /api/ai/board`);
+  console.log(`[local-proxy] 生成模型(文生图/视频): POST /api/ai/generate`);
 });

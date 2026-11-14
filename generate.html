@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>生成模型 · 智绘几何</title>
+<meta name="description" content="智绘几何的免费生成模型：文生图与文生视频。">
+<style>
+  :root { --primary:#1677FF; --ink:#1A1A1A; --muted:#6B7280; --line:#E8ECF2; --bg:#FFFFFF; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; padding:0; }
+  body {
+    background:var(--bg); color:var(--ink); min-height:100vh;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .site-nav {
+    height:56px; padding:0 24px; display:flex; align-items:center; justify-content:space-between;
+    border-bottom:1px solid var(--line);
+  }
+  .site-brand { display:flex; align-items:center; gap:9px; text-decoration:none; color:var(--ink); font-weight:650; font-size:16px; }
+  .site-brand svg { width:24px; height:24px; flex:none; }
+  .back { color:var(--muted); text-decoration:none; font-size:14px; }
+  .back:hover { color:var(--primary); }
+  main { max-width:720px; margin:0 auto; padding:48px 24px 80px; }
+  h1 { margin:0 0 8px; font-size:28px; font-weight:680; letter-spacing:-.4px; }
+  .sub { margin:0 0 28px; color:var(--muted); font-size:14px; line-height:1.7; }
+  .card { border:1px solid var(--line); border-radius:14px; padding:24px; background:#fff; }
+  label { display:block; font-size:13px; color:var(--muted); margin:0 0 8px; }
+  select, textarea {
+    width:100%; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--ink);
+    font-size:15px; font-family:inherit; outline:none; padding:11px 12px; margin:0 0 20px;
+  }
+  select:focus, textarea:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(22,119,255,.10); }
+  textarea { resize:vertical; min-height:88px; line-height:1.6; }
+  button {
+    border:0; border-radius:9px; background:var(--primary); color:#fff; cursor:pointer;
+    font-size:15px; font-weight:600; font-family:inherit; padding:11px 28px;
+  }
+  button:disabled { opacity:.55; cursor:default; }
+  .status { margin:16px 0 0; min-height:20px; color:var(--muted); font-size:14px; line-height:1.6; }
+  .status.err { color:#C8342B; }
+  .result { margin-top:18px; }
+  .result img, .result video { display:block; width:100%; max-height:520px; object-fit:contain; border:1px solid var(--line); border-radius:10px; background:#F7F9FC; }
+  .open-link { display:inline-block; margin-top:12px; font-size:14px; color:var(--primary); text-decoration:none; }
+  .note { margin:22px 0 0; color:var(--muted); font-size:13px; line-height:1.7; }
+  .note a { color:var(--primary); text-decoration:none; }
+  @media (max-width:600px) {
+    .site-nav { height:52px; padding:0 16px; }
+    main { padding:32px 16px 60px; }
+    h1 { font-size:24px; }
+    .card { padding:18px; }
+    button { width:100%; }
+  }
+</style>
+</head>
+<body class="nf-page">
+<header class="site-nav">
+  <a class="site-brand" href="index.html" aria-label="智绘几何首页">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="#1677FF" stroke-width="1.7"/>
+      <path d="M6 16.5 12 6l6 10.5H6Z" stroke="#1677FF" stroke-width="1.7" stroke-linejoin="round"/>
+    </svg>
+    <span>智绘几何</span>
+  </a>
+  <a class="back" href="index.html">← 返回首页</a>
+</header>
+
+<main>
+  <h1>图片与视频生成</h1>
+  <p class="sub">智谱免费生成模型，写一句话就能生成。</p>
+
+  <section class="card" aria-label="生成模型调用">
+    <label for="genModel">模型</label>
+    <select id="genModel"></select>
+
+    <label for="genPrompt">描述</label>
+    <textarea id="genPrompt" rows="3" placeholder="例如：一个等腰直角三角形，白色背景，简洁教材插图"></textarea>
+
+    <button id="genBtn" type="button">生成</button>
+    <p id="genStatus" class="status" role="status" aria-live="polite"></p>
+    <div id="genResult" class="result"></div>
+  </section>
+
+  <p class="note">画几何图请到<a href="board.html">画板</a>里用 AI；本页只做文生图与文生视频。</p>
+</main>
+
+<script src="js/config.js"></script>
+<script src="js/models.js"></script>
+<script>
+(function () {
+  var cfg = window.DAJIAO_CONFIG || {};
+  var endpoint = cfg.generateEndpoint || '/api/ai/generate';
+  var models = window.DAJIAO_GENERATION_MODELS || [];
+  var sel = document.getElementById('genModel');
+  var promptEl = document.getElementById('genPrompt');
+  var btn = document.getElementById('genBtn');
+  var status = document.getElementById('genStatus');
+  var result = document.getElementById('genResult');
+  var timer = null;
+  var seq = 0;
+
+  models.forEach(function (m) {
+    var o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = m.name;
+    sel.appendChild(o);
+  });
+  if (window.DAJIAO_DEFAULT_GENERATION_MODEL) sel.value = window.DAJIAO_DEFAULT_GENERATION_MODEL;
+
+  function say(text, isErr) {
+    status.textContent = text || '';
+    status.className = isErr ? 'status err' : 'status';
+  }
+  function stopPoll() {
+    if (timer) { clearTimeout(timer); timer = null; }
+  }
+  function render(kind, url, poster) {
+    result.innerHTML = '';
+    var el = document.createElement(kind === 'video' ? 'video' : 'img');
+    if (kind === 'video') { el.controls = true; el.playsInline = true; if (poster) el.poster = poster; }
+    else el.alt = '生成结果';
+    el.src = url;
+    result.appendChild(el);
+    var a = document.createElement('a');
+    a.className = 'open-link';
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = '打开原文件 ↗';
+    result.appendChild(a);
+  }
+  function post(payload) {
+    return fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(function (r) { return r.json(); });
+  }
+  function poll(taskId, model, tries, mySeq) {
+    if (mySeq !== seq) return;
+    say('生成中…（第 ' + tries + ' 次查询）');
+    post({ action: 'query', model: model, taskId: taskId })
+      .then(function (d) {
+        if (mySeq !== seq) return;
+        if (d && d.ok === false) { stopPoll(); say(d.error || '生成失败', true); return; }
+        if (d && d.status === 'done' && d.url) {
+          stopPoll(); render('video', d.url, d.poster); say('完成'); return;
+        }
+        if (tries >= 60) { stopPoll(); say('生成超时，请稍后重试或换个描述', true); return; }
+        timer = setTimeout(function () { poll(taskId, model, tries + 1, mySeq); }, 5000);
+      })
+      .catch(function () {
+        if (mySeq !== seq) return;
+        if (tries >= 60) { stopPoll(); say('查询失败，请稍后重试', true); return; }
+        timer = setTimeout(function () { poll(taskId, model, tries + 1, mySeq); }, 5000);
+      });
+  }
+
+  btn.addEventListener('click', function () {
+    seq += 1;
+    var mySeq = seq;
+    stopPoll();
+    result.innerHTML = '';
+    var p = promptEl.value.trim();
+    if (!p) { say('请先写一句描述', true); return; }
+    var model = sel.value;
+    btn.disabled = true;
+    say('提交中…');
+    post({ action: 'create', model: model, prompt: p })
+      .then(function (d) {
+        if (mySeq !== seq) return;
+        if (!d || d.ok === false) { say((d && d.error) || '生成失败', true); return; }
+        if (d.kind === 'image' && d.url) { render('image', d.url); say('完成'); return; }
+        if (d.taskId) { say(d.message || '已提交，正在生成…'); poll(d.taskId, model, 1, mySeq); return; }
+        say(d.message || '已提交');
+      })
+      .catch(function (e) { if (mySeq === seq) say('连接失败：' + (e && e.message ? e.message : e), true); })
+      .then(function () { if (mySeq === seq) btn.disabled = false; });
+  });
+})();
+</script>
+</body>
+</html>

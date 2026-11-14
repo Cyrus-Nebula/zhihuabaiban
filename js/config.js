@@ -10,9 +10,12 @@
  *    - 纯本地自用：运行 server/local-proxy.mjs，改成
  *      'http://localhost:8787/api/ai/run'
  *
- * 3. AI 用的是免费 LLM（默认智谱 GLM-4-Flash，可用 Gemini 等替换），
+ * 3. AI 用的是免费 LLM（默认智谱 GLM-4.7-Flash，可用 Gemini 等替换），
  *    在部署环境变量里配 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL，
  *    详见 README「AI 免费配置」。不需要大角几何的 API Key，不产生任何费用。
+ *
+ * 4. generateEndpoint：生成模型（CogView 文生图 / CogVideoX 文生视频）入口，
+ *    对应 /generate 页面。与作图链路共用同一个 LLM_API_KEY，但走独立端点。
  */
 window.DAJIAO_CONFIG = {
   // appId：仅路线A的SDK编辑器（3D）需要；路线B自建画板不用它
@@ -25,4 +28,8 @@ window.DAJIAO_CONFIG = {
   // 路线B（自建画板）AI 后端地址
   boardAiEndpoint: '/api/ai/board',
   // boardAiEndpoint: 'http://localhost:8787/api/ai/board', // 本地自用模式
+
+  // 生成模型（/generate 页面）AI 后端地址
+  generateEndpoint: '/api/ai/generate',
+  // generateEndpoint: 'http://localhost:8787/api/ai/generate', // 本地自用模式
 };

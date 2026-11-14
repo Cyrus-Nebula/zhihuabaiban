@@ -171,3 +171,13 @@
 3. 画板页 JXGraph 标签可见（`.JXGtext` 元素 offsetParent 非空）
 4. 汉堡菜单开合、Esc 关闭、滚动高亮正常
 5. `prefers-reduced-motion` 下内容直接可见
+
+## 决策记录 · 免费模型全接入（2026-11-14）
+
+- **目标**：智谱普惠免费档全部 8 款模型在站点内可调用；原有的 `glm-4-flash` 继续保留兼容，合计 9 款。
+- **分类是硬约束，不是偏好**：`glm-4.7-flash` / `glm-4.5-flash` / `glm-4-flash-250414` / `glm-4-flash` / `glm-4.6v-flash` / `glm-4.1v-thinking-flash` / `glm-4v-flash` 走 `/chat/completions`；`cogview-3-flash` 走 `/images/generations`，`cogvideox-flash` 走 `/videos/generations` 且必须经 `/async-result/{id}` 轮询。**生成模型不进作图下拉框**——端点与返回结构都不同，混用必然报错。
+- **单一事实源**：`ai/models.js` 导出 `FREE_MODELS`（对话）+ `GENERATION_MODELS`（生成）与两类 `resolve*()`；`js/models.js` 只做前端镜像，并另挂 `window.DAJIAO_GENERATION_MODELS`。后端三条链路 `/api/ai/run`、`/api/ai/board`、`/api/ai/generate` 都从同一份白名单校验，非法 id 不静默生效。
+- **新增链路不改旧链路**：`ai/generate-backend.js` 与既有 `ai-backend.js` / `board-backend.js` 并列、零 import 交叉；`ai/board-backend.js` 与 `board.html` 仅把写死单一视觉模型名的两句提示改为「名称里带视觉」，其余逻辑逐字不动。
+- **UI 边界**：新增独立页 `generate.html`（`/generate`），极简白底、只有模型/描述/生成/结果，顶栏只有品牌与「返回首页」，**不出现工作台按钮**（＋ / 登录 / 菜单 / 帮助），不引入 `site-improve.js`，不依赖登录，不往首页和画板页加任何可见入口。老师用的页面保持简洁。
+- **密钥与错误**：`LLM_API_KEY` 只在服务端环境变量或本地代理使用，与作图链路共用；`GENERATION_BASE_URL` 可单独覆盖生成端点前缀。429 / 401 / 403 转成中文可操作提示，上游原始 JSON 不返回浏览器。
+- **并发**：免费档并发 1，视频采用 5 秒间隔轮询、最多 60 次，前端用递增序号隔离旧轮询，切换模型或重新生成不会串结果。

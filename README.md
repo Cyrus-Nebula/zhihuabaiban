@@ -48,14 +48,17 @@
 ├── editor.html / js/editor.js                   路线A：SDK 编辑器页
 ├── vendor/jsxgraphcore.js / jsxgraph.css        JSXGraph 引擎（本地化）
 ├── ai/
-│   ├── models.js        免费模型清单（白名单，与 js/models.js 同步）
+│   ├── models.js        免费模型总清单（对话 + 生成，后端唯一来源）
 │   ├── board-prompt.js   路线B的 AI 系统提示词（命令协议）
 │   ├── board-backend.js  路线B的 AI 后端核心（LLM→JSON 命令）
 │   ├── system-prompt.js  路线A的 AI 系统提示词
-│   └── ai-backend.js     路线A的 AI 后端核心（LLM→SSE 翻译层）
-├── functions/api/ai/board.js   线上：路线B AI 入口（Cloudflare Pages Function）
-├── functions/api/ai/run.js     线上：路线A AI 入口
-├── server/local-proxy.mjs      本地：两个入口的零依赖 Node 代理
+│   ├── ai-backend.js     路线A的 AI 后端核心（LLM→SSE 翻译层）
+│   └── generate-backend.js  生成模型后端（文生图 / 文生视频，独立端点）
+├── generate.html              生成模型调用页（/generate）
+├── functions/api/ai/board.js     线上：路线B AI 入口
+├── functions/api/ai/run.js       线上：路线A AI 入口
+├── functions/api/ai/generate.js  线上：生成模型入口
+├── server/local-proxy.mjs      本地：三个入口的零依赖 Node 代理
 ├── js/config.js                ★ 唯一可能要改的文件
 ├── js/models.js                前端模型下拉框清单（经典脚本）
 └── css/style.css
@@ -65,13 +68,30 @@
 
 **1. 拿一个免费 LLM Key**（智谱，以下模型全部免费）
 
-打开 [bigmodel.cn](https://bigmodel.cn) 注册 → 控制台 → 「API 密钥」→ 新建，复制那串 `xxx.xxx`。一个 Key 通用所有模型，模型在 AI 面板顶部的下拉框随时切换（默认 `glm-4.7-flash`）：
+打开 [bigmodel.cn](https://bigmodel.cn) 注册 → 控制台 → 「API 密钥」→ 新建，复制那串 `xxx.xxx`。**一个 Key 通用下面全部 9 款模型**。
+
+**A. 对话模型**——走 `/chat/completions`，在首页 / 2D 画板 / 编辑器 / 3D 画板的 AI 面板顶部下拉框随时切换（默认 `glm-4.7-flash`）：
 
 | 模型 | 类型 | 特点 |
 |---|---|---|
 | `glm-4.7-flash` | 文本 | 200K 上下文，最新最强，**默认** |
+| `glm-4.5-flash` | 文本 | 免费档通用文本模型 |
+| `glm-4-flash-250414` | 文本 | 旧版，留着兼容 |
+| `glm-4-flash` | 文本 | 更早的旧版，留着兼容 |
 | `glm-4.6v-flash` | 视觉 | 128K，可上传图片按图复原图形 |
-| `glm-4-flash-250414` / `glm-4-flash` | 文本 | 旧版，留着兼容 |
+| `glm-4.1v-thinking-flash` | 视觉 | 带推理的视觉模型，可看图 |
+| `glm-4v-flash` | 视觉 | 轻量视觉模型，可看图 |
+
+名称里带「视觉」的 3 款才显示「📷 图片」上传按钮；白名单以 `ai/models.js` 为唯一来源，`js/models.js` 与之同步。
+
+**B. 生成模型**——**不走对话端点**，在 [`/generate`](generate.html) 页面调用，后端独立封装于 `ai/generate-backend.js`：
+
+| 模型 | 端点 | 返回 |
+|---|---|---|
+| `cogview-3-flash`（文生图） | `/images/generations` | 同步返回图片 URL |
+| `cogvideox-flash`（文生视频） | `/videos/generations` + `/async-result/{id}` | 先拿任务号，再轮询取视频 URL |
+
+> 把生成模型塞进作图下拉框会直接 404 / 400：端点和返回结构都不一样，所以两条链路分开，互不影响。
 
 **2. 起静态服务 + AI 代理**（两个终端）
 
@@ -96,9 +116,10 @@ LLM_API_KEY=你的key node server/local-proxy.mjs
 
    | 变量 | 值 | 必填 |
    |---|---|---|
-   | `LLM_API_KEY` | 智谱 Key | ✓ |
+   | `LLM_API_KEY` | 智谱 Key（对话 + 生成共用同一个） | ✓ |
    | `LLM_MODEL` | `glm-4.7-flash` | 否（有默认值，前端下拉框优先级更高） |
    | `LLM_BASE_URL` | `https://open.bigmodel.cn/api/paas/v4` | 否 |
+   | `GENERATION_BASE_URL` | 生成端点前缀，默认取 `LLM_BASE_URL` | 否 |
 
    > 账号 / 登录 / 会员 / 管理后台所需的 Supabase 连接（`SUPABASE_URL` + anon key）已写进前端 `js/supabase-config.js`，管理员邮箱白名单在 `supabase/setup.sql` 的 `admin_emails()` 里维护——都不进 Cloudflare 环境变量、不进公开仓库的生产密钥。`service_role` 仅存在于 Supabase 侧。
 
@@ -238,12 +259,39 @@ AI 输出 `{"message": "...", "commands": [...]}`，前端 `js/executor.js` 逐�
 - 首页 hero 的 AI 输入框在手机上同样可用（Enter 直接生成）。
 - 首页「我的画板」每张卡片带真实缩略图：由保存的作图命令实时推算（点/线/圆/多边形按比例缩放绘制），3D 与空画板有占位符。
 
+## 生成模型（/generate）
+
+打开站点 `/generate`（本地为 `http://localhost:8000/generate.html`）：选模型 → 写一句描述 → 点「生成」。文生图直接显示图片，文生视频提交后每 5 秒自动查询结果，完成后显示播放器。页面自带极简顶栏，不出现工作台按钮，也不依赖登录。
+
+后端统一入口 `POST /api/ai/generate`（Pages Function `functions/api/ai/generate.js`，本地代理同路由），只接受 `ai/models.js` 白名单内的模型，Key 只在服务端：
+
+```bash
+# 文生图（同步）
+curl -X POST https://geora.de5.net/api/ai/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"create","model":"cogview-3-flash","prompt":"一个等腰直角三角形，白色背景"}'
+# -> {"ok":true,"kind":"image","status":"done","url":"https://..."}
+
+# 文生视频（异步：先拿 taskId，再轮询）
+curl -X POST https://geora.de5.net/api/ai/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"create","model":"cogvideox-flash","prompt":"镜头缓缓推进一个旋转的正四面体"}'
+# -> {"ok":true,"kind":"video","status":"pending","taskId":"..."}
+curl -X POST https://geora.de5.net/api/ai/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"query","model":"cogvideox-flash","taskId":"上一步的 taskId"}'
+# -> {"ok":true,"kind":"video","status":"done","url":"https://..."}
+```
+
+免费档限流（并发 1）会返回可操作的中文提示；401/403 提示检查 Key；上游原始错误 JSON 不会透给浏览器。
+
 ## 常见问题
 
 - **AI 面板报错「LLM_API_KEY 未配置」**：环境变量没配或没重试部署。
 - **AI 回复了但不作图**：看浏览器 Console；后端对模型输出做了多层容错提取（代码围栏 / 裸 JSON / 多候选 / 截断修复 / 命令级打捞），输出不完整也会尽量救回已完成的部分；极端情况会提示重试，换一种描述即可。
-- **想换模型**：AI 面板顶部的下拉框直接切（glm-4.7-flash / glm-4.6v-flash / glm-4-flash-250414 / glm-4-flash，全部免费，选择会记住）；也可以环境变量设 `LLM_MODEL` 改默认。
-- **上传图片按图复原**：下拉框切到「GLM-4.6V-Flash（视觉）」→ 点「📷 图片」选图（≤5MB）→ 可附加文字说明 → 生成。视觉模型会先看图再输出作图命令。
+- **想换模型**：AI 面板顶部的下拉框直接切（7 款对话模型全部免费，选择会记住）；也可以环境变量设 `LLM_MODEL` 改默认。文生图 / 文生视频的 2 款生成模型不在这个下拉框里，去 `/generate` 用。
+- **上传图片按图复原**：下拉框切到名称里带「视觉」的模型（3 款均可）→ 点「📷 图片」选图（≤5MB）→ 可附加文字说明 → 生成。首页上传图片时会自动切到第一个视觉模型。
+- **生成模型点了没反应**：确认 `LLM_API_KEY` 已配置并重试部署；video 是异步任务，页面会自动轮询最多 5 分钟。
 - **3D 画板打不开**：appId 未配或域名没加白名单（3D 是路线A，需要对方平台）。
 - **换浏览器/清缓存文件会丢**：文件默认只在 localStorage；开通账号后可用「同步到云端」把画板备份到 Supabase，换设备登录即可取回，重要画板也建议「导出 JSON」双保险。
 - **想把画板发给别人 / 离线打开**：顶栏「导出离线 HTML」——下载到的是一个自包含单文件（约 1 MB，内嵌 JSXGraph 引擎和当前图形），拷到任何电脑上双击就能打开，图形照样可以拖拽，不依赖网络、服务器和账号。

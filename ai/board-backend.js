@@ -11,7 +11,7 @@
  *   4. 返回 {ok, message, commands}
  *
  * model：前端下拉框可切换（白名单见 ai/models.js），非法值回退默认。
- * image：视觉模型（GLM-4.6V-Flash）可传 dataURL，按 OpenAI 多模态格式发送，
+ * image：视觉模型（白名单里 vision:true 的 3 款）可传 dataURL，按 OpenAI 多模态格式发送，
  *        实现"上传图片 -> 按图复原几何图形"；非视觉模型自动忽略图片。
  *
  * 环境变量：
@@ -292,7 +292,7 @@ export async function handleBoardAi(request, env) {
   if (image) {
     userText += '\n\n【用户上传了图片】请仔细观察图片中的几何图形，按原样用命令复原：先识别元素类型（点/线段/直线/圆/多边形/函数曲线/标注）与相互关系，再输出命令；坐标取近似值即可。';
   } else if (payload.image) {
-    userText += '\n\n（注：当前模型不支持图片输入，图片已忽略；请切换到「GLM-4.6V-Flash（视觉·看图复原）」模型后再试）';
+    userText += '\n\n（注：当前模型不支持图片输入，图片已忽略；请切换到名称里带「视觉」的模型后再试）';
   }
   messages.push({
     role: 'user',
