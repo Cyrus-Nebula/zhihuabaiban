@@ -2,7 +2,7 @@
  * 立体画板 AI 命令执行器（路线B）
  *
  * 与 js/executor.js（2D / JSXGraph 命令协议）完全平行、互不引用：
- *   - 本文件只认 3D 命令（add3d / label3d / update3d / remove3d / clear3d / view3d / reset3d）；
+ *   - 本文件只认 3D 命令（add3d / label3d / update3d / remove3d / clear3d / view3d / reset3d / measure3d / transform3d）；
  *   - 不 import three、不碰 DOM，是**纯函数**，因此可在 Node 无头环境直接回归；
  *   - 所有画板副作用通过注入的 api 完成（由 js/board3d.js 的 board3dApi 提供）。
  *
@@ -17,6 +17,7 @@
  */
 
 import { resolveMeasure3D, measureToLabelSpec } from './board3d-measure.js';
+import { resolveTransform3D } from './board3d-transform.js';
 
 /** 每种图元允许的几何参数键（与 js/board3d.js 的 SHAPE_DEFS.params 对齐） */
 export const BOARD3D_PARAM_KEYS = Object.freeze({
@@ -50,6 +51,17 @@ export const BOARD3D_MEASURE_OPS = Object.freeze(['measure3d']);
 
 /** 3D 分支完整命令集（既有 7 条 + 本轮扩展），供文档 / 回归核对 */
 export const BOARD3D_ALL_OPS = Object.freeze([...BOARD3D_OPS, ...BOARD3D_MEASURE_OPS]);
+
+/**
+ * 2026-11-15 增量：相对变换命令 transform3d（语义在 js/board3d-transform.js）。
+ * 单独成组、不并入 BOARD3D_ALL_OPS —— 后者是共享文件既有协议一致性断言的
+ * 历史契约（既有 7 条 + measure3d = 8 条），按协作铁律保持逐字不变，避免既有回归被破坏。
+ * BOARD3D_FULL_OPS 才是含全部扩展命令的完整集（9 条），供文档 / 本轮回归核对。
+ */
+export const BOARD3D_TRANSFORM_OPS = Object.freeze(['transform3d']);
+export const BOARD3D_FULL_OPS = Object.freeze([
+  ...BOARD3D_ALL_OPS, ...BOARD3D_TRANSFORM_OPS,
+]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
 
@@ -298,6 +310,27 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           results.push(r.ok
             ? { op, ok: true, kind: r.kind, value: r.value, unit: r.unit, ids: r.ids, text: r.text, label }
             : { op, ok: false, error: r.error });
+          break;
+        }
+        case 'transform3d': {
+          // 相对变换：读「当前」状态里该对象的 pos/rot/scale 再叠加增量，
+          // 这样同一批命令里先 add3d 再 transform3d 也能作用于刚建好的对象。
+          // 与 measure3d 同口径：getState 缺失 / 抛错时降级为空场景，整批命令不中断。
+          if (!isId(cmd.id) || !known.has(cmd.id)) {
+            results.push({ op, ok: false, id: cmd.id, error: '要变换的对象 id 不存在' });
+            break;
+          }
+          let state = {};
+          try { state = (a.getState ? a.getState() : {}) || {}; } catch (_) { state = {}; }
+          const r = resolveTransform3D(cmd, state);
+          if (!r.ok) {
+            results.push({ op, ok: false, id: cmd.id, error: r.error });
+            break;
+          }
+          const okPatch = call('update', r.id, r.patch);
+          results.push(okPatch === false
+            ? { op, ok: false, id: r.id, error: '画板未找到该对象' }
+            : { op, ok: true, id: r.id, fields: r.fields, patch: r.patch });
           break;
         }
         default:

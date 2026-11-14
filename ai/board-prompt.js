@@ -922,3 +922,35 @@ export const BOARD3D_MEASURE_LABEL_PROMPT = `
   · 示例：{"op":"measure3d","kind":"distance","from":"A","to":"B","annotate":true}
   · 示例：{"op":"measure3d","kind":"angle","vertex":[0,0,0],"from":[1,0,0],"to":[0,1,0],"annotate":true}
   · 标注文字由画板按真实数值生成，不要自己估算；annotate 仅为展示增强，不影响量测精度。`;
+
+
+/**
+ * ↓↓↓ 2026-11-15「独立自主 3D 画板」任务追加段落（transform3d 相对变换命令）↓↓↓
+ *
+ * 协作铁律：上方全部内容（2D 主干 + 既有 3D 段 + measure3d 段 + 回注标注段）逐字未动，
+ * 本段只追加、不覆盖、不删除。既有 BOARD3D_PROMPT_OPS（7 条）与
+ * BOARD3D_MEASURE_PROMPT_OPS（1 条）保持不变；新命令单独成组，
+ * 与 js/board3d-executor.js 的 BOARD3D_TRANSFORM_OPS 一一对应。
+ * 拼在末尾还有一层原因：ai/board-backend.js 的 fitPrompt 在短上下文裁剪时保留尾部，
+ * 追加段不会被截掉。
+ * ============================================================ */
+
+/** 3D 扩展命令 op（2026-11-15 追加，与 js/board3d-executor.js 的 BOARD3D_TRANSFORM_OPS 一致） */
+export const BOARD3D_TRANSFORM_PROMPT_OPS = Object.freeze(['transform3d']);
+
+/** 3D 相对变换命令追加段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_TRANSFORM_PROMPT = `
+
+# 补充命令：transform3d 相对变换（仅本 3D 分支可用，2026-11-15 追加）
+- 作用：对**已经存在**的单个对象按「增量」变换，区别于 update3d 的「绝对值设置」。
+  用户说「向右移 2」「再绕 Y 轴转 30 度」「把球放大 1.5 倍」时优先用它，不必先读当前坐标自己算绝对值。
+- 格式：{"op":"transform3d","id":"cube","translate":[dx,dy,dz],"rotate":[dx,dy,dz],"scale":[sx,sy,sz]}
+  · translate 位置增量（加到当前 pos）；rotate 旋转增量（度，加到当前 rot）；scale 缩放倍率（乘到当前 scale，每个分量必须 > 0）；
+  · 三个字段至少给一个，只写需要的字段，未写的字段保持原值不动；
+  · id 必须是场景里已存在的对象（含 label3d 标注锚点，锚点可用 translate 平移）；
+  · 一次只变换一个 id，要变换多个对象就输出多条命令。
+  · 示例：{"op":"transform3d","id":"cube","translate":[2,0,0]}
+  · 示例：{"op":"transform3d","id":"ball","rotate":[0,30,0],"scale":[1.5,1.5,1.5]}
+  · 示例：{"op":"transform3d","id":"lblA","translate":[0,0.5,0]}
+- 同一批命令里可以先 add3d 再 transform3d；变换结果由画板按当前真实状态计算，不要自己估算或输出绝对值。
+- 补充铁律：transform3d 是 3D 命令；2D 的 transform / move / update / measure 等命令在本分支依旧不认识，不要输出。`;
