@@ -13,7 +13,8 @@ window.DAJIAO_MODELS = [
   { id: 'glm-4-flash', name: 'GLM-4-Flash（旧版兼容）', vision: false },
   { id: 'glm-4.6v-flash', name: 'GLM-4.6V-Flash（视觉·看图复原）', vision: true },
   { id: 'glm-4.1v-thinking-flash', name: 'GLM-4.1V-Thinking-Flash（视觉）', vision: true },
-  { id: 'glm-4v-flash', name: 'GLM-4V-Flash（视觉）', vision: true },
+  // 16K 短上下文；后端 ai/board-backend.js 会按 maxInputTokens 裁剪输入
+  { id: 'glm-4v-flash', name: 'GLM-4V-Flash（视觉）', vision: true, maxInputTokens: 16384 },
 ];
 window.DAJIAO_DEFAULT_MODEL = 'glm-4.7-flash';
 

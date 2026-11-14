@@ -20,7 +20,8 @@ export const FREE_MODELS = [
   { id: 'glm-4-flash', name: 'GLM-4-Flash（旧版兼容）', vision: false },
   { id: 'glm-4.6v-flash', name: 'GLM-4.6V-Flash（视觉·看图复原）', vision: true },
   { id: 'glm-4.1v-thinking-flash', name: 'GLM-4.1V-Thinking-Flash（视觉）', vision: true },
-  { id: 'glm-4v-flash', name: 'GLM-4V-Flash（视觉）', vision: true },
+  // GLM-4V-Flash 上下文只有 16K，2D 系统提示词会撑爆；后端按此预算裁剪输入
+  { id: 'glm-4v-flash', name: 'GLM-4V-Flash（视觉）', vision: true, maxInputTokens: 16384 },
 ];
 
 export const DEFAULT_MODEL = 'glm-4.7-flash';

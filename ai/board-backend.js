@@ -23,7 +23,7 @@
 import {
   BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, BOARD3D_MEASURE_PROMPT, BOARD3D_MEASURE_LABEL_PROMPT, isBoard3DIntent,
 } from './board-prompt.js';
-import { DEFAULT_MODEL, resolveModel, supportsVision } from './models.js';
+import { DEFAULT_MODEL, resolveModel, supportsVision, findModel } from './models.js';
 
 // 3D 分支（独立自主 3D 画板任务）：/api/ai/board 同时服务 2D 与 3D 画板，
 // 按 mode 选用不同的系统提示词；2D 主干（BOARD_SYSTEM_PROMPT / extractResult）保持原语义。
@@ -32,6 +32,26 @@ const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
 
 // 图片 dataURL 长度上限（约 5MB 文件 base64 后的量级），超出直接拒绝
 const MAX_IMAGE_CHARS = 7 * 1024 * 1024;
+
+/* ---------- 短上下文模型输入预算 ---------- */
+// 少数免费模型（GLM-4V-Flash 16K）会被 2D 系统提示词撑爆，上游报
+// "inputs tokens + max_new_tokens must be <= 16384"。按中文约 1.9 字符/token 估算，
+// 留 2048 tokens 给输出与余量；超限时保留系统提示词头尾（输出格式/命令协议在头部，
+// 图片规则/对话式修改在尾部），省略中间示例与细则。
+// 未标注 maxInputTokens 的模型一律不裁剪——现有 7 款里只有 1 款走这条分支，零回归。
+const CHARS_PER_TOKEN = 1.9;
+function inputBudget(modelId) {
+  const m = findModel(modelId);
+  return m && m.maxInputTokens ? Math.floor((m.maxInputTokens - 2048) * CHARS_PER_TOKEN) : null;
+}
+function fitPrompt(prompt, budget) {
+  if (!budget || prompt.length <= budget) return prompt;
+  const head = Math.floor(budget * 0.68);
+  const tail = budget - head - 90;
+  return prompt.slice(0, head)
+    + '\n\n…（为适配短上下文模型，此处省略部分示例与细则；输出格式、命令协议与图片规则见前后文）…\n\n'
+    + prompt.slice(-tail);
+}
 
 /* ---------- 万能 JSON 提取（多层容错） ---------- */
 
@@ -258,9 +278,13 @@ export async function handleBoardAi(request, env) {
   // 3D 提示词 = 既有 7 条命令（BOARD3D_SYSTEM_PROMPT）+ 2026-11-14 追加段
   // （measure3d 空间量测）；2D 主干提示词逐字不变、零回归。
   const mode = resolveBoardMode(payload, message);
-  const systemPrompt = mode === '3d'
-    ? BOARD3D_SYSTEM_PROMPT + BOARD3D_MEASURE_PROMPT + BOARD3D_MEASURE_LABEL_PROMPT
-    : BOARD_SYSTEM_PROMPT;
+  const budget = inputBudget(cfg.model);
+  const systemPrompt = fitPrompt(
+    mode === '3d'
+      ? BOARD3D_SYSTEM_PROMPT + BOARD3D_MEASURE_PROMPT + BOARD3D_MEASURE_LABEL_PROMPT
+      : BOARD_SYSTEM_PROMPT,
+    budget
+  );
 
   // ---- 图片（视觉模型专用）----
   let image = null;
@@ -287,7 +311,8 @@ export async function handleBoardAi(request, env) {
   }
   // 2D 状态快照带坐标/半径/端点/定义域，比旧的 id(类型) 列表长，上限 1000→2400 避免后半段被截断
   // （executor.describe() 自身还有 60 元素 / 2200 字符上限，两道保险）。3D 分支的 context 很短，不受影响。
-  const context = payload.context ? `\n\n【${mode === '3d' ? '当前画板对象' : '当前画板元素'}】${String(payload.context).slice(0, 2400)}` : '';
+  const contextLimit = budget ? 800 : 2400;
+  const context = payload.context ? `\n\n【${mode === '3d' ? '当前画板对象' : '当前画板元素'}】${String(payload.context).slice(0, contextLimit)}` : '';
   let userText = (message || '请按这张图片复原几何图形') + context;
   if (image) {
     userText += '\n\n【用户上传了图片】请仔细观察图片中的几何图形，按原样用命令复原：先识别元素类型（点/线段/直线/圆/多边形/函数曲线/标注）与相互关系，再输出命令；坐标取近似值即可。';
@@ -305,6 +330,7 @@ export async function handleBoardAi(request, env) {
   // 视觉模型（GLM-4V 系）不支持该参数，不发；个别模型/代理仍报 400 时自动去掉重试一次
   const buildBody = (withJsonFormat) => {
     const b = { model: cfg.model, messages, temperature: 0.2, stream: false };
+    if (budget) b.max_tokens = 1024; // 短上下文模型显式封顶输出，避免上游默认更大挤占输入预算
     if (withJsonFormat && !supportsVision(cfg.model) && /bigmodel\.cn/i.test(cfg.baseUrl)) {
       b.response_format = { type: 'json_object' };
     }

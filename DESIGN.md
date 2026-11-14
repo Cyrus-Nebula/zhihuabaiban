@@ -179,5 +179,7 @@
 - **单一事实源**：`ai/models.js` 导出 `FREE_MODELS`（对话）+ `GENERATION_MODELS`（生成）与两类 `resolve*()`；`js/models.js` 只做前端镜像，并另挂 `window.DAJIAO_GENERATION_MODELS`。后端三条链路 `/api/ai/run`、`/api/ai/board`、`/api/ai/generate` 都从同一份白名单校验，非法 id 不静默生效。
 - **新增链路不改旧链路**：`ai/generate-backend.js` 与既有 `ai-backend.js` / `board-backend.js` 并列、零 import 交叉；`ai/board-backend.js` 与 `board.html` 仅把写死单一视觉模型名的两句提示改为「名称里带视觉」，其余逻辑逐字不动。
 - **UI 边界**：新增独立页 `generate.html`（`/generate`），极简白底、只有模型/描述/生成/结果，顶栏只有品牌与「返回首页」，**不出现工作台按钮**（＋ / 登录 / 菜单 / 帮助），不引入 `site-improve.js`，不依赖登录，不往首页和画板页加任何可见入口。老师用的页面保持简洁。
-- **密钥与错误**：`LLM_API_KEY` 只在服务端环境变量或本地代理使用，与作图链路共用；`GENERATION_BASE_URL` 可单独覆盖生成端点前缀。429 / 401 / 403 转成中文可操作提示，上游原始 JSON 不返回浏览器。
+- **密钥与错误**：`LLM_API_KEY` 只在服务端环境变量或本地代理使用，与作图链路共用；`GENERATION_BASE_URL` 可单独覆盖生成端点前缀。429 / 401 / 403 转成中文可操作提示，上游原始 JSON 不返回浏览器（错误里的 `upstreamPath` 只含路径用于排障）。
+- **生成前缀独立**：首轮真实上游调用发现生成端点返回 405，根因是复用了 `LLM_BASE_URL`（线上该值可能是中转前缀，只放行 `/chat/completions`）。改为固定 `https://open.bigmodel.cn/api/paas/v4`，**不受 `LLM_BASE_URL` 影响**；沙箱直连验证 `/images/generations`、`/videos/generations` 均为已注册路径（401 鉴权错误而非 405）。
+- **短上下文模型**：真实调用 `glm-4v-flash` 报 `inputs tokens + max_new_tokens <= 16384`（2D 系统提示词 32413 字符）。在 `ai/models.js` 标 `maxInputTokens: 16384`，`ai/board-backend.js` 按中文约 1.9 字符/token 估算预算，只对该模型裁剪系统提示词头尾、把 context 压到 800 字符、显式 `max_tokens: 1024`；其余 6 款零改动。
 - **并发**：免费档并发 1，视频采用 5 秒间隔轮询、最多 60 次，前端用递增序号隔离旧轮询，切换模型或重新生成不会串结果。

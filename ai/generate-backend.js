@@ -16,8 +16,11 @@
  *
  * 环境变量：
  *   LLM_API_KEY          必填，与对话链路共用的智谱免费 Key
- *   GENERATION_BASE_URL  可选，只覆盖生成端点前缀
- *   LLM_BASE_URL         可选，默认 https://open.bigmodel.cn/api/paas/v4
+ *   GENERATION_BASE_URL  可选，覆盖生成端点前缀
+ *
+ * 注意：生成链路**不复用 LLM_BASE_URL**。对话链路可能被配成 Gemini 兼容端点或
+ * 自建中转，把生成请求拼到那个前缀上会落到未知路径（实测返回 405）。
+ * 生成端点固定指向智谱 v4，需要改才用 GENERATION_BASE_URL。
  */
 import {
   DEFAULT_GENERATION_MODEL,
@@ -26,7 +29,7 @@ import {
   resolveGenerationModel,
 } from './models.js';
 
-const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
+const DEFAULT_GENERATION_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
 const MAX_PROMPT = 2000;
 
 function json(obj, status = 200) {
@@ -46,6 +49,13 @@ function friendlyError(status, raw) {
     msg = (d && (d.error?.message || d.msg || d.message)) || '';
   } catch { /* 纯文本错误，用原文前 200 字 */ }
   return `服务返回 ${status}：${String(msg || raw).slice(0, 200)}`;
+}
+
+/** 统一错误出口；upstreamPath 只含路径、不含密钥，便于线上排障 */
+function fail(status, raw, url, httpStatus = 200) {
+  let pathname = '';
+  try { pathname = new URL(url).pathname; } catch { /* 非法 URL 时留空 */ }
+  return json({ ok: false, error: friendlyError(status, raw), upstreamPath: pathname }, httpStatus);
 }
 
 /** 从多种返回结构里取异步任务号 */
@@ -122,7 +132,7 @@ export async function handleGenerate(request, env) {
     return json({ ok: false, error: 'invalid json body' }, 400);
   }
 
-  const baseUrl = (env.GENERATION_BASE_URL || env.LLM_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const baseUrl = (env.GENERATION_BASE_URL || DEFAULT_GENERATION_BASE_URL).replace(/\/+$/, '');
   const apiKey = env.LLM_API_KEY || '';
   if (!apiKey) {
     return json({
@@ -154,9 +164,10 @@ export async function handleGenerate(request, env) {
     const taskId = String(payload.taskId || '').trim().slice(0, 200);
     if (!taskId) return json({ ok: false, error: 'taskId 不能为空' }, 400);
 
+    const url = baseUrl + model.resultPath + encodeURIComponent(taskId);
     let r;
     try {
-      r = await fetch(baseUrl + model.resultPath + encodeURIComponent(taskId), {
+      r = await fetch(url, {
         method: 'GET',
         headers: { Authorization: 'Bearer ' + apiKey },
       });
@@ -164,7 +175,7 @@ export async function handleGenerate(request, env) {
       return json({ ok: false, error: 'AI 服务连接失败，请稍后重试' }, 502);
     }
     const raw = await r.text().catch(() => '');
-    if (!r.ok) return json({ ok: false, error: friendlyError(r.status, raw) }, 200);
+    if (!r.ok) return fail(r.status, raw, url);
 
     let data = {};
     try { data = JSON.parse(raw); } catch { return json({ ok: true, kind: 'video', status: 'pending', message: '结果读取中…' }, 200); }
@@ -191,9 +202,10 @@ export async function handleGenerate(request, env) {
     if (/^\d{2,4}x\d{2,4}$/.test(size)) body.size = size;
   }
 
+  const url = baseUrl + model.path;
   let r;
   try {
-    r = await fetch(baseUrl + model.path, {
+    r = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -202,7 +214,7 @@ export async function handleGenerate(request, env) {
     return json({ ok: false, error: 'AI 服务连接失败，请稍后重试' }, 502);
   }
   const raw = await r.text().catch(() => '');
-  if (!r.ok) return json({ ok: false, error: friendlyError(r.status, raw) }, 200);
+  if (!r.ok) return fail(r.status, raw, url);
 
   let data = {};
   try { data = JSON.parse(raw); } catch { return json({ ok: false, error: '上游返回格式异常，请重试' }, 200); }

@@ -83,6 +83,7 @@
 | `glm-4v-flash` | 视觉 | 轻量视觉模型，可看图 |
 
 名称里带「视觉」的 3 款才显示「📷 图片」上传按钮；白名单以 `ai/models.js` 为唯一来源，`js/models.js` 与之同步。
+`glm-4v-flash` 上下文只有 16K，会被完整的 2D 系统提示词撑爆，后端按 `maxInputTokens` 自动裁剪输入（保留输出格式与命令协议、图片规则，省略中间示例），其余 6 款不裁剪。
 
 **B. 生成模型**——**不走对话端点**，在 [`/generate`](generate.html) 页面调用，后端独立封装于 `ai/generate-backend.js`：
 
@@ -119,7 +120,7 @@ LLM_API_KEY=你的key node server/local-proxy.mjs
    | `LLM_API_KEY` | 智谱 Key（对话 + 生成共用同一个） | ✓ |
    | `LLM_MODEL` | `glm-4.7-flash` | 否（有默认值，前端下拉框优先级更高） |
    | `LLM_BASE_URL` | `https://open.bigmodel.cn/api/paas/v4` | 否 |
-   | `GENERATION_BASE_URL` | 生成端点前缀，默认取 `LLM_BASE_URL` | 否 |
+   | `GENERATION_BASE_URL` | 生成端点前缀，默认固定为智谱 v4（**不取** `LLM_BASE_URL`） | 否 |
 
    > 账号 / 登录 / 会员 / 管理后台所需的 Supabase 连接（`SUPABASE_URL` + anon key）已写进前端 `js/supabase-config.js`，管理员邮箱白名单在 `supabase/setup.sql` 的 `admin_emails()` 里维护——都不进 Cloudflare 环境变量、不进公开仓库的生产密钥。`service_role` 仅存在于 Supabase 侧。
 
@@ -283,7 +284,9 @@ curl -X POST https://geora.de5.net/api/ai/generate \
 # -> {"ok":true,"kind":"video","status":"done","url":"https://..."}
 ```
 
-免费档限流（并发 1）会返回可操作的中文提示；401/403 提示检查 Key；上游原始错误 JSON 不会透给浏览器。
+免费档限流（并发 1）会返回可操作的中文提示；401/403 提示检查 Key；上游原始错误 JSON 不会透给浏览器（错误响应里的 `upstreamPath` 只含路径，不含密钥，用于排障）。
+
+> **生成链路不复用 `LLM_BASE_URL`**：对话链路可以被改成 Gemini 兼容端点或自建中转，把生成请求拼到那个前缀上会落到未知路径并返回 405。生成端点固定指向 `https://open.bigmodel.cn/api/paas/v4`，确实要改才设 `GENERATION_BASE_URL`。
 
 ## 常见问题
 
