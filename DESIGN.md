@@ -28,6 +28,20 @@
 
 **实施记录**：基线 `54a4052`（v2 已合并）；T00–T08 逐项验收见交付目录 `tasks-v3.json`。
 
+**2026-11-14 首页文案校正（只改文字，不动 DOM 结构 / CSS / JS）**：v3 首页沿用了设计稿的营销措辞，与当前站点的登录门禁、手动同步、导出实现不一致。按可核验的代码事实逐条改写，避免首页承诺网站没有的能力。
+
+| 位置 | 原措辞 | 真实依据 | 校正后 |
+|---|---|---|---|
+| 首屏 note | 不用注册 | `js/landing.js` 的 `Auth.requireLogin(heroAiGenerate)`；`board.html` / `board3d.html` 全屏 `.login-wall` | 免费账号登录 |
+| 深蓝本机区 | 没有账号也能画 / 不上传到服务器 | 登录墙；`js/site-improve.js` 的「保存并同步」闸门：本地自动保存，云端只在点击后上传 | 登录免费账号后即可作图；同步由你决定 |
+| 对比表 ① | 可以，直接画 | 新建 / 打开画板 / 模板均经 `Auth.requireLogin`（`js/workbench.js`、`js/landing.js`） | 也要登录：免费账号，画板页有登录墙 |
+| 对比表 ② | 每个点、线都是对象 | `js/board.js`：`doc = {name, commands, moves}` 存 localStorage；导出 / 导入 JSON 重放命令；PNG / SVG 为定稿图片 | 工程可继续编辑，导出 JSON 可再导入 |
+| 对比表 ③ | 黑白试题图，一步导出 | `board.html` 的 `btn-export-bw-png` / `btn-export-bw-svg`，只导出图形、不含题文 | 黑白试题图 PNG / SVG 一键导出，题文另排 |
+| 对比表 ④ | 本机浏览器，可选同步 | localStorage + 登录后 `Auth.syncBoard`（`site-improve.js` 手动触发） | 本机 localStorage，登录后可手动同步 |
+| 云端空状态 | 画板页会自动备份 | 自动云端上传已被 `board:saved` 闸门拦截 | 在画板页点「保存并同步」 |
+
+表格行数 / 列数 / class 与 CSS 一律不变；第一行右列去掉 `.yes` 蓝色强调，避免把「必须登录」写成卖点。深蓝区 `1.8 MB` / `0` 是设计稿静态示意数字，本次未改（如需展示真实占用，应接 localStorage 用量）。
+
 ---
 
 ## 2026-11 界面改版 v2（历史版本，2026-11-13；v3 在其之上叠加）
