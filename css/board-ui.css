@@ -1,0 +1,157 @@
+/* ==========================================================================
+   智绘几何 · 画板页 UI 统一层 (board-ui.css)
+   1) 视觉对齐主页紫色设计语言  2) 16 个按数学定义自绘工具图标
+   3) 图标右侧中文标注（含 iPad 窄屏）；保留全部 id / data-* / 业务 JS
+   必须在 redesign.css 之后加载；删除本文件 link 即可整体回滚。
+   ========================================================================== */
+
+/* ---------- 品牌令牌（对齐主页 style.css 紫色系） ---------- */
+html.ui-v3 body.board-page{
+  --bu-brand:#6549d5;
+  --bu-brand-ink:#4c3dbe;
+  --bu-brand-soft:#f0effc;
+  --bu-brand-line:#d8d3f5;
+  --bu-line:#e8e8f0;
+}
+
+/* ---------- 工具轨：单列、图标 + 右侧中文 ---------- */
+html.ui-v3 body.board-page .board-main.rail-layout{
+  grid-template-columns:172px minmax(0,1fr) 320px;
+  background:#fff;
+}
+html.ui-v3 body.board-page .board-main.rail-layout > .toolbar{
+  background:#fff;border-right:1px solid var(--bu-line);padding:14px 12px;gap:4px;
+  flex-wrap:nowrap!important;
+}
+html.ui-v3 body.board-page .board-main.rail-layout .toolbar-label{
+  display:flex!important;font-size:11px;font-weight:600;letter-spacing:.04em;
+  color:#8a8aa0;margin:2px 4px 10px;
+}
+html.ui-v3 body.board-page .board-main.rail-layout .tool-grid{
+  grid-template-columns:1fr!important;gap:3px;margin-bottom:8px;width:100%;
+}
+html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool{
+  display:inline-flex!important;align-items:center!important;
+  justify-content:flex-start!important;text-align:left;width:100%;
+  gap:11px;height:33px!important;min-height:33px;padding:0 12px!important;
+  font-size:12.5px!important;font-weight:500;
+  border:1px solid transparent;border-radius:10px;
+  background:transparent;color:#3a3a48;white-space:nowrap;
+  transition:background .18s,color .18s,border-color .18s;
+}
+html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool:hover{background:#f7f6fd;color:var(--bu-brand-ink)}
+html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool.active{
+  background:var(--bu-brand-soft)!important;border-color:var(--bu-brand-line)!important;
+  color:var(--bu-brand-ink)!important;font-weight:600;
+}
+
+/* ---------- 工具图标（mask + currentColor） ---------- */
+html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool::before{
+  content:""!important;display:inline-block!important;
+  width:18px!important;height:18px!important;flex:none;vertical-align:middle;
+  background-color:currentColor!important;
+  -webkit-mask:var(--ico) center/contain no-repeat;
+  mask:var(--ico) center/contain no-repeat;
+}
+html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool.active::before{background-color:var(--bu-brand-ink)!important}
+
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="select"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%203l0%2016%204.5-4%202.5%206%202.5-1-2.5-6%206%200z%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="point"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%223.2%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="segment"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%224%22%20y1%3D%2218%22%20x2%3D%2220%22%20y2%3D%226%22%2F%3E%3Ccircle%20cx%3D%224%22%20cy%3D%2218%22%20r%3D%222.1%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3Ccircle%20cx%3D%2220%22%20cy%3D%226%22%20r%3D%222.1%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="line"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%223%22%20y1%3D%2212%22%20x2%3D%2221%22%20y2%3D%2212%22%2F%3E%3Cpath%20d%3D%22M6%209L3%2012l3%203%22%2F%3E%3Cpath%20d%3D%22M18%209l3%203-3%203%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="ray"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%224%22%20y1%3D%2212%22%20x2%3D%2221%22%20y2%3D%2212%22%2F%3E%3Ccircle%20cx%3D%224%22%20cy%3D%2212%22%20r%3D%222.1%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3Cpath%20d%3D%22M18%209l3%203-3%203%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="circle"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%228%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%221.6%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3Ccircle%20cx%3D%2220%22%20cy%3D%2212%22%20r%3D%221.6%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="polygon"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%203l8.5%206-3.2%2010.5H6.7L3.5%209z%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%223%22%20r%3D%221.7%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3Ccircle%20cx%3D%2220.5%22%20cy%3D%229%22%20r%3D%221.7%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="midpoint"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%223%22%20y1%3D%2212%22%20x2%3D%2221%22%20y2%3D%2212%22%2F%3E%3Ccircle%20cx%3D%223%22%20cy%3D%2212%22%20r%3D%221.5%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3Ccircle%20cx%3D%2221%22%20cy%3D%2212%22%20r%3D%221.5%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%222.6%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="intersect"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%224%22%20y1%3D%225%22%20x2%3D%2220%22%20y2%3D%2219%22%2F%3E%3Cline%20x1%3D%2220%22%20y1%3D%225%22%20x2%3D%224%22%20y2%3D%2219%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%222.3%22%20fill%3D%22black%22%20stroke%3D%22none%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="perpendicular"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%223%22%20y1%3D%2219%22%20x2%3D%2221%22%20y2%3D%2219%22%2F%3E%3Cline%20x1%3D%2211%22%20y1%3D%223%22%20x2%3D%2211%22%20y2%3D%2219%22%2F%3E%3Cpath%20d%3D%22M11%2015h4v4%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="parallel"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%223%22%20y1%3D%228%22%20x2%3D%2221%22%20y2%3D%228%22%2F%3E%3Cline%20x1%3D%223%22%20y1%3D%2216%22%20x2%3D%2221%22%20y2%3D%2216%22%2F%3E%3Cpath%20d%3D%22M9%206l2.2%202L9%2010%22%2F%3E%3Cpath%20d%3D%22M9%2014l2.2%202L9%2018%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="angle"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%2020h16%22%2F%3E%3Cpath%20d%3D%22M4%2020L18%206%22%2F%3E%3Cpath%20d%3D%22M9.5%2020a5.5%205.5%200%200%200%201.4-4.2%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="trim"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%226%22%20r%3D%222.4%22%2F%3E%3Ccircle%20cx%3D%226%22%20cy%3D%2218%22%20r%3D%222.4%22%2F%3E%3Cline%20x1%3D%228%22%20y1%3D%227.4%22%20x2%3D%2220%22%20y2%3D%2219%22%2F%3E%3Cline%20x1%3D%228%22%20y1%3D%2216.6%22%20x2%3D%2220%22%20y2%3D%225%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="text"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M5%205h14%22%2F%3E%3Cpath%20d%3D%22M12%205v14%22%2F%3E%3Cpath%20d%3D%22M9%2019h6%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="slider"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cline%20x1%3D%222.5%22%20y1%3D%2212%22%20x2%3D%2221.5%22%20y2%3D%2212%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%228%22%20width%3D%225%22%20height%3D%228%22%20rx%3D%221.4%22%20fill%3D%22none%22%2F%3E%3C%2Fsvg%3E")}
+html.ui-v3 body.board-page .board-main.rail-layout .tool[data-tool="delete"]::before{content:""!important;--ico:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%207h16%22%2F%3E%3Cpath%20d%3D%22M9%207V4h6v3%22%2F%3E%3Cpath%20d%3D%22M6%207l1%2013h10l1-13%22%2F%3E%3Cline%20x1%3D%2210%22%20y1%3D%2211%22%20x2%3D%2210%22%20y2%3D%2217%22%2F%3E%3Cline%20x1%3D%2214%22%20y1%3D%2211%22%20x2%3D%2214%22%20y2%3D%2217%22%2F%3E%3C%2Fsvg%3E")}
+
+/* ---------- 工具轨辅助区：清理旧 320px 固定宽度造成的溢出碎字 ---------- */
+/* 快捷键 / 说明 / 提示：密集小字与主页克制风格冲突，且旧定位会溢出，统一收纳 */
+html.ui-v3 body.board-page .board-main.rail-layout .toolbar .rail-tip,
+html.ui-v3 body.board-page .board-main.rail-layout .toolbar .tool-hint,
+html.ui-v3 body.board-page .board-main.rail-layout .toolbar .fn-note{
+  display:none!important;
+}
+/* 函数输入块：去掉固定 min-width，约束在工具轨内并重排 */
+html.ui-v3 body.board-page .board-main.rail-layout .toolbar .fn-block{
+  min-width:0!important;width:100%!important;margin-left:0!important;
+  border-top:1px solid var(--bu-line);padding-top:10px;
+}
+html.ui-v3 body.board-page .board-main.rail-layout .toolbar .fn-block .toolbar-label{
+  font-size:11px!important;color:#8a8aa0!important;
+}
+html.ui-v3 body.board-page .board-main.rail-layout .toolbar .fn-row{width:100%!important;min-width:0!important}
+html.ui-v3 body.board-page .board-main.rail-layout .toolbar .fn-domain{
+  width:100%!important;min-width:0!important;flex-wrap:wrap;
+}
+html.ui-v3 body.board-page .board-main.rail-layout .toolbar .fn-range{width:0!important;min-width:0!important}
+html.ui-v3 body.board-page .board-main.rail-layout .toolbar #fn-input{width:0!important;min-width:0!important}
+
+/* ---------- 顶栏：紫色主操作 + 圆角 ---------- */
+html.ui-v3 body.board-page .topbar{background:#fff!important;border-bottom:1px solid var(--bu-line)!important}
+html.ui-v3 body.board-page .topbar .btn,html.ui-v3 body.board-page .topbar .ghost{
+  border-radius:10px!important;border-color:var(--bu-line)!important;
+  background:#fff!important;color:#3a3a48!important;font-size:12px;
+}
+html.ui-v3 body.board-page .topbar .btn:hover,html.ui-v3 body.board-page .topbar .ghost:hover{
+  border-color:var(--bu-brand-line)!important;color:var(--bu-brand-ink)!important;background:#faf9ff!important;
+}
+html.ui-v3 body.board-page .topbar #btn-export-menu{
+  background:var(--bu-brand)!important;border-color:var(--bu-brand)!important;
+  color:#fff!important;border-radius:10px!important;
+}
+html.ui-v3 body.board-page .topbar .doc-name{border-radius:8px}
+
+/* ---------- AI 面板：白卡片 / 紫色 tab / 紫色生成 ---------- */
+html.ui-v3 body.board-page .ai-panel{background:#fff;border-left:1px solid var(--bu-line)}
+html.ui-v3 body.board-page .ai-tab.active{
+  background:var(--bu-brand-soft)!important;border-color:var(--bu-brand-line)!important;
+  color:var(--bu-brand-ink)!important;border-bottom-color:var(--bu-brand)!important;
+}
+html.ui-v3 body.board-page .ai-tab:not(.active):hover{color:var(--bu-brand-ink)!important}
+html.ui-v3 body.board-page :focus-visible{outline-color:var(--bu-brand)!important}
+html.ui-v3 body.board-page a{color:var(--bu-brand-ink)}
+html.ui-v3 body.board-page .ai-mode button.on{color:var(--bu-brand-ink)!important}
+html.ui-v3 body.board-page .ai-input-row textarea:focus{border-color:var(--bu-brand)!important}
+html.ui-v3 body.board-page #ai-send,html.ui-v3 body.board-page .ai-btns .btn{
+  background:var(--bu-brand)!important;border-color:var(--bu-brand)!important;
+  color:#fff!important;border-radius:999px!important;
+}
+html.ui-v3 body.board-page .obj-seg button.active,html.ui-v3 body.board-page .seg-bg button.active{color:var(--bu-brand-ink)!important}
+html.ui-v3 body.board-page .v3-statusbar{border-top:1px solid var(--bu-line);background:#fff}
+
+/* ---------- 响应式：iPad 及更窄始终保留「图标 + 右侧中文」 ---------- */
+@media (max-width:1180px){
+  html.ui-v3 body.board-page .board-main.rail-layout{grid-template-columns:158px minmax(0,1fr) 300px!important}
+  html.ui-v3 body.board-page .board-main.rail-layout .toolbar-label{display:flex!important}
+  html.ui-v3 body.board-page .board-main.rail-layout .tool-grid{grid-template-columns:1fr!important}
+  html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool{
+    justify-content:flex-start!important;font-size:12.5px!important;
+    padding:0 12px!important;gap:11px;height:33px!important;min-height:33px;
+  }
+}
+@media (max-width:860px){
+  html.ui-v3 body.board-page .board-main.rail-layout{
+    grid-template-columns:1fr!important;
+    grid-template-rows:auto minmax(260px,1fr) auto 28px!important;
+    grid-template-areas:"tools" "canvas" "ai" "status"!important;
+  }
+  html.ui-v3 body.board-page .board-main.rail-layout > .toolbar{
+    flex-direction:row!important;flex-wrap:nowrap!important;overflow-x:auto!important;
+    border-right:0!important;border-bottom:1px solid var(--bu-line)!important;padding:8px;
+  }
+  html.ui-v3 body.board-page .board-main.rail-layout .tool-grid{display:flex!important;overflow-x:auto;gap:6px}
+  html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool{
+    flex:0 0 auto!important;width:auto!important;min-width:0;
+    justify-content:flex-start!important;font-size:12px!important;
+    padding:0 11px!important;gap:8px;height:34px!important;min-height:34px;
+  }
+  html.ui-v3 body.board-page .board-main.rail-layout > .ai-panel{border-left:0!important;border-top:1px solid var(--bu-line)!important}
+}
