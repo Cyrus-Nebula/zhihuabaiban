@@ -232,6 +232,19 @@
 > 既有 8 种 kind 与旧 x/xs 形态输出不变 / 只读 / 例21 三条 verify 全 pass）；用例 56 的两阶段回读链路
 > 需在带浏览器 + LLM 环境目视确认（与用例 47/48 同理）。表达式含滑动条变量时依赖引擎取当前值。
 
+## 相似三角形（平行线截取法，本轮新增 2026-11-15）
+
+> 落实上一轮 TODO 交接项⑤「继续补易错图形」：协议无原生「相似三角形」op，AI 之前容易把小三角形画成和原三角形
+> 一样大（混淆相似与全等）或逐点手算缩放坐标。本轮新增 例22 few-shot（纯提示词增量，未触碰 `js/executor.js`
+> 执行分支、未碰 3D 分支 / `editor.html`），给出「在 AB 上取定比分点 D → 过 D 作 BC 的平行线交 AC 于 E →
+> △ADE∽△ABC（AA）」教科书范式；末尾用 `verify` 关系断言 parallel(DE,BC)/online(D,AB)/online(E,AC) 证明相似、
+> 用 distance 核相似比（AD=3=½AB、DE=√8≈2.828=½BC）。若题目给定位似中心则改用 例19 的 transform type=scale。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 57 | △ABC（A(0,0)B(6,0)C(2,4)）作相似比 1/2 的相似三角形（平行线截取法，不用位似中心） | `point` A/B/C → `polygon` tri → `midpoint` D of:[A,B]（D(3,0)，AD/AB=1/2）→ `line` lBC through:[B,C] → `parallel` lDE of:lBC through:D → `line` lAC through:[A,C] → `intersect` E of:[lDE,lAC] → `polygon` tri2 [A,D,E]；`verify` parallel(D,E,B,C)=0、`verify` online(D,A,B)=0、`verify` online(E,A,C)=0、`verify` distance(A,D)=3、`verify` distance(D,E)=2.828 tol:0.05 | ⬜ | 相似≠全等：小三角形必须比原三角形小，相似比由分点 D 位置决定（取中点=1/2）；用平行线法靠 DE∥BC 自动保证 AA 相似，别逐点手算缩放坐标；若给定位似中心改用 例19 的 transform type=scale；见 `ai/board-prompt.js` 例22 |
+| 58 | 相似三角形自检：证明相似并核相似比 | 在用例 57 命令之后追加 `verify` kind:parallel of:[D,E,B,C] expect:0（DE∥BC 是相似核心条件）、`verify` kind:online of:[D,A,B]/[E,A,C] expect:0（D/E 分别在 AB/AC 上）、`verify` kind:distance of:[A,D] expect:3 与 of:[D,E] expect:2.828（核 AD=½AB、DE=½BC） | ⬜ | 关系断言 parallel/online 残差夹容差内即 pass:true，比"量两组对应角相等"更直接；distance 期望用算出数字（AD=3、DE=√8≈2.828），不要写表达式；pass:false 触发自动修正轮 |
+
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
   JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在

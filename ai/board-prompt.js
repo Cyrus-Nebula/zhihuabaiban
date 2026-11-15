@@ -149,6 +149,17 @@
  * TODO(下一步): ① 圆锥曲线第二定义（焦点-准线）few-shot 或 conic/locus 协议；
  *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
  *   ④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；⑤ 继续补易错图形（椭圆/双曲线定义、相似三角形）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-15）：只追加 2D 作图主干逻辑，3D 命令分支零改动、不动 appId/editor.html。
+ *   落实上一轮 TODO 交接项⑤「继续补易错图形」——新增 例22 few-shot：相似三角形（平行线截取法，不用位似中心）。
+ *   协议无原生"相似三角形"op，AI 之前容易把小三角形画成和原三角形一样大（混淆相似与全等）或逐点手算缩放坐标。
+ *   本轮给出教科书式「平行线法」：在 AB 上取定比分点 D（中点即相似比 1/2）→ 过 D 作 BC 的平行线交 AC 于 E →
+ *   △ADE∽△ABC（AA：∠A 公共、DE∥BC ⇒ ∠ADE=∠ABC）；末尾用 verify 关系断言 parallel(DE,BC)/online(D,AB)/online(E,AC)
+ *   证明相似、用 distance 核相似比（AD=3=½AB、DE=√8≈2.828=½BC）。纯提示词增量，未触碰 js/executor.js 执行分支，
+ *   无 3D / editor.html 改动；复用既有 parallel / intersect / verify（relation-assertion）命令。配套 docs 回归用例 57~58。
+ * TODO(下一步): ① 圆锥曲线（椭圆第一定义：两焦点+常数和，用辅助圆法/滑动条轨迹 few-shot 或 locus 协议）；
+ *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；
+ *   ⑤ [本轮已完成] 相似三角形 few-shot（例22）；⑥ 其它易错图形（如"旋转相似"、弓形面积阴影、函数图像对称演示）。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -734,6 +745,32 @@ H(intersection@(0,-1)), 高 AH=4.000, ∠AHB=90.0°, online(H,lBC)=0.000, f1(fun
 //   ② 对称轴 x=2 要先建两个 x=2 的点再 line through（line 的 through 只接已定义点 id，不能裸坐标）；
 //   ③ 三条 verify 分别核「顶点处 f(2)=-3」「离轴等距的 f(1)=f(3)=-2」，pass:false 会触发自动修正轮；
 //   ④ 第 2 轮禁止再发 inspect / measure / clear，别重画 f1；读数里的数字直接用，不要二次心算。
+
+== 例22：相似三角形（平行线截取法，不用位似中心） ==
+用户："画 △ABC（A(0,0) B(6,0) C(2,4)），再作一个与它相似的三角形，相似比 1/2，但不在原点那种位似中心，就用平行线法。"
+思路：相似≠全等——小三角形必须比原三角形小（相似比 1/2）。标准构造（平行线法）：在 AB 上取定比分点 D（取中点即相似比 1/2）→
+      过 D 作 BC 的平行线，交 AC 于 E → △ADE 自动 ∽ △ABC（AA：∠A 公共、DE∥BC ⇒ ∠ADE=∠ABC）。
+      不要用 transform type=scale（那是位似，需要给定中心）；也不要逐点手算乘以 1/2 的坐标（既易错又冗长）。
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":6,"y":0}
+{"op":"point","id":"C","x":2,"y":4}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"midpoint","id":"D","of":["A","B"]}                 // D(3,0)：AB 中点 → 相似比 = AD/AB = 3/6 = 1/2
+{"op":"line","id":"lBC","through":["B","C"]}              // BC 所在直线（作平行线的参照）
+{"op":"parallel","id":"lDE","of":"lBC","through":"D"}     // 过 D 作 BC 的平行线
+{"op":"line","id":"lAC","through":["A","C"]}              // AC 所在直线（用来截出 E）
+{"op":"intersect","id":"E","of":["lDE","lAC"]}            // E 落在 AC 上，且 DE∥BC（算得 E(1,2)）
+{"op":"polygon","id":"tri2","points":["A","D","E"]}       // 小相似三角形（顶点 A 共享）
+// 自检：① 相似的核心条件是 DE∥BC 与 D∈AB、E∈AC；② 相似比 = 1/2 由距离核对
+{"op":"verify","kind":"parallel","of":["D","E","B","C"],"expect":0,"tol":0.5}   // DE ∥ BC（残差≈0 即平行）
+{"op":"verify","kind":"online","of":["D","A","B"],"expect":0,"tol":0.05}       // D 在 AB 上
+{"op":"verify","kind":"online","of":["E","A","C"],"expect":0,"tol":0.05}       // E 在 AC 上
+{"op":"verify","kind":"distance","of":["A","D"],"expect":3,"tol":0.05}         // AD=3 = ½AB（AB=6）
+{"op":"verify","kind":"distance","of":["D","E"],"expect":2.828,"tol":0.05}     // DE=√8≈2.828 = ½BC（BC=√32≈5.657）
+// 要点：① 相似比由"分点 D 在 AB 上的位置"决定（取中点=1/2，取 1/3 处=1/3），不是把小三角形画成和原三角形一样大；
+//   ② 平行线法靠 DE∥BC 自动保证 ∠ADE=∠ABC（AA 相似），别逐点手算缩放坐标；
+//   ③ 若题目明确"以某点 O 为位似中心"，改用 例19 的 transform type=scale（更省、不画辅助线）；平行线法专用于"没有给定中心、只在边上取定比分点"的情形；
+//   ④ 末尾 verify 用 relation-assertion（parallel/online）证明相似、用 distance 核相似比，pass:false 触发自动修正轮。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
