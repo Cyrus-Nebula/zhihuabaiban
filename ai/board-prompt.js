@@ -954,3 +954,31 @@ export const BOARD3D_TRANSFORM_PROMPT = `
   · 示例：{"op":"transform3d","id":"lblA","translate":[0,0.5,0]}
 - 同一批命令里可以先 add3d 再 transform3d；变换结果由画板按当前真实状态计算，不要自己估算或输出绝对值。
 - 补充铁律：transform3d 是 3D 命令；2D 的 transform / move / update / measure 等命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * ↓↓↓ 2026-11-15「独立自主 3D 画板」任务追加段落（transform3d 多 id 批量变换）↓↓↓
+ *
+ * 协作铁律：上方全部内容（2D 主干 + 既有 3D 段 + 量测段 + 回注标注段 + transform 段）
+ * 逐字未动，本段只追加、不覆盖、不删除。批量只是 transform3d 的「ids 写法」扩展，
+ * 不是新命令，因此 BOARD3D_PROMPT_OPS（7 条）/ BOARD3D_MEASURE_PROMPT_OPS（1 条）
+ * / BOARD3D_TRANSFORM_PROMPT_OPS（1 条）全部保持不变，也不新增 *_OPS 导出；
+ * 与 js/board3d-executor.js 的历史契约常量逐项一致。
+ * 拼在文件最末尾同样是为了让 fitPrompt 短上下文裁剪时保留尾部。
+ * ============================================================ */
+
+/** 3D 批量变换追加段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_BATCH_PROMPT = `
+
+# 补充命令：transform3d 的 ids 批量写法（仅本 3D 分支可用，2026-11-15 追加）
+- 对上方「一次只变换一个 id，要变换多个对象就输出多条命令」的补充：现在可以用 "ids" 数组写**一条**命令一次变换多个对象，
+  不必为每个对象重复输出 translate / rotate / scale；原来的单 id 写法依旧完全有效。
+- 格式：{"op":"transform3d","ids":["cube","ball","lblA"],"translate":[0,1,0]}
+  · ids 为 1~32 个不重复、且场景里已存在的对象 id（含 label3d 标注锚点）；
+  · 其余字段（translate / rotate / scale）与单 id 写法完全相同，三个字段至少给一个；
+  · 每个对象都按「自己当前的 pos/rot/scale + 同一组增量」分别计算，互不影响、与 ids 顺序无关；
+  · 任一 id 非法 / 不存在 / 重复，或增量字段不合法，整条命令会被拒绝且不修改任何对象（先校验再写入）；
+  · 单 id 与 ids 不要在同一条命令里混用；写了 ids 就以 ids 为准。
+  · 示例：{"op":"transform3d","ids":["A","B","C","D"],"translate":[2,0,0]}
+  · 示例：{"op":"transform3d","ids":["ball","cone"],"scale":[1.5,1.5,1.5]}
+- 每个 id 的目标值由画板按当前真实状态计算并返回，不要自己估算或输出绝对值。
+- 补充铁律：批量只是 transform3d 的写法扩展，不是新命令；2D 的 transform / move / update / measure 等命令在本分支依旧不认识，不要输出。`;

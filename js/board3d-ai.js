@@ -87,6 +87,16 @@ async function send() {
           .map((k) => `${k}=[${t.patch[k].join(', ')}]`).join('  ');
         appendLog('ai', `变换 ${t.id}：${bits}`);
       }
+      // 2026-11-15 D8：ids 批量变换同样逐 id 展示画板算出的目标值；
+      // 单 id 结果没有 batch 标记，既有循环与这里互不重复。
+      for (const t of results) {
+        if (t.op !== 'transform3d' || t.batch !== true || !Array.isArray(t.applied)) continue;
+        for (const a of t.applied) {
+          const bits = Object.keys(a.patch)
+            .map((k) => `${k}=[${a.patch[k].join(', ')}]`).join('  ');
+          appendLog('ai', `批量变换 ${a.id}：${bits}`);
+        }
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

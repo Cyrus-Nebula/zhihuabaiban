@@ -22,7 +22,7 @@
 
 import {
   BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, BOARD3D_MEASURE_PROMPT, BOARD3D_MEASURE_LABEL_PROMPT,
-  BOARD3D_TRANSFORM_PROMPT, isBoard3DIntent,
+  BOARD3D_TRANSFORM_PROMPT, BOARD3D_BATCH_PROMPT, isBoard3DIntent,
 } from './board-prompt.js';
 import { DEFAULT_MODEL, resolveModel, supportsVision, findModel } from './models.js';
 
@@ -277,14 +277,15 @@ export async function handleBoardAi(request, env) {
 
   // 3D 分支：按显式 mode（或显式开启的意图检测）选择 2D / 3D 命令协议。
   // 3D 提示词 = 既有 7 条命令（BOARD3D_SYSTEM_PROMPT）+ 2026-11-14 追加段
-  // （measure3d 空间量测 / 结果回注标注）+ 2026-11-15 追加段（transform3d 相对变换）；
+  // （measure3d 空间量测 / 结果回注标注）+ 2026-11-15 追加段（transform3d 相对变换）
+  // + 2026-11-15 追加段（transform3d 的 ids 批量写法）；
   // 新段一律拼在末尾：fitPrompt 按短上下文裁剪时保留尾部，追加段不会被截掉。
   // 2D 主干提示词逐字不变、零回归。
   const mode = resolveBoardMode(payload, message);
   const budget = inputBudget(cfg.model);
   const systemPrompt = fitPrompt(
     mode === '3d'
-      ? BOARD3D_SYSTEM_PROMPT + BOARD3D_MEASURE_PROMPT + BOARD3D_MEASURE_LABEL_PROMPT + BOARD3D_TRANSFORM_PROMPT
+      ? BOARD3D_SYSTEM_PROMPT + BOARD3D_MEASURE_PROMPT + BOARD3D_MEASURE_LABEL_PROMPT + BOARD3D_TRANSFORM_PROMPT + BOARD3D_BATCH_PROMPT
       : BOARD_SYSTEM_PROMPT,
     budget
   );

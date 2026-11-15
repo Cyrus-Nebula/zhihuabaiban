@@ -17,7 +17,10 @@
  */
 
 import { resolveMeasure3D, measureToLabelSpec } from './board3d-measure.js';
-import { resolveTransform3D } from './board3d-transform.js';
+import { resolveTransform3D, resolveTransform3DBatch } from './board3d-transform.js';
+
+// 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
+// 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
 
 /** 每种图元允许的几何参数键（与 js/board3d.js 的 SHAPE_DEFS.params 对齐） */
 export const BOARD3D_PARAM_KEYS = Object.freeze({
@@ -313,6 +316,38 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           break;
         }
         case 'transform3d': {
+          // 2026-11-15 D8：ids 批量写法。不新增 op，单 id 路径完整保留在下方。
+          // 校验阶段原子性：任一 id 不存在 / 非法 / 重复 / 增量脏 → 整条拒绝，零副作用。
+          if (Array.isArray(cmd.ids)) {
+            const ids = cmd.ids;
+            const badId = ids.find((id) => typeof id !== 'string' || !isId(id) || !known.has(id));
+            if (!ids.length || badId !== undefined) {
+              results.push({ op, ok: false, ids, error: !ids.length
+                ? 'ids 不能为空数组'
+                : `要变换的对象 id 不存在：${String(badId)}` });
+              break;
+            }
+            let batchState = {};
+            try { batchState = (a.getState ? a.getState() : {}) || {}; } catch (_) { batchState = {}; }
+            const r = resolveTransform3DBatch(cmd, batchState);
+            if (!r.ok) {
+              results.push({ op, ok: false, ids, error: r.error });
+              break;
+            }
+            // 解析成功后逐 id 写入；api 侧失败如实分项汇报，不伪装成整批成功。
+            const applied = [];
+            const failed = [];
+            for (const item of r.items) {
+              const okPatch = call('update', item.id, item.patch);
+              if (okPatch === false) failed.push({ id: item.id, error: '画板未找到该对象' });
+              else applied.push({ id: item.id, fields: item.fields, patch: item.patch });
+            }
+            results.push({
+              op, ok: failed.length === 0, ids: r.ids, batch: true, applied,
+              ...(failed.length ? { failed } : {}),
+            });
+            break;
+          }
           // 相对变换：读「当前」状态里该对象的 pos/rot/scale 再叠加增量，
           // 这样同一批命令里先 add3d 再 transform3d 也能作用于刚建好的对象。
           // 与 measure3d 同口径：getState 缺失 / 抛错时降级为空场景，整批命令不中断。

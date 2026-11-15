@@ -120,3 +120,67 @@ export function resolveTransform3D(cmd, state) {
   }
   return { ok: true, id: c.id, patch, fields: parsed.fields.slice() };
 }
+
+/* ============================================================
+ * ↓↓↓ 2026-11-15 增量：transform3d 多 id 批量变换（本任务 D8）↓↓↓
+ *
+ * 协作铁律：上方 resolveTransform3D 及其全部语义逐字未动（既有 128 项回归零回归），
+ * 本段只追加、不覆盖、不删除。批量只是 transform3d 命令的「ids 写法」扩展，
+ * 不新增 op —— BOARD3D_OPS / BOARD3D_ALL_OPS / BOARD3D_FULL_OPS 等历史契约常量
+ * 保持不变，与共享文件 ai/board-prompt.js 的既有协议一致性断言不冲突。
+ *
+ * 与「逐帧动画插值」不同：批量变换不需要渲染层参与，可在 Node 无头环境完整回归。
+ * ============================================================ */
+
+/** 单条命令允许批量变换的 id 上限（防 LLM 一次输出超长数组拖垮画板） */
+export const TRANSFORM3D_BATCH_MAX_IDS = 32;
+
+/**
+ * 把「ids 批量写法」的 transform3d 命令解析成一组可直接交给 api.update() 的 patch。
+ *
+ * 契约：
+ *   - ids 必须是数组、长度 1..TRANSFORM3D_BATCH_MAX_IDS、每项都是合法 id 字符串且不得重复；
+ *   - 增量字段仍走 parseDeltas（与单 id 完全同一套规则，至少给一个、scale 必须 > 0）；
+ *   - 任一 id 不存在 / 非法 / 重复，或增量脏 → 整批拒绝（**校验阶段原子性，零副作用**）；
+ *   - 所有 patch 都基于**同一份 state 快照**（变换前的当前值）计算，
+ *     因此结果与 ids 顺序无关，也不会出现「前一个对象的变换影响后一个对象的读值」；
+ *   - 只读：不修改 cmd / state / objects，输出全新数组与对象。
+ *
+ * @param {Object} cmd    { op:'transform3d', ids:[...], translate?, rotate?, scale? }
+ * @param {Object} state  { objects:[...] }（board3dApi.getState() 形状）
+ * @returns {{ok:true, ids:string[], fields:string[], items:{id,patch,fields}[]} | {ok:false, error:string}}
+ */
+export function resolveTransform3DBatch(cmd, state) {
+  const c = cmd && typeof cmd === 'object' && !Array.isArray(cmd) ? cmd : {};
+  if (!Array.isArray(c.ids)) {
+    return { ok: false, error: 'ids 必须是 id 字符串数组' };
+  }
+  if (c.ids.length < 1 || c.ids.length > TRANSFORM3D_BATCH_MAX_IDS) {
+    return { ok: false, error: `ids 数量须在 1~${TRANSFORM3D_BATCH_MAX_IDS} 之间` };
+  }
+  const seen = new Set();
+  for (const id of c.ids) {
+    if (typeof id !== 'string' || !ID_RE.test(id)) {
+      return { ok: false, error: `ids 含非法 id：${String(id)}` };
+    }
+    if (seen.has(id)) {
+      return { ok: false, error: `ids 含重复 id：${id}` };
+    }
+    seen.add(id);
+  }
+
+  const objs = state && Array.isArray(state.objects) ? state.objects : [];
+  const items = [];
+  let fields = [];
+  for (const id of c.ids) {
+    // 复用单 id 纯函数：把 ids 数组剔除、补上当前 id，其余增量字段原样透传。
+    // 每条都读同一份 objs 快照，因此互不影响、与顺序无关。
+    const single = { ...c, id };
+    delete single.ids;
+    const r = resolveTransform3D(single, { objects: objs });
+    if (!r.ok) return { ok: false, error: `${id}：${r.error}` };
+    items.push({ id: r.id, patch: r.patch, fields: r.fields });
+    fields = r.fields;
+  }
+  return { ok: true, ids: c.ids.slice(), fields: fields.slice(), items };
+}
