@@ -21,14 +21,14 @@
   <link rel="stylesheet" href="/css/nav-fix.css?v=n1" />
   <link rel="stylesheet" href="/css/hero-center.css?v=n2" />
   <style>
-    /* 首屏标题：英文站名大、中文站名小 */
-    html.ui-v3 body.landing .hero-title {
-      font-size: clamp(52px, 7.5vw, 88px);
-      line-height: 1.04;
+    /* 首屏标题：英文站名大、中文站名小（覆盖 redesign.css 的 !important 字号） */
+    html.ui-v3 body.landing .hero.hero-centered .hero-title {
+      font-size: clamp(56px, 8vw, 96px) !important;
+      line-height: 1.04 !important;
     }
-    html.ui-v3 body.landing .hero-title .hero-zh {
+    html.ui-v3 body.landing .hero.hero-centered .hero-title .hero-zh {
       display: block;
-      font-size: .6em;
+      font-size: .6em !important;
       font-weight: 600;
       letter-spacing: .12em;
       margin-top: .16em;
