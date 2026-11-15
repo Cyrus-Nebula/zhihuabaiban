@@ -22,12 +22,16 @@
   <link rel="stylesheet" href="/css/hero-center.css?v=n2" />
   <style>
     /* 首屏标题：英文站名大、中文站名小 */
+    html.ui-v3 body.landing .hero-title {
+      font-size: clamp(52px, 7.5vw, 88px);
+      line-height: 1.04;
+    }
     html.ui-v3 body.landing .hero-title .hero-zh {
       display: block;
-      font-size: .46em;
+      font-size: .6em;
       font-weight: 600;
       letter-spacing: .12em;
-      margin-top: .18em;
+      margin-top: .16em;
     }
   </style>
 </head>
