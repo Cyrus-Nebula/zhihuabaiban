@@ -182,6 +182,21 @@
  *   docs/AI作图回归用例清单.md 用例 62~64。
  * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
  *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 其它易错图形（旋转相似、弓形面积阴影、函数图像对称演示）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-15 第四轮）：只追加 2D 作图主干逻辑，3D 命令分支零改动、不动 appId/editor.html。
+ *   落实上一轮 TODO 交接项④「其它易错图形」里最该由执行器兜底的一项——原生 regularPolygon 命令
+ *   （对标大角几何自研数学 DSL / 符号计算）：此前只有 例20 教 AI 手算 cos(2πk/n) 逐个 point，
+ *   而「把 1.732 抄成 1.73」「内接/外切半径混淆」「外切顶点放错到半径 R 而非 R/cos(180°/n)」
+ *   正是回归用例 54 至今仍 ⬜ 待验证的原因；让 LLM 做三角换算是反模式，应交给执行器精确算。
+ *   本文件只追加：命令清单登记 regularPolygon、「正多边形」小节、例26（内接正六边形 + 外切正方形，
+ *   末尾 verify 核 oncircle / 顶点到圆心距离 / 边长相等）、例27（vertex 定首顶点 / rotate 旋转 /
+ *   滑动条 radius 动态联动 + animate 变式）。核心工作流 / 铁律 / 3D 追加段落整段零改动、无删除行。
+ *   配套 js/executor.js 的 regularPolygonSpec 纯函数 + regularPolygon 执行分支 + __aiRegular 数值快照回读
+ *   （59 项无头桩回归全通过）；docs/AI作图回归用例清单.md 用例 65~69。
+ * TODO(下一步): ① 把 2D 协议的无头桩回归脚本入库成 tests/ 单测（regularPolygonSpec 优先）；
+ *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
+ *   ④ 其它易错图形（弓形面积阴影、函数图像对称演示、旋转相似）；
+ *   ⑤ regularPolygon 支持「给定一条边的两个顶点」定半径与朝向的写法。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -316,6 +331,12 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
   · 通用第二定义 {"op":"conic","id":"c1","focus":"F","directrix":"d","eccentricity":0.5}  焦点+准线+离心率 e（别名 "ecc"/"e"）：执行器按 |PF|=e·点到准线距离统一换算，e<1 画椭圆、e=1 画抛物线、e>1 画双曲线（两支自动断开），不必自己判类型或手算 a/b/c；"type" 可省略（省略时由 e 自动决定，写了须与 e 一致：e<1→ellipse、e=1→parabola、e>1→hyperbola）；e 必须为正数，focus/directrix 仍是已定义的点/线 id（见「圆锥曲线」小节 / 例25）
   · 也认中文 type："椭圆"/"双曲线"/"抛物线"；可选 "color"/"strokeWidth"/"dash" 改线型。conic 是普通图元：可 style / label / 被 intersect 引用、进文档；describe()/inspect 回读 "conic:ellipse@..." 数值摘要。
   · 约束：foci/focus/directrix 里的 id 必须先建好（先创建后引用）；sum/diff/a/b/p/center/vertex 一律写数字、不写表达式；双曲线两支自动断开，不用拆成两条命令。
+- regularPolygon {"op":"regularPolygon","id":"hex","center":"O","radius":2,"sides":6}  正多边形（本轮新增，见「正多边形」小节 / 例26、例27）：把「中心+半径+边数+内接/外切」整句交给执行器精确算 n 个顶点，不要手算 cos(2πk/n) 逐个 point
+  · inscribed 内接（默认，顶点在圆上）/ circumscribed 外切（边与圆相切，顶点到圆心 = R/cos(180°/n)）；也认中文 "内接"/"外切"。例：{"op":"regularPolygon","id":"sq","center":"O","radius":2,"sides":4,"mode":"circumscribed"}
+  · 定半径三选一：radius:2（数字，或滑动条 id 实现动态联动）｜ circle:"c1"（直接读已画圆的圆心+半径，MCP 式读画板状态）｜ vertex:"A"（用已有点当第一个顶点，半径=|center A|、起始角由它定）
+  · center 写点 id 或 [x,y]（省缺原点）；sides 写 3~24 的整数（别名 "n"），rotate 写起始旋转角（度）；radius/rotate/sides 一律写数字、不写表达式
+  · vertexIds:["A","B","C",…] 给 n 个不重复 id（长度必须=边数，不能与主 id 或已有 id 重名）；省略则按 <id>1..<id>n 自动命名。顶点是普通 point，可继续被线段/中点/intersect/verify 引用
+  · 可选 "color"/"strokeWidth"/"dash"/"fill"/"fillColor"/"fillOpacity" 改线型；describe()/inspect 回读 "regularPolygon:inscribed@n=6,中心(0,0),R=2,旋转0°,顶点[hex1 …]"；删主图元会连带清掉派生顶点
 - slider     {"op":"slider","id":"a","x1":-8,"y1":-9,"x2":-2,"y2":-9,"min":0,"max":5,"value":1,"step":0.1}  滑动条（用户可拖动的参数控件；x1,y1→x2,y2 是它在画板上的位置，省略会自动排到左下角）
 - animate    {"op":"animate","id":"a"} | {"op":"animate","ids":["a","b"]} | {"op":"animate","ids":"__all__","pingpong":true,"speed":"normal"}  自动播放动画（让指定滑动条自动连续改值，依赖它的几何实时演示；speed: slow/normal/fast；pingpong:true 往复；仅前端播放，不进画板文档）
 - text       {"op":"text","id":"t1","x":0,"y":5,"text":"说明文字"}    自由文本
@@ -372,6 +393,30 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - 铁律：先创建后引用——foci / focus / directrix 里的 id 必须在前面的命令里已建好；sum/diff/a/b/p/center/vertex 一律写数字，不写表达式；椭圆 sum 必须 > 焦距、双曲线 diff 必须 < 焦距，否则命令报错；a/b/p 必须为正数。
 - 状态回读：conic 是普通图元，describe()/inspect 会回 "conic:ellipse@foci+sum,中心(0,0),a=5,b=4" 一类数值摘要；在已有圆锥曲线上继续作图时直接用这些数值，不要猜。
 - 自检：末尾用 verify 把定义落成数字断言（例23 用 distance 分别核 |PF1|、|PF2|，其和 = sum；例24 用 distance 与 evaluate 核 |PF|=点到准线距离）。pass:false 会触发自动修正轮。
+
+# 正多边形（regularPolygon · 本轮新增）
+- 用户要正 n 边形 / 内接正多边形 / 外切正多边形时，用一条 regularPolygon 把语义参数交给执行器，
+  不要逐个 point 手算 cos(2πk/n) 坐标（见 例20 的旧办法：1.732 抄成 1.73、内接/外切半径混淆、
+  外切顶点放错到半径 R 而非 R/cos(180°/n) 是最高频错误）。执行器用三角函数精确算 n 个顶点并
+  注册成 n 个可引用的 point + 1 个 polygon，延续「先创建后引用 / 坐标数值化」铁律。
+- 内接 inscribed（省缺，顶点在半径 R 的圆上）：{"op":"regularPolygon","id":"hex","center":"O","radius":2,"sides":6}
+  外切 circumscribed（边与圆相切，切点在边中点，顶点到圆心 = R/cos(180°/n)）：
+  {"op":"regularPolygon","id":"sq","center":"O","radius":2,"sides":4,"mode":"circumscribed"}（正方形即 R√2≈2.828，正三角形即 2R）
+- 定半径三选一（一次只给一种，别混写）：
+  · radius:2          数字；也可以填滑动条 id 字符串（如 radius:"r"），拖条时整块正多边形实时缩放
+  · circle:"c1"       直接读画板上已有圆的圆心 + 半径，不用抄坐标（MCP 式「读画板状态后继续构造」）
+  · vertex:"A"        用已有点当第一个顶点，半径 = |center→A|、起始角由 A 定，首顶点正好落在 A 上
+  center 写点 id 或 [x,y]（省缺原点）；sides 是 3~24 的整数（别名 n）；rotate 是起始旋转角（度）。
+- vertexIds 给 n 个不重复 id（长度必须等于边数，不能与主 id 或已有 id 重名，否则整条命令失败、
+  不会覆盖已有对象）；省略则按 <id>1..<id>n 自动命名，读数里能看到。顶点是普通 point：
+  可以直接被 segment / midpoint / intersect / verify 引用，继续「分步构造」下一步（如连对角线、取边中点）。
+- 铁律：center / circle / vertex / 滑动条 id 都必须先创建后引用；sides/radius/rotate 写数字不写表达式；
+  顶点是派生点（不可单独拖动，拖一个就不再是正多边形），要改整体请拖 center 点 / 改滑动条 / 重发命令。
+- 自检：末尾用 verify 把「正」落成数字断言——内接顶点 oncircle 残差≈0、外切顶点到圆心 = R/cos(180°/n)、
+  相邻顶点 distance 处处相等（正 n 边形边长 = 2R·sin(180°/n)）。pass:false 会触发自动修正轮，
+  此时按例6/例10 只发修正命令（重发 regularPolygon 或改 mode/rotate），不要整段重画、不要再发 measure/verify。
+- 状态回读：describe()/inspect 回 "regularPolygon:inscribed@n=6,中心(0,0),R=2,旋转0°,顶点[hex1 …]"，
+  在已有正多边形上继续作图时直接用这些数值，不要猜顶点坐标；见例26、例27。
 
 # 滑动条与动态演示（重点能力）
 - 需要"动态演示/参数变化/动画/可调"的效果时，用 slider 造参数，再让它驱动几何体：
@@ -870,6 +915,44 @@ H(intersection@(0,-1)), 高 AH=4.000, ∠AHB=90.0°, online(H,lBC)=0.000, f1(fun
 //   ② eccentricity / ecc / e 三种写法等价，必须为正数；e=1 与旧 focus+directrix 抛物线逐点一致；
 //   ③ focus/directrix 用已建点/线 id（先创建后引用），焦点不能落在准线上；④ 双曲线两支由执行器以 NaN 断开，不要拆两条命令；
 //   ⑤ verify 的期望值写算好的数字（1 / 2），不要写表达式，也不要在 evaluate 里用 y（evaluate 只支持单变量 x）。
+
+== 例26：正多边形（内接正六边形 + 外切正方形，regularPolygon 原生命令 + verify 自检） ==
+用户："以 O 为圆心、半径 2 画一个内接正六边形和一个外切正方形，标出顶点并验证它们确实内接/外切。"
+思路：不要像 例20 那样逐个 point 手算 cos(2πk/n)（1.732 抄错、外切半径混淆都从这里来），
+      一条 regularPolygon 把「中心+半径+边数+内接/外切」交出去，执行器精确算 n 个顶点。
+      内接顶点在圆上 → oncircle 残差≈0；外切边与圆相切 → 顶点到圆心 = R/cos45° = 2√2≈2.828；
+      正六边形边长 = R = 2 → distance 核相邻顶点。第二个多边形用 circle:"c1" 直接读已画好的圆。
+{"op":"point","id":"O","x":0,"y":0,"fixed":true}
+{"op":"circle","id":"c1","center":"O","radius":2}
+{"op":"regularPolygon","id":"hex","center":"O","radius":2,"sides":6,"vertexIds":["A","B","C","D","E","F"]}
+{"op":"regularPolygon","id":"sq","circle":"c1","sides":4,"mode":"circumscribed","vertexIds":["P1","P2","P3","P4"]}
+{"op":"verify","kind":"oncircle","of":["A","c1"],"expect":0,"tol":0.05}          // 内接顶点 A 在圆上
+{"op":"verify","kind":"oncircle","of":["D","c1"],"expect":0,"tol":0.05}          // 内接顶点 D 也在圆上
+{"op":"verify","kind":"distance","of":["O","P1"],"expect":2.828,"tol":0.05}      // 外切顶点到圆心 = R/cos45°
+{"op":"verify","kind":"distance","of":["A","B"],"expect":2,"tol":0.05}           // 正六边形边长 = R = 2
+// 要点：① 两条 regularPolygon 各画一组，别手算 1.732 / 2√2 再逐个 point；② circle:"c1" 先创建后引用，
+//   直接读已有圆的圆心+半径，不必再抄 center/radius；③ vertexIds 长度必须=边数且互不重复（省略则自动
+//   hex1..hex6 / sq1..sq4）；④ 外切顶点到圆心是 R/cos(180°/n) 而不是 R，别把 mode 写成 inscribed；
+//   ⑤ 末尾三条 verify 把「内接/外切/边长」落成数字，pass:false 触发自动修正（改 mode/radius，别整段重画）。
+
+== 例27：正多边形三种定半径方式（vertex / rotate / 滑动条 radius 动态联动） ==
+用户："以 A(2,0) 为一个顶点画正三角形；再画一个绕 O 旋转 90° 的内接正八边形；最后用滑动条 r 驱动一个正五边形并让它动起来。"
+思路：三种定半径写法各用一次——vertex:"A" 用已有点定首顶点与半径（|OA|=2、起始角由 A 定，不用写 rotate）、
+      radius:2 + rotate:90 把八边形整体转 90°、radius:"r" 填滑动条 id 实现拖条实时缩放；
+      slider 必须先建、animate 最后发（都遵守先创建后引用）。正三角形边长 = 2R·sin60° = 2√3≈3.464。
+{"op":"point","id":"O","x":0,"y":0,"fixed":true}
+{"op":"point","id":"A","x":2,"y":0}
+{"op":"regularPolygon","id":"tri","center":"O","vertex":"A","sides":3,"vertexIds":["T1","T2","T3"]}
+{"op":"regularPolygon","id":"oct","center":"O","radius":2,"sides":8,"rotate":90,"vertexIds":["K1","K2","K3","K4","K5","K6","K7","K8"]}
+{"op":"slider","id":"r","min":0.5,"max":4,"value":2,"step":0.1}
+{"op":"regularPolygon","id":"pent","center":"O","radius":"r","sides":5,"vertexIds":["Q1","Q2","Q3","Q4","Q5"]}
+{"op":"animate","id":"r","pingpong":true,"speed":"normal"}
+{"op":"verify","kind":"distance","of":["O","T1"],"expect":2,"tol":0.05}           // vertex 定的半径 = |OA| = 2
+{"op":"verify","kind":"distance","of":["T1","T2"],"expect":3.464,"tol":0.05}      // 正三角形边长 = 2R·sin60° = 2√3
+// 要点：① radius / circle / vertex 一次只给一种，别混写；② vertex:"A" 让首顶点正好落在 A 上，
+//   起始角由 A 决定，不要再叠加 rotate；③ rotate 是度、写数字；④ radius:"r" 是滑动条 id 字符串
+//   （不是数字），slider 必须先建，拖条时 5 个顶点实时重算，animate 自动播放；
+//   ⑤ vertexIds 长度必须分别等于 3 / 8 / 5，各自不重复、不与已有 id 或主 id 同名。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

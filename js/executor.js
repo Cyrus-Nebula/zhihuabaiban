@@ -46,6 +46,11 @@
  *             | {type:'parabola',focus:F,directrix:直线id} | {type:'parabola',vertex:[h,k],p}
  *             圆锥曲线（本轮新增，见 conicSpec）：第一定义 / 第二定义 / 标准式统一换算成参数曲线；
  *             双曲线两支以 NaN 断开；方程与参数挂 __aiExpr/__aiConic 供 describe() 数值快照回读
+ *   regularPolygon {id,center,radius|circle|vertex,sides,mode?,rotate?,vertexIds?}  正多边形（本轮新增，见 regularPolygonSpec）：
+ *             AI 只给语义参数，执行器用三角函数精确算 n 个顶点并落成「n 个可引用 point + 1 个 polygon」；
+ *             inscribed 内接（顶点在圆上）/ circumscribed 外切（边与圆相切，顶点半径 R/cos(180°/n)）；
+ *             circle 读已画圆的圆心半径、vertex 用已有点定首顶点、radius 可填滑动条 id 动态联动；
+ *             顶点按 vertexIds 或 <id>1..<id>n 注册，挂 __aiRegular/__aiRegularVertexIds 供数值快照回读与删除联动
  *   move      {id,x,y} | {id,v}                      增量修正：就地移动已存在的自由点 / 改滑动条当前值（不新建图元、不改 id）。
  *                                                    同 id 重新 point 会被 execute 判「id 重复定义」而失败，自检自动修正改坐标一律用 move；
  *                                                    依赖它的线/圆/多边形由 JSXGraph 联动自动刷新。多轮收敛闭环的核心配套命令。
@@ -155,6 +160,26 @@
  * TODO(下一步): ① 圆锥曲线第二定义通用离心率形式（focus+directrix+eccentricity 覆盖 e<1/=1/>1）；
  *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
  *   ④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；⑤ 给 2D 协议补入库无头单测脚本。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-15 第四轮）：只改 2D 协议，3D 分支零触碰。
+ *   落实上一轮 TODO 交接项④「其它易错图形」中最该由执行器兜底的一项——原生 regularPolygon 命令：
+ *   此前例20 只能教 AI 手算 cos(2πk/n) 逐个 point（1.732 抄错、内接/外切半径混淆、外切顶点
+ *   放错到 R 而非 R/cos(180°/n)，回归用例 54 至今仍是 ⬜ 待验证），属于「让 AI 做符号计算」的
+ *   反模式。本轮把三角换算收进执行器（对标大角几何自研 DSL / 符号计算）：
+ *   (1) 新增模块级纯函数 regularPolygonSpec(cmd, refs)：支持 center + radius / circle（读已画圆的
+ *       圆心半径）/ vertex（已有点定首顶点）三种定半径方式，sides 3~24，inscribed/circumscribed
+ *       （含中文别名）、rotate、vertexIds；非法参数一律抛错、不产生任何元素，便于无头回归。
+ *   (2) build() 新增 regularPolygon 分支：n 个顶点落成独立可引用的 point（fixed:true 防拖变形）
+ *       + 1 个 polygon；center 是点 / radius 是滑动条时顶点坐标写成函数，动态联动；
+ *       挂 __aiExpr/__aiRegular/__aiRegularVertexIds。
+ *   (3) elementSummary() 在 polygon 分支前加 __aiRegular 分支，describe()/inspect 能回读
+ *       「regularPolygon:inscribed@n=6,中心(0,0),R=2,旋转0°,顶点[hex1 …]」；remove() 删主图元时
+ *       联动清掉派生顶点，避免孤儿点占 id。既有元素摘要 / 命令执行结果逐字节不变。
+ *   配套：ai/board-prompt.js 命令清单 +「正多边形」小节 + 例26/例27 few-shot；
+ *   docs/AI作图回归用例清单.md 用例 65~69。未碰 3D 分支 / editor.html / appId / js/board.js。
+ * TODO(下一步): ① 给 2D 协议补入库无头单测脚本（regularPolygonSpec 优先）；② 自检状态条固定 DOM 徽标；
+ *   ③ 收敛判定引入「残差改善量」；④ 其它易错图形（弓形面积阴影、函数图像对称演示）；
+ *   ⑤ 正多边形支持「给定一条边 two vertices」定半径/朝向的写法。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -526,6 +551,128 @@ export function conicSpec(cmd, refs) {
   throw new Error('conic.type 只能是 ellipse / hyperbola / parabola');
 }
 
+/* ---------- 正多边形（regularPolygon）语义参数 → 顶点坐标（模块级纯函数，便于无头回归） ---------- */
+/**
+ * 对标大角几何「自研数学 DSL / 符号计算」：AI 只声明「中心 + 半径 + 边数 + 内接/外切 + 旋转」，
+ * 由执行器用三角函数精确算出 n 个顶点，不再让 AI 手算 cos(2πk/n)（例20 的手算法极易把
+ * 1.732 抄成 1.73、把外切顶点放错到半径 R 上）。顶点是独立可引用的 point，AI 可继续
+ * 连对角线 / 取中点 / verify 共圆，延续「读状态→规划→分步构造→自检」工作流。
+ *
+ * 参数：
+ *   center    [x,y] 或已定义点 id（默认原点）
+ *   radius    正数（内接=外接圆半径 R，外切=内切圆半径 R）；可填滑动条 id 实现动态联动
+ *   circle    已画圆的 id：直接读它的圆心 + 半径（与 center/radius 二选一，MCP 式读画板状态）
+ *   vertex    已定义点 id：以它作第一个顶点来定半径与起始角（与 radius 二选一）
+ *   sides/n   边数，整数 3~24（默认 6）
+ *   mode      inscribed 内接（默认，顶点在圆上）/ circumscribed 外切（边与圆相切，
+ *             顶点到圆心 = R/cos(180°/n)）；也认中文「内接」「外切」
+ *   rotate    起始旋转角（度）
+ *   vertexIds 可选，n 个顶点 id；省略则按 <id>1..<id>n 自动命名
+ *
+ * refs：{ point(id|[x,y])->[x,y], value(v)->number, circle(id)->{center,radius} }
+ * 返回 { vertices, angles, center, radius, sides, mode, rotate, vertexRadius, vertexIds, expr, meta }
+ * 纯函数不碰 JSXGraph，非法参数一律抛错且不产生任何元素。
+ */
+export function regularPolygonSpec(cmd, refs) {
+  const point2 = (v, label) => {
+    if (Array.isArray(v) && v.length >= 2 && Number.isFinite(Number(v[0])) && Number.isFinite(Number(v[1]))) {
+      return [Number(v[0]), Number(v[1])];
+    }
+    if (v != null && typeof v === 'string' && refs && typeof refs.point === 'function') return refs.point(v);
+    throw new Error('regularPolygon.' + label + ' 需要 [x,y] 或已定义的点 id');
+  };
+  const valueOf = (v) => {
+    if (v == null) return NaN;
+    if (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)))) return Number(v);
+    if (typeof v === 'string' && refs && typeof refs.value === 'function') return refs.value(v);
+    return NaN;
+  };
+  const fmt = (n) => String(Math.round(n * 1000) / 1000);
+
+  // 边数：sides / n / edges 三种写法等价，必须是 3~24 的整数
+  const sidesRaw = cmd.sides != null ? cmd.sides : (cmd.n != null ? cmd.n : cmd.edges);
+  const sides = valueOf(sidesRaw);
+  // 严格整数：不把 3.5 静默四舍五入成 4（AI 写出小数边数说明规划有误，整条失败更安全）
+  if (!Number.isFinite(sides) || !Number.isInteger(sides) || sides < 3 || sides > 24) {
+    throw new Error('regularPolygon.sides 必须是 3~24 的整数');
+  }
+
+  // 内接 / 外切（含中文别名）
+  const MODE = {
+    inscribed: 'inscribed', 内接: 'inscribed', 内接于圆: 'inscribed', in: 'inscribed',
+    circumscribed: 'circumscribed', 外切: 'circumscribed', 外切于圆: 'circumscribed', out: 'circumscribed',
+  };
+  const mode = MODE[String(cmd.mode == null ? 'inscribed' : cmd.mode).toLowerCase()];
+  if (!mode) throw new Error('regularPolygon.mode 只能是 inscribed / circumscribed（内接 / 外切）');
+
+  // 中心 + 半径：circle > radius > vertex（三选一，优先级从高到低）
+  let center = [0, 0];
+  let radius = NaN;
+  let definition = 'center+radius';
+  let vertexAngleDeg = 0;
+  if (cmd.circle != null) {
+    const g = refs && typeof refs.circle === 'function' ? refs.circle(cmd.circle) : null;
+    if (!g || !Array.isArray(g.center) || !Number.isFinite(g.radius) || g.radius <= 0) {
+      throw new Error('regularPolygon.circle 必须引用已画好的圆（取不到圆心/半径）');
+    }
+    center = g.center; radius = g.radius; definition = 'circle';
+  } else {
+    center = point2(cmd.center == null ? [0, 0] : cmd.center, 'center');
+    if (cmd.radius != null) {
+      radius = valueOf(cmd.radius);
+      definition = 'center+radius';
+    } else if (cmd.vertex != null) {
+      const V = point2(cmd.vertex, 'vertex');
+      const d = Math.hypot(V[0] - center[0], V[1] - center[1]);
+      if (d < 1e-9) throw new Error('regularPolygon.vertex 不能与 center 重合');
+      vertexAngleDeg = Math.atan2(V[1] - center[1], V[0] - center[0]) * 180 / Math.PI;
+      // vertex 给的是「第一个顶点」：内接时顶点半径=d；外切时 R = d·cos(180°/n)
+      radius = mode === 'circumscribed' ? d * Math.cos(Math.PI / sides) : d;
+      definition = 'center+vertex';
+    }
+  }
+  if (!Number.isFinite(radius) || radius <= 0) {
+    throw new Error('regularPolygon.radius 必须是正数（或给 circle / vertex 定半径）');
+  }
+
+  // 旋转：显式 rotate 优先；vertex 定顶点时让第一个顶点正好落在 V 上
+  let rotate = Number.isFinite(Number(cmd.rotate)) && cmd.rotate != null ? Number(cmd.rotate) : 0;
+  if (definition === 'center+vertex' && cmd.rotate == null) {
+    rotate = vertexAngleDeg - (mode === 'circumscribed' ? 180 / sides : 0);
+  }
+  const rotateRad = rotate * Math.PI / 180;
+  const vertexRadius = mode === 'circumscribed' ? radius / Math.cos(Math.PI / sides) : radius;
+  const offset = mode === 'circumscribed' ? Math.PI / sides : 0;
+
+  const angles = [], vertices = [];
+  for (let k = 0; k < sides; k++) {
+    const a = rotateRad + offset + k * 2 * Math.PI / sides;
+    angles.push(a);
+    vertices.push([center[0] + vertexRadius * Math.cos(a), center[1] + vertexRadius * Math.sin(a)]);
+  }
+
+  // 顶点 id：显式给就逐个校验（长度=边数、非空、不重复、不与主 id 同名），否则自动 <id>1..<id>n
+  let vertexIds;
+  if (cmd.vertexIds != null) {
+    if (!Array.isArray(cmd.vertexIds) || cmd.vertexIds.length !== sides ||
+        !cmd.vertexIds.every((v) => typeof v === 'string' && v.trim())) {
+      throw new Error('regularPolygon.vertexIds 必须是 ' + sides + ' 个非空 id 的数组');
+    }
+    vertexIds = cmd.vertexIds.slice();
+  } else {
+    const base = String(cmd.id || 'poly');
+    vertexIds = Array.from({ length: sides }, (_, k) => base + (k + 1));
+  }
+  if (new Set(vertexIds).size !== sides) throw new Error('regularPolygon.vertexIds 不能有重复 id');
+  if (cmd.id != null && vertexIds.includes(String(cmd.id))) {
+    throw new Error('regularPolygon.vertexIds 不能与主 id「' + cmd.id + '」同名');
+  }
+
+  const expr = `regularPolygon: ${mode} n=${sides} R=${fmt(radius)} center(${fmt(center[0])},${fmt(center[1])}) rotate=${fmt(rotate)}`;
+  const meta = { definition, center, radius, sides, mode, rotate, vertexRadius, vertexIds };
+  return { vertices, angles, center, radius, sides, mode, rotate, vertexRadius, vertexIds, expr, meta };
+}
+
 export function createExecutor(board) {
   const registry = new Map();    // id -> JXG 元素
   const plainPoints = new Set(); // 可通过 moves 覆盖坐标的自由点
@@ -883,6 +1030,77 @@ export function createExecutor(board) {
       }
       case 'polygon':
         return board.create('polygon', resolveList(cmd.points), opt);
+      case 'regularPolygon': {
+        // 正多边形（本轮新增，对标大角几何「自研 DSL / 符号计算」）：
+        // AI 只给中心/半径/边数/内接或外切/旋转，执行器用三角函数精确算 n 个顶点，
+        // 落成「n 个可引用的独立 point + 一个 polygon」，不再让 AI 手算 cos(2πk/n)
+        // （见 ai/board-prompt.js 例20 手算法的易错点：1.732 抄错、外切顶点放错半径）。
+        const polyRefs = {
+          point: (r) => {
+            const el = resolve(r);
+            if (!el || typeof el.X !== 'function' || typeof el.Y !== 'function') {
+              throw new Error('regularPolygon 引用的「' + r + '」不是点');
+            }
+            return [el.X(), el.Y()];
+          },
+          value: (r) => {
+            const v = numericOf(resolve(r));
+            if (!Number.isFinite(v)) throw new Error('regularPolygon.radius 引用的「' + r + '」不是滑动条/数值');
+            return v;
+          },
+          circle: (r) => {
+            const g = circleGeom(resolve(r));
+            if (!g) throw new Error('regularPolygon.circle 引用的「' + r + '」不是圆');
+            return { center: [g[0], g[1]], radius: g[2] };
+          },
+        };
+        const spec = regularPolygonSpec(cmd, polyRefs);
+        // 幂等校验：任一顶点 id 已被占用就整条失败，避免留下半套图形 / 覆盖别的对象
+        for (const vid of spec.vertexIds) {
+          if (registry.has(vid)) throw new Error(`id「${vid}」重复定义（regularPolygon 顶点）`);
+        }
+
+        // 动态联动：center 是已注册点、radius 是已注册滑动条时，顶点坐标写成函数，
+        // 拖动中心点 / 滑动条会实时重算整块正多边形（与 point 的 x:"a" 同一套机制）。
+        const centerEl = (typeof cmd.center === 'string' && cmd.circle == null && registry.has(cmd.center))
+          ? registry.get(cmd.center) : null;
+        const radiusGetter = (typeof cmd.radius === 'string' && cmd.circle == null && !Number.isFinite(Number(cmd.radius)))
+          ? valueGetter(cmd.radius) : null;
+        const dynamic = !!(centerEl || radiusGetter);
+        const cNow = () => (centerEl && typeof centerEl.X === 'function' ? [centerEl.X(), centerEl.Y()] : spec.center);
+        const rNow = () => {
+          const base = radiusGetter ? Number(radiusGetter()) : spec.radius;
+          const r = Number.isFinite(base) && base > 0 ? base : spec.radius;
+          return spec.mode === 'circumscribed' ? r / Math.cos(Math.PI / spec.sides) : r;
+        };
+
+        // 顶点是由参数派生出来的，fixed:true 防止拖单个顶点把「正」破坏掉；
+        // 想改整体请拖 center 点 / 改滑动条，或再发一条 regularPolygon。
+        const pts = spec.vertices.map((p, k) => {
+          const a = spec.angles[k];
+          const xy = dynamic
+            ? [() => cNow()[0] + rNow() * Math.cos(a), () => cNow()[1] + rNow() * Math.sin(a)]
+            : [p[0], p[1]];
+          return board.create('point', xy, { ...POINT_STYLE, name: spec.vertexIds[k], fixed: true });
+        });
+
+        const style = { ...opt };
+        if (cmd.color) { style.strokeColor = cmd.color; style.highlightStrokeColor = cmd.color; }
+        if (cmd.strokeWidth != null) style.strokeWidth = num(cmd.strokeWidth, 2);
+        if (cmd.dash != null) style.dash = num(cmd.dash, 0);
+        if (cmd.fill) { style.fillColor = cmd.fillColor || cmd.color || '#C7D2FE'; style.fillOpacity = 0.25; }
+        if (cmd.fillColor) style.fillColor = cmd.fillColor;
+        if (cmd.fillOpacity != null) style.fillOpacity = num(cmd.fillOpacity, 0.25);
+        const poly = board.create('polygon', pts, style);
+
+        // 顶点逐个进注册表：AI 后续可直接用顶点 id 连对角线 / 取中点 / verify 共圆；
+        // 主 id 指向 polygon（execute 随后注册），__aiRegular* 供 describe()/inspect 数值快照回读。
+        spec.vertexIds.forEach((vid, k) => registry.set(vid, pts[k]));
+        poly.__aiExpr = spec.expr;
+        poly.__aiRegular = { type: 'regularPolygon', ...spec.meta };
+        poly.__aiRegularVertexIds = spec.vertexIds.slice();
+        return poly;
+      }
       case 'midpoint':
         return board.create('midpoint', resolveList(cmd.of), opt);
       case 'intersect': {
@@ -1192,6 +1410,14 @@ export function createExecutor(board) {
     registry.delete(id);
     plainPoints.delete(id);
     sliders.delete(id);
+    // 正多边形删除主图元时，把它派生出来的 n 个顶点一起清掉，避免留下孤儿点占着 id
+    const kids = Array.isArray(el.__aiRegularVertexIds) ? el.__aiRegularVertexIds : [];
+    for (const kid of kids) {
+      const k = registry.get(kid);
+      if (k) { try { board.removeObject(k); } catch (_) { /* 忽略 */ } }
+      registry.delete(kid);
+      plainPoints.delete(kid);
+    }
     return true;
   }
 
@@ -1297,6 +1523,14 @@ export function createExecutor(board) {
       } else if (LINE_TYPES.has(t)) {
         const ep = lineEndpoints(el);
         if (ep) desc = t + '@' + fmtPoint(ep[0]) + '->' + fmtPoint(ep[1]);
+      } else if (el.__aiRegular) {
+        // 正多边形：回读语义参数（边数/内接外切/中心/半径/旋转/顶点 id），
+        // AI 在已有正多边形上继续构造时直接用这些数值，不用猜顶点坐标。
+        const m = el.__aiRegular;
+        desc = 'regularPolygon:' + m.mode + '@n=' + m.sides
+          + ',中心(' + fmtNum(m.center[0]) + ',' + fmtNum(m.center[1]) + ')'
+          + ',R=' + fmtNum(m.radius) + ',旋转' + fmtNum(m.rotate) + '°'
+          + ',顶点[' + m.vertexIds.slice(0, 6).join(' ') + (m.vertexIds.length > 6 ? ' …' : '') + ']';
       } else if (t === 'polygon' && Array.isArray(el.vertices)) {
         const vs = el.vertices.slice(0, 6)
           .filter((v) => v && typeof v.X === 'function' && typeof v.Y === 'function')

@@ -289,6 +289,34 @@
 > 三种别名、`__aiConic.meta` 回读、非法参数抛错，以及旧 `foci+sum` / `foci+diff` / 标准式分支
 > 与改动前逐字节一致。真实 JSXGraph `curve` 渲染仍需带浏览器环境目视确认（见「已知限制」）。
 
+## 正多边形（regularPolygon 原生命令，本轮新增 2026-11-15 第四轮）
+
+> 落实上一轮 TODO 交接项④「其它易错图形」里最该由执行器兜底的一项。此前用例 54 / `ai/board-prompt.js` 例20
+> 只能教 AI 手算 `cos(2πk/n)` 逐个 `point`：`1.732` 抄成 `1.73`、内接/外切半径混淆、外切顶点放错到半径 `R`
+> 而非 `R/cos(180°/n)`，导致用例 54 至今仍是 ⬜ 待验证。本轮把三角换算收进执行器（对标大角几何
+> 「自研数学 DSL / 符号计算」）：AI 只给语义参数，`regularPolygonSpec()` 精确算 n 个顶点并落成
+> 「n 个可引用 `point` + 1 个 `polygon`」。配套 `ai/board-prompt.js` 命令清单 +「正多边形」小节 +
+> 例26 / 例27，`js/executor.js` 的 `regularPolygonSpec` 纯函数 + 执行分支 + `__aiRegular` 数值快照 +
+> `remove()` 派生顶点联动。纯 2D 增量，3D 分支 / `editor.html` / `appId` / `js/board.js` 零改动。
+> **用例 54 的旧手算范式保留作对照，新作图一律优先用 `regularPolygon`。**
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 65 | 以 O(0,0) 为圆心、半径 2 画内接正六边形并标出顶点 | `point` O(0,0) fixed:true → `circle` c1 center:O radius:2 → `regularPolygon` hex center:O radius:2 sides:6 vertexIds:[A,B,C,D,E,F]（执行器算 A(2,0)、B(1,1.732)、C(-1,1.732)、D(-2,0)、E(-1,-1.732)、F(1,-1.732)）→ `verify` oncircle(A,c1)=0 / oncircle(D,c1)=0 / distance(A,B)=2 | ✅ | 一条命令画一圈，别逐个 `point` 手算 1.732；`vertexIds` 长度必须=6、互不重复；省略则自动 `hex1..hex6`；顶点是可引用 `point`，可直接 `oncircle`/`distance`/`segment`/`midpoint`；正 n 边形边长 = 2R·sin(180°/n)，正六边形即 R；见 `ai/board-prompt.js` 例26 |
+| 66 | 读已画圆 c1 画它的外切正方形并验证相切 | 沿用例 65 的 c1 → `regularPolygon` sq circle:"c1" sides:4 mode:"circumscribed" vertexIds:[P1,P2,P3,P4]（顶点 (2,2)/(-2,2)/(-2,-2)/(2,-2)，到圆心 2√2≈2.828）→ `verify` distance(O,P1)=2.828 tol:0.05 | ✅ | `circle:"c1"` 直接读已画圆的圆心+半径（MCP 式读画板状态，先创建后引用），不用再抄 center/radius；外切顶点到圆心 = R/cos(180°/n)（正方形 R√2、正三角 2R），别放错到 R；`mode` 也认中文「外切」；边中点(切点)到圆心 = R；见 例26 |
+| 67 | 以 A(2,0) 为首顶点画正三角形；再画旋转 90° 的内接正八边形 | `point` O / `point` A(2,0) → `regularPolygon` tri center:O vertex:"A" sides:3 vertexIds:[T1,T2,T3]（首顶点正好落在 A，半径 2、起始角 0°）→ `regularPolygon` oct center:O radius:2 sides:8 rotate:90 → `verify` distance(O,T1)=2 / distance(T1,T2)=3.464 tol:0.05 | ✅ | `radius`/`circle`/`vertex` 一次只给一种别混写；`vertex:"A"` 起始角由 A 定，不要再叠 `rotate`；`rotate` 是度、写数字；正三角形边长 2R·sin60°=2√3≈3.464；`sides` 必须 3~24 的整数（别名 `n`），3.5 之类整条失败；见 例27 |
+| 68 | 用滑动条 r 驱动正五边形大小并自动播放 | `slider` r min:0.5 max:4 value:2 step:0.1 → `regularPolygon` pent center:O radius:"r" sides:5 vertexIds:[Q1..Q5] → `animate` id:"r" pingpong:true speed:"normal" | ✅ | `radius:"r"` 填滑动条 id 字符串（不是数字），`slider` 必须先建、`animate` 最后发；拖条时 5 个顶点坐标写成函数实时重算，整块正多边形跟着缩放（与 `point` 的 x:"a" 同一套联动）；`center` 填点 id 时拖中心点也会带动整块；顶点 `fixed:true` 不可单独拖（拖一个就不再「正」）；见 例27 |
+| 69 | 非法参数校验、状态回读与删除联动 | `regularPolygon` sides:2 / 25 / 3.5 / radius:-1 / 缺 radius / mode:wat / circle 不存在 / vertex 与 center 重合 / vertexIds 长度不符或重复或与主 id 同名 → 一律 `ok:false` 且**不注册任何元素**；合法命令的 `inspect` id:hex 回 `regularPolygon:inscribed@n=6,中心(0,0),R=2,旋转0°,顶点[hex1 …]`；`remove("hex")` 连带清掉 6 个派生顶点、不影响 O/c1 | ✅ | 顶点 id 冲突整条失败且**不覆盖**已有对象（幂等）；`center`/`circle`/`vertex`/滑动条 id 都遵守先创建后引用；`describe()`/`inspect` 数值快照口径一致；删主图元不留孤儿点；非法参数由 `regularPolygonSpec` 抛错，不产生半套图形 |
+
+> 状态 ✅：`regularPolygonSpec()` 与执行分支已用无头桩回归 **59/59** 全通过：
+> 内接六顶点全部落在 R=2 圆上、六边相等且边长=2；外切正方形四顶点与用例 54 / 例20 的
+> (2,2)/(-2,2)/(-2,-2)/(2,-2) **逐点一致**、四条边中点(切点)到圆心=R；`circle`/`vertex`/滑动条/
+> `rotate`/`vertexIds`/中文别名 6 类参数形式与 12 类非法参数抛错；`createExecutor` 桩件下
+> 主图元 + 6 顶点注册、`__aiRegular` 元数据、`describe()` 快照、`verify oncircle` 判定、删除联动、
+> 顶点 id 冲突不覆盖；既有 `point`/`polygon`/`function`/`style`/`move`/`verify` 命令结果、
+> `describe()` 输出与改动前**逐项一致**。真实 JSXGraph 渲染与拖动联动仍需带浏览器环境目视确认
+> （见「已知限制」）。
+
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
   JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在
@@ -298,3 +326,4 @@
 - `measure` 在前端画板生成临时读数并回传数值；read-back 闭环已在 `js/board.js` 接入（执行后用 measure 数值驱动 LLM 二次核对并自动修正），无需后端改造。沙箱无头环境无法跑真实 JSXGraph + LLM，闭环行为需在带浏览器的环境目视确认（用例 14/15/16/20/24）。
 - 本轮起 read-back 闭环由 `verify` 的 `pass:false` 精确触发（纯 `measure` 只展示读数、不再消耗一次 LLM 调用）；判定容差默认 `tol=0.05`，角度用例建议显式给 `tol:0.5`。闭环最多自动修正 3 轮（每轮静默复跑原始 verify 机器判定收敛，横跳 / 失败项变多 / 连续 2 轮无改善 / 达上限提前收手），不递归；`expect`/`expectRange` 的取值合理性由 AI 在规划阶段给出，仍需带浏览器环境回归确认（用例 29/30、37~39）。
 - `conic` 用 JSXGraph 的 `curve` 元素（参数曲线函数 `[fx,fy,0,1]`）绘制：沙箱无头环境只验证了参数换算与采样点的数学正确性，**曲线在真实画板上的渲染、NaN 断点是否如预期断开、线宽/颜色**仍需带浏览器环境目视确认（用例 59~61）。`focus`+`directrix` 形态依赖注册表里准线元素的端点坐标；已画出的 `conic` 是静态参数曲线（不随焦点/准线被 `move` 拖动实时重算，回放/保存时按命令重建），与 `transform` 的静态副本行为一致。
+- `regularPolygon` 的 n 个顶点落成 `fixed:true` 的独立 `point`（用例 65~69）：沙箱无头环境只验证了顶点坐标的数学正确性与注册表/数值快照/删除联动，**真实画板上拖动滑动条 `radius` 或 `center` 点时函数坐标是否实时刷新、拖动交互是否被 `fixed` 正确禁用**仍需带浏览器环境目视确认。它按命令重建（回放/保存时重算顶点），与 `conic` / `transform` 的静态行为一致；派生顶点占 id，删除主图元时联动清理，勿把顶点 id 当成用户可长期持有的自由点。
