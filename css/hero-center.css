@@ -6,6 +6,6 @@
 html.ui-v3 body.landing .hero-centered .hero-copy .hero-title,
 html.ui-v3 body.landing .hero-centered .hero-copy .v3-entries.hero-actions,
 html.ui-v3 body.landing .hero-centered .hero-copy .hero-note {
-  margin-left: auto;
-  margin-right: auto;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
