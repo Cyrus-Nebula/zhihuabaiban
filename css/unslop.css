@@ -81,9 +81,7 @@ body.landing .site-nav::before {
   -webkit-backdrop-filter: none;
 }
 
-/* logo 圆规保留形状，渐变填充改为单色实色（unslop: 渐变 logo 不算品牌资产） */
-body.landing .site-logo > path:first-of-type,
-body.landing .site-logo path[fill^="url("] { fill: var(--primary); }
+/* 全站 logo 统一引用 /favicon.svg 单一文件（同色同形），不再做单色覆盖 */
 
 /* 渐变文字 → 纯色 */
 body.landing .hero-title {

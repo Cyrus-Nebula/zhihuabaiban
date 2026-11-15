@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>我的画板 · 智绘几何</title>
+<meta name="description" content="智绘几何 · 我的画板">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=n1" />
+<link rel="stylesheet" href="/css/pages.css?v=n1" />
+</head>
+<body class="nf-page">
+<header class="site-nav">
+  <a class="site-brand" href="/" aria-label="智绘几何首页"><img class="site-logo" src="/favicon.svg?v=n1" alt="" /><span>智绘几何</span></a>
+  <nav class="site-links" aria-label="主导航">
+    <a href="/quickstart.html">快速入门</a>
+    <a href="/templates.html">资源库</a>
+    <a href="/files.html" class="active">我的画板</a>
+    <a href="/about.html">关于</a>
+    <a href="/generate.html?v=n1">AI 生成</a>
+  </nav>
+  <a class="back" href="/">← 返回首页</a>
+</header>
+<main>
+  <h1>我的画板</h1>
+  <p class="sub">文件只保存在这台设备的浏览器里，不会上传。</p>
+  <div class="stats" id="stats"></div>
+  <div class="file-list" id="fileList"></div>
+  <div class="empty" id="emptyState" hidden>还没有画板。<br>新建一个，或从资源库挑一个模板开始。</div>
+  <div class="actions">
+    <a class="btn btn-primary" href="/board.html">＋ 新建平面画板</a>
+    <a class="btn" href="/board3d.html">＋ 新建立体画板</a>
+  </div>
+  <p class="note">所有文件仅保存在本机浏览器 localStorage 中，不上传任何服务器。</p>
+</main>
+<script src="/js/store.js?v=n1"></script>
+<script>
+(function () {
+  function fmt(ts) {
+    if (!ts) return '—';
+    var d = new Date(ts), p = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function render() {
+    var list = [];
+    try { list = Store.list(); } catch (e) {}
+    var box = document.getElementById('fileList');
+    box.innerHTML = '';
+    document.getElementById('stats').innerHTML =
+      '<div class="stat"><b>' + list.length + '</b><span>本机画板</span></div>';
+    document.getElementById('emptyState').hidden = list.length > 0;
+    list.forEach(function (f) {
+      var row = document.createElement('div'); row.className = 'file';
+      var main = document.createElement('div'); main.className = 'file-main';
+      var name = document.createElement('p'); name.className = 'file-name'; name.textContent = f.name || '未命名画板';
+      var meta = document.createElement('p'); meta.className = 'file-meta';
+      var tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = f.mode === '3d' ? '立体' : '平面';
+      meta.appendChild(tag); meta.appendChild(document.createTextNode('更新于 ' + fmt(f.updatedAt)));
+      main.append(name, meta);
+      var acts = document.createElement('div'); acts.className = 'file-actions';
+      var open = document.createElement('a'); open.className = 'btn btn-primary btn-sm'; open.textContent = '打开';
+      open.href = '/' + (f.mode === '3d' ? 'board3d.html' : 'board.html') + '?id=' + encodeURIComponent(f.id);
+      var exp = document.createElement('button'); exp.className = 'btn btn-sm'; exp.textContent = '导出';
+      exp.addEventListener('click', function () { Store.exportFile(f.id); });
+      var del = document.createElement('button'); del.className = 'btn btn-sm'; del.textContent = '删除';
+      del.addEventListener('click', function () {
+        if (confirm('删除「' + (f.name || '未命名画板') + '」？')) { Store.remove(f.id); render(); }
+      });
+      acts.append(open, exp, del); row.append(main, acts); box.appendChild(row);
+    });
+  }
+  render();
+})();
+</script>
+</body>
+</html>

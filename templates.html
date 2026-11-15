@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>资源库 · 智绘几何</title>
+<meta name="description" content="智绘几何 · 资源库">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=n1" />
+<link rel="stylesheet" href="/css/pages.css?v=n1" />
+</head>
+<body class="nf-page">
+<header class="site-nav">
+  <a class="site-brand" href="/" aria-label="智绘几何首页"><img class="site-logo" src="/favicon.svg?v=n1" alt="" /><span>智绘几何</span></a>
+  <nav class="site-links" aria-label="主导航">
+    <a href="/quickstart.html">快速入门</a>
+    <a href="/templates.html" class="active">资源库</a>
+    <a href="/files.html">我的画板</a>
+    <a href="/about.html">关于</a>
+    <a href="/generate.html?v=n1">AI 生成</a>
+  </nav>
+  <a class="back" href="/">← 返回首页</a>
+</header>
+<main>
+  <h1>资源库</h1>
+  <p class="sub">内置模板与案例，点「使用模板」直接打开画板。</p>
+  <div class="grid" id="tplGrid"></div>
+  <p class="note" id="tplEmpty" hidden>模板清单没能加载，请刷新页面重试。</p>
+</main>
+<script src="/js/templates.js?v=n1"></script>
+<script src="/js/store.js?v=n1"></script>
+<script>
+(function () {
+  var list = window.DAJIAO_TEMPLATES || [];
+  var grid = document.getElementById('tplGrid');
+  if (!list.length) { document.getElementById('tplEmpty').hidden = false; return; }
+  list.forEach(function (t) {
+    var card = document.createElement('div'); card.className = 'tpl';
+    var thumb = document.createElement('div'); thumb.className = 'tpl-thumb'; thumb.innerHTML = t.thumb || '';
+    var body = document.createElement('div'); body.className = 'tpl-body';
+    var cat = document.createElement('span'); cat.className = 'tpl-cat'; cat.textContent = t.category || '';
+    var h = document.createElement('h3'); h.className = 'tpl-title'; h.textContent = t.title || '';
+    var p = document.createElement('p'); p.className = 'tpl-desc'; p.textContent = t.desc || '';
+    var foot = document.createElement('div'); foot.className = 'tpl-foot';
+    var author = document.createElement('span'); author.className = 'tpl-author'; author.textContent = t.author || '';
+    var btn = document.createElement('button'); btn.className = 'btn btn-primary btn-sm'; btn.textContent = '使用模板';
+    btn.addEventListener('click', function () {
+      try {
+        var f = Store.create(t.title, '2d');
+        Store.saveContent(f.id, { name: t.title, commands: t.commands || [], moves: [] });
+        location.href = '/board.html?id=' + encodeURIComponent(f.id);
+      } catch (e) { alert('打开模板失败：' + (e && e.message ? e.message : e)); }
+    });
+    foot.append(author, btn); body.append(cat, h, p, foot); card.append(thumb, body); grid.appendChild(card);
+  });
+})();
+</script>
+</body>
+</html>
