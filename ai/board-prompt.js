@@ -1201,3 +1201,34 @@ export const BOARD3D_BATCH_PROMPT = `
   · 示例：{"op":"transform3d","ids":["ball","cone"],"scale":[1.5,1.5,1.5]}
 - 每个 id 的目标值由画板按当前真实状态计算并返回，不要自己估算或输出绝对值。
 - 补充铁律：批量只是 transform3d 的写法扩展，不是新命令；2D 的 transform / move / update / measure 等命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * ↓↓↓ 2026-11-16「独立自主 3D 画板」任务追加段落（D9：duplicate3d 复制对象）↓↓↓
+ *
+ * 协作铁律：上方全部内容（2D 主干 + 既有 3D 段 + 量测段 + 回注标注段 +
+ * transform 段 + 批量段）逐字未动，本段只追加、不覆盖、不删除。
+ * 既有 BOARD3D_PROMPT_OPS（7 条）/ BOARD3D_MEASURE_PROMPT_OPS（1 条）/
+ * BOARD3D_TRANSFORM_PROMPT_OPS（1 条）全部保持不变；新命令单独成组，
+ * 与 js/board3d-executor.js 的 BOARD3D_DUPLICATE_OPS 一一对应。
+ * 拼在文件最末尾同样是为了让 fitPrompt 短上下文裁剪时保留尾部。
+ * ============================================================ */
+
+/** 3D 扩展命令 op（2026-11-16 追加，与 js/board3d-executor.js 的 BOARD3D_DUPLICATE_OPS 一致） */
+export const BOARD3D_DUPLICATE_PROMPT_OPS = Object.freeze(['duplicate3d']);
+
+/** 3D 复制对象命令追加段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_DUPLICATE_PROMPT = `
+
+# 补充命令：duplicate3d 复制对象（仅本 3D 分支可用，2026-11-16 追加）
+- 作用：把一个**已经存在**的对象复制一份（或若干份）。用户说「复制这个球」「再摆一个一样的」「沿 X 轴排 3 个圆柱」时用它，不必自己重新 add3d 逐字段抄参数。
+- 格式：{"op":"duplicate3d","id":"ball","newId":"ball2","offset":[2,0,0]}
+  · id 必填，是要复制的源对象 id（必须已存在于当前画板对象列表，或本轮前面已 add3d）；
+  · newId 可选，新对象 id（省略时自动命名为 <id>_copy）；id 规则同其它命令，必须唯一；
+  · offset 可选，位置偏移 [dx,dy,dz]（默认 [0,0,0]），叠加到源对象的位置上；
+  · count 可选，克隆份数 1~32（默认 1）；count>1 时 offset 逐份累加形成等距阵列，新 id 自动加序号（<newId>1、<newId>2 …），无需逐份写 newId；
+  · 可选覆盖字段：pos（绝对位置，先覆盖再叠加 offset）/ rot / scale / color / opacity / params（只写要改的键，其余沿用源对象）。
+  · 示例：{"op":"duplicate3d","id":"cube","newId":"cube2","offset":[3,0,0]}
+  · 示例：{"op":"duplicate3d","id":"ball","count":4,"offset":[1.5,0,0]}（沿 X 排一排 4 个球）
+  · 示例：{"op":"duplicate3d","id":"coneA","newId":"coneB","offset":[0,0,2],"color":"#e11d48"}
+- 同一批命令里可以先 add3d 建好源对象再 duplicate3d；新对象由画板基于源对象当前状态生成，不要自己在提示里逐字段枚举复制。
+- 补充铁律：duplicate3d 是 3D 命令；2D 的 copy / clone / duplicate 等命令在本分支依旧不认识，不要输出。`;

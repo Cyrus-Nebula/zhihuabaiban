@@ -18,6 +18,7 @@
 
 import { resolveMeasure3D, measureToLabelSpec } from './board3d-measure.js';
 import { resolveTransform3D, resolveTransform3DBatch } from './board3d-transform.js';
+import { resolveDuplicate3D } from './board3d-duplicate.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -64,6 +65,17 @@ export const BOARD3D_ALL_OPS = Object.freeze([...BOARD3D_OPS, ...BOARD3D_MEASURE
 export const BOARD3D_TRANSFORM_OPS = Object.freeze(['transform3d']);
 export const BOARD3D_FULL_OPS = Object.freeze([
   ...BOARD3D_ALL_OPS, ...BOARD3D_TRANSFORM_OPS,
+]);
+
+/**
+ * 2026-11-16 D9 增量：复制对象命令 duplicate3d（语义在 js/board3d-duplicate.js）。
+ * 单独成组、不并入 BOARD3D_OPS / BOARD3D_ALL_OPS / BOARD3D_FULL_OPS —— 后三者是
+ * 共享文件协议一致性断言的历史契约（7 / 8 / 9 条），按协作铁律保持逐字不变。
+ */
+export const BOARD3D_DUPLICATE_OPS = Object.freeze(['duplicate3d']);
+/** 含全部扩展命令的完整集（10 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE_OPS = Object.freeze([
+  ...BOARD3D_FULL_OPS, ...BOARD3D_DUPLICATE_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -366,6 +378,34 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           results.push(okPatch === false
             ? { op, ok: false, id: r.id, error: '画板未找到该对象' }
             : { op, ok: true, id: r.id, fields: r.fields, patch: r.patch });
+          break;
+        }
+        case 'duplicate3d': {
+          // 2026-11-16 D9：从「当前」状态按源 id 读对象再克隆，
+          // 与 measure3d / transform3d 同口径：getState 缺失 / 抛错降级为空场景，整批不中断。
+          let dupState = {};
+          try { dupState = (a.getState ? a.getState() : {}) || {}; } catch (_) { dupState = {}; }
+          const r = resolveDuplicate3D(cmd, dupState);
+          if (!r.ok) {
+            results.push({ op, ok: false, error: r.error });
+            break;
+          }
+          const created = [];
+          const failed = [];
+          for (const item of r.items) {
+            // 目标 id 若已被本轮命令占用，跳过（不改已有对象）
+            if (known.has(item.id)) { failed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { failed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            created.push({ id: item.id, type: item.type, pos: item.pos });
+          }
+          results.push({
+            op, ok: failed.length === 0 && created.length > 0,
+            source: cmd.id, count: r.items.length, created,
+            ...(failed.length ? { failed } : {}),
+          });
           break;
         }
         default:

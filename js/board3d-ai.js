@@ -97,6 +97,12 @@ async function send() {
           appendLog('ai', `批量变换 ${a.id}：${bits}`);
         }
       }
+      // 2026-11-16 D9：duplicate3d 复制对象展示画板实际新建的 id 与数量。
+      for (const d of results) {
+        if (!d.ok || d.op !== 'duplicate3d' || !Array.isArray(d.created)) continue;
+        const ids = d.created.map((c) => c.id).join('、');
+        appendLog('ai', `已复制 ${d.created.length} 个对象：${ids}`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
