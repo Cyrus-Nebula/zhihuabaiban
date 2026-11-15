@@ -103,6 +103,13 @@ async function send() {
         const ids = d.created.map((c) => c.id).join('、');
         appendLog('ai', `已复制 ${d.created.length} 个对象：${ids}`);
       }
+      // 2026-11-16 D10：radial3d 环形阵列展示画板实际生成的份数、环绕轴与 id。
+      for (const r of results) {
+        if (!r.ok || r.op !== 'radial3d' || !Array.isArray(r.created)) continue;
+        const axis = r.meta && r.meta.axis ? r.meta.axis : '?';
+        const ids = r.created.map((c) => c.id).join('、');
+        appendLog('ai', `已绕 ${axis} 轴环形阵列 ${r.created.length} 个对象：${ids}`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

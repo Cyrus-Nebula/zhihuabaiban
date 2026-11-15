@@ -1232,3 +1232,37 @@ export const BOARD3D_DUPLICATE_PROMPT = `
   · 示例：{"op":"duplicate3d","id":"coneA","newId":"coneB","offset":[0,0,2],"color":"#e11d48"}
 - 同一批命令里可以先 add3d 建好源对象再 duplicate3d；新对象由画板基于源对象当前状态生成，不要自己在提示里逐字段枚举复制。
 - 补充铁律：duplicate3d 是 3D 命令；2D 的 copy / clone / duplicate 等命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * ↓↓↓ 2026-11-16「独立自主 3D 画板」任务追加段落（D10：radial3d 环形阵列）↓↓↓
+ *
+ * 协作铁律：上方全部内容（2D 主干 + 既有 3D 段 + 量测段 + 回注标注段 +
+ * transform 段 + 批量段 + duplicate 段）逐字未动，本段只追加、不覆盖、不删除。
+ * 既有全部 *_PROMPT_OPS 契约保持不变；新命令单独成组，与
+ * js/board3d-executor.js 的 BOARD3D_RADIAL_OPS 一一对应。
+ * 拼在文件最末尾同样是为了让 fitPrompt 短上下文裁剪时保留尾部。
+ * ============================================================ */
+
+/** 3D 扩展命令 op（2026-11-16 D10 追加，与 js/board3d-executor.js 的 BOARD3D_RADIAL_OPS 一致） */
+export const BOARD3D_RADIAL_PROMPT_OPS = Object.freeze(['radial3d']);
+
+/** 3D 环形阵列命令追加段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_RADIAL_PROMPT = `
+
+# 补充命令：radial3d 环形阵列（仅本 3D 分支可用，2026-11-16 追加）
+- 作用：把一个**已经存在**的对象绕某轴均匀复制成一圈。用户说「把柱子绕圆心摆一圈」「环形阵列 8 个球」「绕 Z 轴排一排（成环）」「做一个花瓣/风车/钟表刻度」时用它，不必自己逐个 add3d 算坐标。
+- 格式：{"op":"radial3d","id":"pillar","count":8,"center":[0,0,0],"axis":"y","radius":3}
+  · id 必填，源对象 id（必须已存在于当前画板对象列表，或本轮前面已 add3d）；
+  · count 可选，份数 1~32（默认 8），整份均分一圈、不含终点：count=8 即每 45° 一个，首末不重合；
+  · center 可选，阵列中心 [x,y,z]（默认 [0,0,0]）；
+  · axis 可选，环绕轴 'x' / 'y' / 'z'（默认 'y'）：绕 Y 在水平 XZ 平面成环，绕 Z 在 XY 平面成环，轴坐标沿用源对象高度；
+  · radius 可选，环半径（缺省取源对象到 center 的水平距离，源恰在轴上时回落 3）；
+  · startAngle 可选，起始角（度，默认 0）；sweep 可选，扫过总角度（度，默认 360，负数反向）；
+  · rotate 可选，布尔（默认 false）：true 时每个副本自身朝向随所在角度一起转，适合柱子/叶片朝向圆心外；
+  · newId 可选，单份时显式 id（批量时作为名称前缀，自动加序号 <newId>1、<newId>2 …）；
+  · 可选覆盖字段：color / opacity / scale / params（只写要改的键，其余沿用源对象；pos / rot 由阵列几何决定，不接受覆盖）。
+  · 示例：{"op":"radial3d","id":"pillar","count":8,"radius":3}
+  · 示例：{"op":"radial3d","id":"ball","count":12,"center":[0,2,0],"axis":"y","radius":4,"rotate":true}
+  · 示例：{"op":"radial3d","id":"hand","count":4,"axis":"z","startAngle":0,"sweep":360,"rotate":true,"color":"#e11d48"}
+- 同一批命令里可以先 add3d 建好源对象再 radial3d；副本由画板按当前场景真实几何生成，不要自己在提示里逐份算 cos/sin 坐标。
+- 补充铁律：radial3d 是 3D 命令；2D 的 polarArray / circularArray / array 等命令在本分支依旧不认识，不要输出。`;

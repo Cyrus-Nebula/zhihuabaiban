@@ -166,3 +166,182 @@ export function resolveDuplicate3D(cmd, state) {
 
   return { ok: true, items };
 }
+
+/* ============================================================ *
+ * 2026-11-16 D10 追加段：radial3d 环形阵列（独立自主 3D 画板任务）
+ * 协作铁律：本段只追加，上方 resolveDuplicate3D 及全部工具函数逐字未动。
+ * 作用：把「把柱子绕圆心摆一圈 / 环形阵列 8 个球 / 绕 Z 轴转着排」这类意图，
+ * 从当前 state 按源 id 读出一个对象，绕指定轴、中心、半径、角度均匀克隆成环，
+ * 产出可直接交给 board3dApi.add() 的新对象规格。纯函数、只读、脏输入原子拒绝。
+ * ============================================================ */
+
+/** 一条 radial3d 命令最多生成的份数（与 duplicate3d 同口径，防刷屏） */
+export const RADIAL3D_COPIES_MAX = 32;
+
+/** 阵列角度默认扫过整圈（度）与缺省半径 */
+const RADIAL_DEFAULT_SWEEP = 360;
+const RADIAL_DEFAULT_RADIUS = 3;
+
+/** 角度钳制上限（度，允许负角与多圈但拒绝离谱值） */
+const ANGLE_LIMIT = 1e6;
+
+/** 轴向白名单：绕哪个轴排环 */
+const RADIAL_AXES = Object.freeze(['x', 'y', 'z']);
+
+/**
+ * 解析一条 radial3d 命令（只读）。
+ *
+ * @param {Object} cmd 形如：
+ *   {"op":"radial3d","id":"pillar","count":8,"center":[0,0,0],"axis":"y","radius":3,"startAngle":0,"sweep":360,"rotate":true}
+ *   - id         必填，源对象 id（场景中已存在）
+ *   - count      份数 1~32（默认 8）；整份均分，不含终点，360° 时首末不重合
+ *   - center     阵列中心 [x,y,z]（默认 [0,0,0]，元素钳制 ±COORD_LIMIT）
+ *   - axis       环绕轴 'x'|'y'|'z'（默认 'y'）；垂直平面上的坐标按角度旋转，轴上坐标沿源对象
+ *   - radius     环半径（默认：源对象在垂直平面到 center 的距离，为 0 时回落 3），钳制 [0,COORD_LIMIT]
+ *   - startAngle 起始角（度，默认 0，钳制 ±ANGLE_LIMIT）
+ *   - sweep      扫过总角度（度，默认 360，钳制 ±ANGLE_LIMIT）；可为负表示反向
+ *   - rotate     对象自身是否随阵列绕轴自转朝向（布尔，默认 false）
+ *   - newId      可选，单份显式 id；批量时作为名称前缀（合法性同 duplicate3d）
+ *   - 可选覆盖：color / opacity / scale / params（pos / rot 由阵列几何决定，不接受覆盖）
+ * @param {Object} state 形如 { objects: [...] }，只读
+ * @returns {{ok:boolean, items?:Array, meta?:Object, error?:string}}
+ */
+export function resolveRadial3D(cmd, state) {
+  if (!cmd || typeof cmd !== 'object') return { ok: false, error: '命令为空' };
+  const srcId = cmd.id;
+  if (!isId(srcId)) return { ok: false, error: '源对象 id 非法' };
+
+  const objs = state && Array.isArray(state.objects) ? state.objects : [];
+  const src = objs.find((o) => o && o.id === srcId);
+  if (!src) return { ok: false, error: `要阵列的源对象 id 不存在：${String(srcId)}` };
+  if (!src.type) return { ok: false, error: '源对象缺少 type，无法阵列' };
+
+  const used = new Set(objs.map((o) => o && o.id).filter(Boolean));
+
+  // count：默认 8，整数，钳制 [1, RADIAL3D_COPIES_MAX]
+  let count = 8;
+  if (cmd.count !== undefined) {
+    const n = num(cmd.count);
+    if (n === null) return { ok: false, error: 'count 必须是数字' };
+    count = Math.min(RADIAL3D_COPIES_MAX, Math.max(1, Math.round(n)));
+  }
+
+  // center：三元组钳制
+  const center = vec3Clamped(cmd.center, [0, 0, 0]);
+
+  // axis：白名单，非法即拒绝（不静默改写）
+  const axis = cmd.axis === undefined ? 'y' : cmd.axis;
+  if (!RADIAL_AXES.includes(axis)) return { ok: false, error: `axis 非法，只能是 x/y/z：${String(axis)}` };
+
+  // startAngle / sweep：度，严格数值化并钳制
+  let startAngle = 0;
+  if (cmd.startAngle !== undefined) {
+    const a = num(cmd.startAngle);
+    if (a === null) return { ok: false, error: 'startAngle 必须是数字' };
+    startAngle = Math.min(ANGLE_LIMIT, Math.max(-ANGLE_LIMIT, a));
+  }
+  let sweep = RADIAL_DEFAULT_SWEEP;
+  if (cmd.sweep !== undefined) {
+    const s = num(cmd.sweep);
+    if (s === null) return { ok: false, error: 'sweep 必须是数字' };
+    sweep = Math.min(ANGLE_LIMIT, Math.max(-ANGLE_LIMIT, s));
+  }
+
+  // rotate：布尔白名单（非法拒绝，不静默当 false）
+  let rotate = false;
+  if (cmd.rotate !== undefined) {
+    if (typeof cmd.rotate !== 'boolean') return { ok: false, error: 'rotate 必须是布尔值' };
+    rotate = cmd.rotate;
+  }
+
+  // newId 校验（与 duplicate3d 同口径）
+  const hasExplicitNewId = cmd.newId !== undefined;
+  if (hasExplicitNewId && !isId(cmd.newId)) {
+    return { ok: false, error: `newId 非法：${String(cmd.newId)}` };
+  }
+  if (hasExplicitNewId && count === 1 && used.has(cmd.newId)) {
+    return { ok: false, error: `目标 id 已存在：${cmd.newId}` };
+  }
+
+  const basePos = Array.isArray(src.pos) ? vec3Clamped(src.pos, [0, 0, 0]) : [0, 0, 0];
+  const baseRot = Array.isArray(src.rot) ? vec3Clamped(src.rot, [0, 0, 0]) : [0, 0, 0];
+  const baseScale = Array.isArray(src.scale) ? scale3(src.scale) : [1, 1, 1];
+  const srcParams = src.p && typeof src.p === 'object' && !Array.isArray(src.p) ? src.p : {};
+
+  // radius：显式则严格数值化并钳制 [0,COORD_LIMIT]；缺省取源对象在垂直平面到 center 的距离，
+  // 距离为 0（源在轴上）时回落默认半径，避免整圈对象重叠在轴心。
+  const ai = axis === 'x' ? 0 : axis === 'y' ? 1 : 2;
+  const planeIdx = [0, 1, 2].filter((k) => k !== ai);
+  let radius;
+  if (cmd.radius !== undefined) {
+    const r = num(cmd.radius);
+    if (r === null) return { ok: false, error: 'radius 必须是数字' };
+    radius = Math.min(COORD_LIMIT, Math.max(0, r));
+  } else {
+    const dr = Math.hypot(basePos[planeIdx[0]] - center[planeIdx[0]], basePos[planeIdx[1]] - center[planeIdx[1]]);
+    radius = Math.min(COORD_LIMIT, dr === 0 ? RADIAL_DEFAULT_RADIUS : dr);
+  }
+
+  // 可选覆盖字段（复用与 duplicate3d 完全一致的解析口径）
+  const overrideScale = cmd.scale !== undefined ? scale3(cmd.scale) : baseScale;
+  const overrideColor = cmd.color !== undefined ? color(cmd.color, src.color || '#4f6bed') : (src.color || '#4f6bed');
+  const overrideOpacity = cmd.opacity !== undefined ? opacity(cmd.opacity) : (num(src.opacity) === null ? 1 : opacity(src.opacity));
+  const p = { ...srcParams };
+  if (cmd.params && typeof cmd.params === 'object' && !Array.isArray(cmd.params)) {
+    for (const k of Object.keys(cmd.params)) {
+      const n = num(cmd.params[k]);
+      if (n !== null) p[k] = n;
+    }
+  }
+
+  const baseName = hasExplicitNewId ? cmd.newId : `${srcId}_rad`;
+  const items = [];
+  const angles = [];
+  for (let i = 0; i < count; i++) {
+    let id;
+    if (count === 1) {
+      id = baseName;
+    } else {
+      id = `${baseName}${i + 1}`.slice(0, 64);
+    }
+    if (used.has(id)) {
+      let k = 2;
+      let cand = `${id}_${k}`.slice(0, 64);
+      while (used.has(cand)) { cand = `${id}_${++k}`.slice(0, 64); }
+      id = cand;
+    }
+    used.add(id);
+
+    // 整份均分：第 i 份角度 = startAngle + sweep * i / count（不含终点，360° 首末不重合）
+    const deg = startAngle + (sweep * i) / count;
+    const rad = (deg * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const pos = basePos.slice();
+    pos[planeIdx[0]] = Math.min(COORD_LIMIT, Math.max(-COORD_LIMIT, center[planeIdx[0]] + radius * cos));
+    pos[planeIdx[1]] = Math.min(COORD_LIMIT, Math.max(-COORD_LIMIT, center[planeIdx[1]] + radius * sin));
+
+    // rot：默认沿用源朝向；rotate=true 时把该份角度叠加到环绕轴分量，使对象朝向随阵列转动
+    const rot = baseRot.slice();
+    if (rotate) rot[ai] = Math.min(ANGLE_LIMIT, Math.max(-ANGLE_LIMIT, rot[ai] + deg));
+
+    items.push({
+      id,
+      type: src.type,
+      text: typeof src.text === 'string' ? src.text : '',
+      color: overrideColor,
+      opacity: overrideOpacity,
+      pos,
+      rot,
+      scale: overrideScale.slice(),
+      p: { ...p },
+    });
+    angles.push(deg);
+  }
+
+  return {
+    ok: true,
+    items,
+    meta: { source: srcId, count, center, axis, radius, startAngle, sweep, rotate, angles },
+  };
+}
