@@ -1,0 +1,29 @@
+/* 首页小屏导航抽屉可用性补丁
+ * 现象：style.css 的 .site-links 是 position:fixed; inset:0; justify-content:center 的全屏菜单，
+ * 链接被垂直居中后落在视口上方（rect.y 为负），展开菜单也点不到。
+ * 修法：改为从顶栏下方开始排布 + 可滚动 + 提高层级，保证每个导航项都在视口内可点。
+ * 只作用于 body.landing（首页），不影响画板 / 独立页面。
+ */
+@media (max-width: 900px) {
+  body.landing .site-links {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 60 !important;
+    justify-content: flex-start !important;
+    align-items: stretch !important;
+    padding: 76px 20px 24px !important;
+    gap: 8px !important;
+    overflow-y: auto !important;
+    background: rgba(255, 255, 255, .97) !important;
+  }
+  body.landing .site-links.open {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+  body.landing .site-links a {
+    opacity: 1 !important;
+    transform: none !important;
+    width: 100% !important;
+    flex: none !important;
+  }
+}
