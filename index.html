@@ -20,6 +20,14 @@
   <link rel="stylesheet" href="css/redesign.css" />
   <link rel="stylesheet" href="/css/nav-fix.css?v=n1" />
   <link rel="stylesheet" href="/css/hero-center.css?v=n2" />
+  <style>
+    /* 中文站名小字、英文站名大字；高亮保留在英文（下方）槽位 */
+    html.ui-v3 body.landing .hero.hero-centered .hero-title .hero-zh {
+      font-size: .46em;
+      font-weight: 600;
+      letter-spacing: .1em;
+    }
+  </style>
 </head>
 <body class="landing">
   <a class="skip-link" href="#main">跳到主要内容</a>
@@ -60,7 +68,7 @@
       <span class="deco deco-dot"></span>
     </div>
     <div class="hero-copy">
-      <h1 class="hero-title">智绘几何<br><span class="hl">Geora</span></h1>
+      <h1 class="hero-title"><span class="hero-zh">智绘几何</span><br><span class="hl">Geora</span></h1>
       <p class="hero-sub">说一句话让 AI 画，或用 16 种工具自己作。拖动顶点，边长和角度实时变；画完直接导出试卷图、TikZ 或离线课件。</p>
 
       <div class="hero-cta">
