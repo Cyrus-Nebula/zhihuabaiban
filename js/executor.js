@@ -341,6 +341,8 @@ export function intersectActiveLabel(cands, cmd) {
  *   ellipse   · 第一定义 {foci:[F1,F2], sum:2a} 或标准式 {center:[h,k], a, b(,rotate)}
  *   hyperbola · 第一定义 {foci:[F1,F2], diff:2a} 或标准式 {center:[h,k], a, b(,rotate)}
  *   parabola  · 第二定义 {focus:F, directrix:直线id} 或标准式 {vertex:[h,k], p(,rotate)}
+ *   通用第二定义 {focus:F, directrix:直线id, eccentricity:e}（别名 ecc/e）：|PF| = e·dist(P,准线)，
+ *     e<1 椭圆 / e=1 抛物线 / e>1 双曲线统一换算（对标大角几何符号计算，本轮新增）。
  * 双曲线两支之间返回 [NaN, NaN] 断开（JXG curve 遇 NaN 自动断开，与 function 的 ymin/ymax 裁剪同理）。
  * refs.point(ref) / refs.line(ref) 由 createExecutor 注入；本函数不依赖 board，可独立单测。
  */
@@ -366,6 +368,74 @@ export function conicSpec(cmd, refs) {
     C[0] + cu * u[0] + cv * v[0],
     C[1] + cu * u[1] + cv * v[1],
   ];
+
+  // 第二定义通用形式（本轮新增）：|PF| = e · dist(P, 准线)，e 为离心率。
+  // e<1 椭圆 / e=1 抛物线 / e>1 双曲线——AI 只给「焦点 + 准线 + 离心率」，执行器按统一定义
+  // 换算中心/a/b/c 并采样（对标大角几何符号计算）。别名：eccentricity / ecc / e。
+  // 放在第一定义/标准式之前：只要同时给了 focus + directrix + eccentricity 就走本分支。
+  const eccRaw = cmd.eccentricity != null ? cmd.eccentricity
+    : (cmd.ecc != null ? cmd.ecc : cmd.e);
+  if (cmd.focus != null && cmd.directrix != null && eccRaw != null) {
+    const e = num(eccRaw, NaN);
+    if (!Number.isFinite(e) || e <= 0) throw new Error('conic.eccentricity 必须是正数');
+    const F = refs.point(cmd.focus);
+    const seg = refs.line(cmd.directrix);   // [[x1,y1],[x2,y2]]
+    const A = seg[0], B = seg[1];
+    const dx = B[0] - A[0], dy = B[1] - A[1];
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-9) throw new Error('conic.directrix 准线的两个端点不能重合');
+    const t0 = [dx / len, dy / len];
+    const n0 = [-t0[1], t0[0]];
+    const signed = (F[0] - A[0]) * n0[0] + (F[1] - A[1]) * n0[1];
+    const d0 = Math.abs(signed);            // 焦点到准线距离
+    if (d0 < 1e-9) throw new Error('conic.focus 不能落在准线上');
+    const n = signed >= 0 ? n0 : [-n0[0], -n0[1]];   // 从准线指向焦点
+    const u = n, v = t0;
+    const focusTxt = '焦点(' + fmt(F[0]) + ',' + fmt(F[1]) + ')';
+    if (Math.abs(e - 1) < 1e-9) {
+      // e=1：抛物线，|PF|=dist 的退化情形，与 focus+directrix 采样逐字节一致
+      const p = d0 / 2;
+      const V = [F[0] - p * u[0], F[1] - p * u[1]];
+      const VMAX = Math.sqrt(4 * p * 9);
+      const at = (t) => {
+        const s = (2 * t - 1) * VMAX;
+        return combine(V, (s * s) / (4 * p), s, u, v);
+      };
+      return { type: 'parabola', at, tMin: 0, tMax: 1,
+        expr: 'conic(focus+directrix+e): e=1, ' + focusTxt + ', p=' + fmt(p)
+          + ', 顶点(' + fmt(V[0]) + ',' + fmt(V[1]) + ')',
+        meta: { definition: 'focus+directrix+eccentricity', eccentricity: 1,
+          vertex: V, p, axis: u } };
+    }
+    // 统一定义：以焦点为原点、u 轴从准线指向焦点，记中心沿 u 偏移 sC = e²·d0/(1−e²)，
+    //   a = e·d0/|1−e²|，b = e·d0/√|1−e²|，c = |sC|；e<1 中心在焦点+u 侧，e>1 在 −u 侧。
+    const denom = 1 - e * e;
+    const sC = e * e * d0 / denom;
+    const a = e * d0 / Math.abs(denom);
+    const b = e * d0 / Math.sqrt(Math.abs(denom));
+    const c = Math.abs(sC);
+    const C = [F[0] + sC * u[0], F[1] + sC * u[1]];
+    const finalType = e < 1 ? 'ellipse' : 'hyperbola';
+    const S = 2.4, GAP = 0.06;   // 与既有双曲线分支同参数，NaN 断开带一致
+    const at = (t) => {
+      if (finalType === 'ellipse') {
+        const th = 2 * Math.PI * t;
+        return combine(C, a * Math.cos(th), b * Math.sin(th), u, v);
+      }
+      if (Math.abs(t - 0.5) < GAP / 2) return [NaN, NaN];
+      const right = t < 0.5;
+      const span = 0.5 - GAP / 2;
+      const q = right ? t / span : (t - 0.5 - GAP / 2) / span;
+      const s = (2 * q - 1) * S;
+      return combine(C, (right ? 1 : -1) * a * Math.cosh(s), b * Math.sinh(s), u, v);
+    };
+    return { type: finalType, at, tMin: 0, tMax: 1,
+      expr: 'conic(focus+directrix+e): ' + finalType + ', e=' + fmt(e) + ', ' + focusTxt
+        + ', 中心(' + fmt(C[0]) + ',' + fmt(C[1]) + '), a=' + fmt(a) + ', b=' + fmt(b)
+        + ', c=' + fmt(c),
+      meta: { definition: 'focus+directrix+eccentricity', eccentricity: e,
+        center: C, a, b, c, axis: u } };
+  }
 
   if (type === 'ellipse' || type === 'hyperbola') {
     let C, a, b, u, v, c = 0, definition, expr;

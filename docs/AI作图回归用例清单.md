@@ -269,6 +269,26 @@
 > `inspect`/`measure`/`move`/`style` 命令结果与 `describe()` 输出与改动前**逐项、逐字节一致**。
 > 真实 JSXGraph `curve` 渲染与浏览器侧目视确认仍需带浏览器环境（见「已知限制」）。
 
+## 圆锥曲线通用第二定义（焦点+准线+离心率 e，本轮新增 2026-11-15 第三轮）
+
+> 落实连续多轮 TODO 交接项①「第二定义通用离心率形式」。此前 `conic` 的第二定义只覆盖抛物线
+> （焦点 + 准线，隐含 e=1），要画"给定离心率的椭圆/双曲线"只能手算 a/b/c 再走第一定义或标准式。
+> 本轮 `conicSpec()` 新增通用分支 `{focus, directrix, eccentricity}`（别名 `ecc`/`e`），按统一定义
+> `|PF| = e·dist(P,准线)` 换算中心/a/b/c，e<1 椭圆 / e=1 抛物线 / e>1 双曲线一条命令覆盖，
+> 类型可省略由 e 自动决定。配套 `ai/board-prompt.js` 命令清单 +「圆锥曲线」小节 + 例25，
+> `js/executor.js` 的 `conicSpec` eccentricity 分支。纯 2D 增量，3D 分支 / `editor.html` / `appId` 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 62 | 通用第二定义·椭圆：焦点 F(1,0)、准线 x=4、e=0.5 | `point` F/D1/D2 → `line` d through:[D1,D2] → `conic` cE focus:F directrix:d eccentricity:0.5（type 省略→椭圆，中心(0,0)、a=2、b=√3）→ `point` P(2,0)/T(4,0) → `verify` distance(P,F)=1、`verify` distance(P,T)=2（0.5×2=1=\|PF\|） | ✅ | e<1→椭圆由 e 自动判、type 可省略；焦点/准线先建后引用；e 写正数不写表达式；verify 期望写算好的数字（1/2）；别手算 a/b/c 拼两条 `function`；见 `ai/board-prompt.js` 例25 |
+| 63 | 通用第二定义·双曲线与抛物线（同焦点准线、不同 e） | 沿用例 62 的 F/d → `conic` cH focus:F directrix:d ecc:2（别名 ecc，e>1→双曲线，两支自动断开）→ `conic` cP focus:F directrix:d e:1（别名 e，e=1→抛物线，与旧 focus+directrix 逐点一致） | ✅ | eccentricity/ecc/e 三写法等价、必须为正；双曲线两支由执行器 NaN 断开别拆两条；e=1 结果与旧 `focus+directrix` 分支逐字节一致（415 项无头回归含此项） |
+| 64 | 离心率分支的非法参数校验与状态回读 | `conic` e≤0 / e 非数 → 抛错不注册；焦点落准线上、准线两端点重合 → 抛错不注册；合法 e=0.5 的 `inspect` id:cE → 回 `conic:ellipse@focus+directrix+eccentricity,中心(0,0),a=2,b=1.732` | ✅ | e 必须是正数（0/负/非数一律拒绝）；焦点不能在准线上、准线端点不能重合；`__aiConic.meta` 携带 definition/eccentricity/中心/a/b/c 供内部继续构造，`elementSummary` 回读中心/a/b（与既有 conic 摘要格式一致，不额外回 c/e）；倾斜准线同样按统一定义换算（无头回归已含 x+y=3 倾斜用例） |
+
+> 状态 ✅：`conicSpec` eccentricity 分支已用无头桩回归 **415/415** 全通过：e<1 椭圆（含倾斜准线）、
+> e=1 抛物线（与旧 `focus+directrix` 采样逐点一致）、e>1 双曲线（左右两支齐全、NaN 断点）、
+> 三种别名、`__aiConic.meta` 回读、非法参数抛错，以及旧 `foci+sum` / `foci+diff` / 标准式分支
+> 与改动前逐字节一致。真实 JSXGraph `curve` 渲染仍需带浏览器环境目视确认（见「已知限制」）。
+
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
   JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在
