@@ -5,14 +5,14 @@
  *    注册登录 -> 创建应用 -> 复制生成的 appId，填到下面。
  *    本地测试把 localhost 加进控制台白名单；部署后把正式域名加进去。
  *
- * 2. aiEndpoint：我们自己的免费 AI 后端地址（默认同域 /api/ai/run，
+ * 2. aiEndpoint：我们自己的 AI 后端地址（默认同域 /api/ai/run，
  *    由 Cloudflare Pages Functions 提供，LLM Key 只存在服务端环境变量里）。
  *    - 纯本地自用：运行 server/local-proxy.mjs，改成
  *      'http://localhost:8787/api/ai/run'
  *
- * 3. AI 用的是免费 LLM（默认智谱 GLM-4.7-Flash，可用 Gemini 等替换），
+ * 3. AI 用的是智谱 GLM（默认 GLM-4.7-Flash，可用 Gemini 等替换），
  *    在部署环境变量里配 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL，
- *    详见 README「AI 免费配置」。不需要大角几何的 API Key，不产生任何费用。
+ *    详见 README「AI 配置」。不需要大角几何的 API Key，不产生任何费用。
  *
  * 4. generateEndpoint：生成模型（CogView 文生图 / CogVideoX 文生视频）入口，
  *    对应 /generate 页面。与作图链路共用同一个 LLM_API_KEY，但走独立端点。

@@ -115,8 +115,8 @@ async function boot() {
     }, 1000);
   });
 
-  // ---------- AI 对话：转发到我们自己的免费 AI 后端 ----------
-  // 后端用免费 LLM（默认 GLM-4.7-Flash，顶栏可切换）驱动画板，LLM Key 只在服务端，
+  // ---------- AI 对话：转发到我们自己的 AI 后端 ----------
+  // 后端用智谱 GLM（默认 GLM-4.7-Flash，顶栏可切换）驱动画板，LLM Key 只在服务端，
   // 返回的 SSE 流已被翻译成编辑器认识的标准事件，直接交给 SDK 渲染。
   editor.on('aiRequest', async ({ payload, signal }) => {
     aiStatus.hidden = false;

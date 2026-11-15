@@ -108,7 +108,7 @@
           users.forEach((u) => {
             const tr = document.createElement('tr');
             const rolePill = u.role === 'admin' ? '<span class="pill admin">管理员</span>' : '<span class="pill user">用户</span>';
-            const memPill = u.membership === 'lifetime' ? '<span class="pill vip">长期会员</span>' : '<span class="pill free">免费</span>';
+            const memPill = u.membership === 'lifetime' ? '<span class="pill vip">长期会员</span>' : '<span class="pill free">普通用户</span>';
             tr.innerHTML = `<td>${u.email || ''}</td><td>${rolePill}</td><td>${memPill}</td><td>${fmtTs(u.created_at)}</td>`;
             tb.appendChild(tr);
           });

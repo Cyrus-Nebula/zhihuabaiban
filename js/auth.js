@@ -510,8 +510,8 @@ window.Auth = (function () {
         s.innerHTML = '<span class="mb-vip">您已是长期会员</span>';
         if (state.user) state.user.membership = 'lifetime';
         renderVipBadge();
-      } else s.textContent = '当前为免费用户';
-    } catch { s.textContent = '当前为免费用户'; }
+      } else s.textContent = '当前为普通用户';
+    } catch { s.textContent = '当前为普通用户'; }
   }
 
   /* ---------- 导航登录态 ---------- */

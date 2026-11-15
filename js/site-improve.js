@@ -255,7 +255,7 @@
         if (info) opt.textContent = info.short;      // 隐藏 250414 这类日期版本号
       });
 
-      // 首页在输入条下方加一行免费档说明；画板页 ai-head 空间紧张，不放说明
+      // 首页在输入条下方加一行模型说明；画板页 ai-head 空间紧张，不放说明
       var box = sel.parentNode;
       if (!isHome || !box || box.querySelector('.si-model-note')) return;
       var note = document.createElement('span');
@@ -265,7 +265,7 @@
         var info = MODEL_INFO[sel.value];
         note.textContent = '';
         var b = document.createElement('b');
-        b.textContent = '智谱普惠免费档 · 全部免费';
+        b.textContent = 'AI 作图模型';
         note.appendChild(b);
         note.appendChild(document.createTextNode('　' + (info ? info.desc : '')));
       }
@@ -332,7 +332,7 @@
     var card = document.querySelector('#about .about-card');
     if (card) {
       card.innerHTML =
-        '<p class="si-about-lead">智绘几何是一个<strong>开源免费</strong>的在线动态几何画板，' +
+        '<p class="si-about-lead">智绘几何是一个<strong>开源</strong>的在线动态几何画板，' +
           '面向学生与教师：用一句话让 AI 画出可拖拽的图形，或用 14 种工具手动作图，拖动顶点验证定理与猜想。</p>' +
         '<ul class="si-about-list">' +
           '<li>平面画板：点、线、圆、多边形、函数曲线，几何关系自动保持</li>' +
@@ -344,11 +344,11 @@
           '<a href="https://github.com/Cyrus-Nebula/zhihuabaiban/issues" target="_blank" rel="noopener">GitHub Issues</a>' +
           '　·　<a href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">源码（MIT）</a>' +
           '　·　致谢 <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a>（LGPL）、' +
-          '智谱 GLM 普惠免费档、<a href="https://dajiaoai.com" target="_blank" rel="noopener">大角几何</a> SDK（Apache-2.0）</p>';
+          '智谱 GLM、<a href="https://dajiaoai.com" target="_blank" rel="noopener">大角几何</a> SDK（Apache-2.0）</p>';
     }
     var footer = document.querySelector('.site-footer');
     if (footer) {
-      footer.innerHTML = '<p>© 2026 智绘几何 · 开源 · 免费 · ' +
+      footer.innerHTML = '<p>© 2026 智绘几何 · 开源 · ' +
         '<a href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码（MIT）</a>' +
         '　·　本站不收集任何个人数据</p>';
     }

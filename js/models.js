@@ -1,5 +1,5 @@
 /**
- * 前端免费模型清单（经典脚本，挂 window.DAJIAO_MODELS）
+ * 前端 AI 模型清单（经典脚本，挂 window.DAJIAO_MODELS）
  * 与 ai/models.js（后端白名单）保持一致，改一边记得同步另一边。
  *
  * vision: true 的模型才显示「📷 图片」上传按钮（看图复原几何图形）。
