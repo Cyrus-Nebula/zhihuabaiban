@@ -141,6 +141,8 @@
 - [下一步·待办] ① `inspect` 支持带 `x` 直接查函数值 / 两点距离等派生量；② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数；⑤ 继续补易错图形（内/外接多边形、圆锥曲线第二定义、相似/位似变换——切线已补）。
 - [本轮已完成 2026-11-14] 相似/位似变换协议（落实待办⑤ 的「相似/位似变换」缺口）：给 2D `transform` op 新增 `type=scale`（位似比 k + center，圆/多边形半径随 |k| 缩放）。`js/executor.js` 的 `transformFn` 新增 scale 分支、transform 执行分支对圆/多边形半径乘 |k|、头部协议注释登记；`ai/board-prompt.js` 在 transform 命令清单登记 scale 并新增 例19 few-shot（含 `verify` 核对位似比），顺手修了 例5 的重复注释行。只追加 2D 作图主干逻辑，未碰 3D 分支 / `editor.html` / 另一任务负责的文件。回归用例见 53。下一步：内/外接多边形、圆锥曲线第二定义（待办⑤ 余下缺口）、inspect 带 x 查派生量、自检状态条固定徽标、残差改善量收敛。
 
+- [本轮已完成 2026-11-15 第二轮] `conic` 原生圆锥曲线命令（落实三处 TODO 一致的头号待办「圆锥曲线 / conic 协议」）：`js/executor.js` 新增模块级纯函数 `conicSpec()` + `conic` 执行分支（把第一定义 `foci+sum` / `foci+diff`、第二定义 `focus+directrix`、标准式 `center+a+b` / `vertex+p` 统一换算成参数曲线，双曲线两支以 NaN 断开）+ `elementSummary` 的 `__aiConic` 数值摘要；`ai/board-prompt.js` 仅追加 2D 主干（命令清单登记、小节、例23/例24），3D 段零改动。见用例 59~61。下一步：① 第二定义通用离心率形式（focus+directrix+eccentricity 覆盖 e<1/=1/>1）；② 自检状态条固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后回画 `probeVerify` 最终 ✔ 读数；⑤ 其它易错图形（旋转相似、弓形面积阴影、函数图像对称演示）。
+
 ## 易错图形补充：中位线 / 扇形弓形 / 函数图像平移（本轮新增 2026-11-13）
 
 > 落实上一轮 TODO 交接项⑤：补「易错图形 few-shot」覆盖缺口。这些图形都能用协议已有命令
@@ -245,6 +247,28 @@
 | 57 | △ABC（A(0,0)B(6,0)C(2,4)）作相似比 1/2 的相似三角形（平行线截取法，不用位似中心） | `point` A/B/C → `polygon` tri → `midpoint` D of:[A,B]（D(3,0)，AD/AB=1/2）→ `line` lBC through:[B,C] → `parallel` lDE of:lBC through:D → `line` lAC through:[A,C] → `intersect` E of:[lDE,lAC] → `polygon` tri2 [A,D,E]；`verify` parallel(D,E,B,C)=0、`verify` online(D,A,B)=0、`verify` online(E,A,C)=0、`verify` distance(A,D)=3、`verify` distance(D,E)=2.828 tol:0.05 | ⬜ | 相似≠全等：小三角形必须比原三角形小，相似比由分点 D 位置决定（取中点=1/2）；用平行线法靠 DE∥BC 自动保证 AA 相似，别逐点手算缩放坐标；若给定位似中心改用 例19 的 transform type=scale；见 `ai/board-prompt.js` 例22 |
 | 58 | 相似三角形自检：证明相似并核相似比 | 在用例 57 命令之后追加 `verify` kind:parallel of:[D,E,B,C] expect:0（DE∥BC 是相似核心条件）、`verify` kind:online of:[D,A,B]/[E,A,C] expect:0（D/E 分别在 AB/AC 上）、`verify` kind:distance of:[A,D] expect:3 与 of:[D,E] expect:2.828（核 AD=½AB、DE=½BC） | ⬜ | 关系断言 parallel/online 残差夹容差内即 pass:true，比"量两组对应角相等"更直接；distance 期望用算出数字（AD=3、DE=√8≈2.828），不要写表达式；pass:false 触发自动修正轮 |
 
+## 圆锥曲线（conic 原生命令，本轮新增 2026-11-15 第二轮）
+
+> 落实三处 TODO 一致的头号待办「圆锥曲线 / conic 协议」。此前画椭圆 / 双曲线 / 抛物线只能让 AI
+> 手算 a,b,c 再拼两条 `function`（定义域截断、上下半支拼接、焦点方向都易错），或逐点插值猜坐标。
+> 本轮 `js/executor.js` 新增纯函数 `conicSpec()` 与 `conic` 执行分支，把数学定义统一换算成参数曲线
+> （双曲线两支以 NaN 断开）；`__aiConic` 让 `describe()` / `inspect` 回读类型与 a/b/p/中心。
+> 配套 `ai/board-prompt.js` 命令清单 +「圆锥曲线」小节 + 例23 / 例24 few-shot。纯 2D 增量，
+> 3D 分支 / `editor.html` / `appId` / `js/board.js` 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 59 | 椭圆第一定义：焦点 F1(-3,0)、F2(3,0)，点到两焦点距离之和 = 10 | `point` F1/F2 → `conic` e1 type:ellipse foci:[F1,F2] sum:10（执行器求 a=5,c=3,b=4）→ `point` P(5,0) → `style` e1 → `verify` distance(F1,F2)=6、`verify` distance(P,F1)=8、`verify` distance(P,F2)=2（8+2=10=sum） | ✅ | sum 是距离之和 =2a（不是 a），必须 sum > 焦距；foci 用已建点 id（先创建后引用），sum 写数字不写表达式；别手算 a/b/c 拼两条 `function`；焦点倾斜时执行器自动旋转，别自己算角度；见 `ai/board-prompt.js` 例23 |
+| 60 | 抛物线第二定义：焦点 F(2,0)、准线 x=-2 | `point` F/D1(-2,-5)/D2(-2,5) → `line` d through:[D1,D2] → `conic` p1 type:parabola focus:F directrix:d（顶点(0,0)、p=2、y²=8x）→ `point` Q(2,4) → `verify` distance(Q,F)=4（= Q 到准线距离）、`verify` evaluate(8*x, x=2)=16 | ✅ | directrix 必须是已定义的 `line`/`segment` id，不能裸坐标；开口自动朝焦点，不用写方向；别手算 p 拼 y²=8x；见 例24 |
+| 61 | 双曲线标准式、参数校验与状态回读 | `conic` h1 type:hyperbola center:[0,0] a:3 b:2（x²/9−y²/4=1，两支自动断开）→ `verify` evaluate("4*(x^2/9-1)", x=5)=7.111 tol:0.01；`conic` e2 type:ellipse center:[0,0] a:5 b:3 rotate:30；`inspect` id:h1 → 回 `conic:hyperbola@standard,中心(0,0),a=3,b=2`；非法参数（`sum`≤焦距 / `diff`≥焦距 / `a`≤0 / 未知 type）一律 `ok:false` 且不注册 | ✅ | 双曲线两支别拆成两条命令或两条 `function`（执行器以 NaN 断开）；标准式 a/b 写正数、不写表达式；`rotate` 是角度（度）；`conic` 是普通图元，可 `style`/`label`/被 `intersect` 引用、进 `doc.commands`；中文 type（椭圆/双曲线/抛物线）同样可用 |
+
+> 状态 ✅：`conicSpec()` 与 `conic` 执行分支已用无头桩回归 **355/355** 全通过：三类定义的采样点
+> 满足 |PF1|+|PF2|=sum（含倾斜椭圆）/ |PF1|−|PF2|=±diff / |PF|=点到准线距离 / 标准方程（含 rotate），
+> 双曲线 NaN 断点与左右两支齐全、非法参数抛错且不进注册表、例23/例24 的 6 条 `verify` 全 pass、
+> `describe()`/`inspect` 回读 `conic:...` 摘要、`style` 生效；既有 `point`/`function`/`verify`/
+> `inspect`/`measure`/`move`/`style` 命令结果与 `describe()` 输出与改动前**逐项、逐字节一致**。
+> 真实 JSXGraph `curve` 渲染与浏览器侧目视确认仍需带浏览器环境（见「已知限制」）。
+
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
   JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在
@@ -253,3 +277,4 @@
 - 沙箱无头环境无法实例化真实 JSXGraph，上述用例需在带浏览器的环境目视确认或补单测；命令序列本身已与 `js/executor.js` 协议逐条对齐。
 - `measure` 在前端画板生成临时读数并回传数值；read-back 闭环已在 `js/board.js` 接入（执行后用 measure 数值驱动 LLM 二次核对并自动修正），无需后端改造。沙箱无头环境无法跑真实 JSXGraph + LLM，闭环行为需在带浏览器的环境目视确认（用例 14/15/16/20/24）。
 - 本轮起 read-back 闭环由 `verify` 的 `pass:false` 精确触发（纯 `measure` 只展示读数、不再消耗一次 LLM 调用）；判定容差默认 `tol=0.05`，角度用例建议显式给 `tol:0.5`。闭环最多自动修正 3 轮（每轮静默复跑原始 verify 机器判定收敛，横跳 / 失败项变多 / 连续 2 轮无改善 / 达上限提前收手），不递归；`expect`/`expectRange` 的取值合理性由 AI 在规划阶段给出，仍需带浏览器环境回归确认（用例 29/30、37~39）。
+- `conic` 用 JSXGraph 的 `curve` 元素（参数曲线函数 `[fx,fy,0,1]`）绘制：沙箱无头环境只验证了参数换算与采样点的数学正确性，**曲线在真实画板上的渲染、NaN 断点是否如预期断开、线宽/颜色**仍需带浏览器环境目视确认（用例 59~61）。`focus`+`directrix` 形态依赖注册表里准线元素的端点坐标；已画出的 `conic` 是静态参数曲线（不随焦点/准线被 `move` 拖动实时重算，回放/保存时按命令重建），与 `transform` 的静态副本行为一致。

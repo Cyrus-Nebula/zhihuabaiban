@@ -42,6 +42,10 @@
  *                                                            type=translate(by:[dx,dy]) / rotate(angle,center?) / reflect(axis|center?) / scale(k,center?)（位似比 k：|k|>1 放大、0<|k|<1 缩小、k<0 反向；半径随 |k| 缩放）；
  *                                                            支持 point/segment/line/ray/polygon/circle
  *   animate    {id|ids,pingpong?,speed?}             动画：让指定滑动条（id 或 ids，或 "__all__"）自动连续改值，依赖它的几何实时播放；speed: slow/normal/fast，pingpong:true 往复。仅前端播放，不进文档
+ *   conic     {id,type:'ellipse',foci:[F1,F2],sum:2a} | {type:'ellipse'|'hyperbola',center:[h,k],a,b}
+ *             | {type:'parabola',focus:F,directrix:直线id} | {type:'parabola',vertex:[h,k],p}
+ *             圆锥曲线（本轮新增，见 conicSpec）：第一定义 / 第二定义 / 标准式统一换算成参数曲线；
+ *             双曲线两支以 NaN 断开；方程与参数挂 __aiExpr/__aiConic 供 describe() 数值快照回读
  *   move      {id,x,y} | {id,v}                      增量修正：就地移动已存在的自由点 / 改滑动条当前值（不新建图元、不改 id）。
  *                                                    同 id 重新 point 会被 execute 判「id 重复定义」而失败，自检自动修正改坐标一律用 move；
  *                                                    依赖它的线/圆/多边形由 JSXGraph 联动自动刷新。多轮收敛闭环的核心配套命令。
@@ -134,6 +138,23 @@
  * TODO(下一步): ① 圆锥曲线第二定义（焦点-准线）few-shot 或 conic/locus 协议；
  *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
  *   ④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；⑤ 给 2D inspect 派生量补入库无头单测脚本。
+
+ * 本轮（AI作图对标大角几何·增量·2026-11-15 第二轮）：只改 2D 协议，3D 分支零触碰。
+ *   落实三处 TODO 一致的头号待办「圆锥曲线 / conic 协议」——新增原生 conic 命令（对标大角几何
+ *   「自研数学 DSL / 符号计算」）：此前画椭圆/双曲线/抛物线只能让 AI 手算 a,b,c 再拼两条
+ *   functiongraph（定义域截断、上下半支拼接、焦点方向都易错），或逐点插值猜坐标。
+ *   (1) 新增模块级纯函数 conicSpec(cmd, refs)：把语义参数统一换算成参数曲线 at(t)（t∈[0,1]）；
+ *       ellipse 支持第一定义 foci+sum 与标准式 center+a+b(rotate)，hyperbola 支持 foci+diff
+ *       与标准式，parabola 支持第二定义 focus+directrix 与标准式 vertex+p；非法/退化参数抛错。
+ *   (2) build() 新增 conic 分支：board.create('curve',[fx,fy,0,1]) 绘制，双曲线两支之间返回
+ *       [NaN,NaN] 断开（与 function 的 ymin/ymax 裁剪同理），挂 __aiExpr/__aiRange/__aiConic。
+ *   (3) elementSummary() 在 curve 分支前加 __aiConic 分支，describe()/inspect 的数值快照能回读
+ *       圆锥曲线类型与 a/b/p/中心；既有元素摘要输出逐字节不变。
+ *   配套：ai/board-prompt.js 命令清单登记 conic +「圆锥曲线」小节 + 例23/例24 few-shot；
+ *   docs/AI作图回归用例清单.md 用例 59~61。未碰 3D 分支 / editor.html / appId / js/board.js。
+ * TODO(下一步): ① 圆锥曲线第二定义通用离心率形式（focus+directrix+eccentricity 覆盖 e<1/=1/>1）；
+ *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
+ *   ④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；⑤ 给 2D 协议补入库无头单测脚本。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -314,6 +335,127 @@ export function intersectActiveLabel(cands, cmd) {
   return labels[0];
 }
 
+/**
+ * 圆锥曲线参数解析（纯函数，便于无头回归；对标大角几何「自研数学 DSL / 符号计算」）。
+ * 把语义化声明统一换算成一条参数曲线的采样函数 at(t)（t∈[0,1]）：
+ *   ellipse   · 第一定义 {foci:[F1,F2], sum:2a} 或标准式 {center:[h,k], a, b(,rotate)}
+ *   hyperbola · 第一定义 {foci:[F1,F2], diff:2a} 或标准式 {center:[h,k], a, b(,rotate)}
+ *   parabola  · 第二定义 {focus:F, directrix:直线id} 或标准式 {vertex:[h,k], p(,rotate)}
+ * 双曲线两支之间返回 [NaN, NaN] 断开（JXG curve 遇 NaN 自动断开，与 function 的 ymin/ymax 裁剪同理）。
+ * refs.point(ref) / refs.line(ref) 由 createExecutor 注入；本函数不依赖 board，可独立单测。
+ */
+export function conicSpec(cmd, refs) {
+  const alias = { 椭圆: 'ellipse', 双曲线: 'hyperbola', 抛物线: 'parabola' };
+  const type = alias[cmd.type] || String(cmd.type || 'ellipse').toLowerCase();
+  const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+  const pos = (v, label, d) => {
+    if (v == null) return d;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) throw new Error('conic.' + label + ' 必须是正数');
+    return n;
+  };
+  const point2 = (v, d) => (Array.isArray(v) && v.length >= 2 &&
+    Number.isFinite(Number(v[0])) && Number.isFinite(Number(v[1])))
+    ? [Number(v[0]), Number(v[1])] : d;
+  const fmt = (n) => String(Math.round(n * 1000) / 1000);
+  const basis = (deg) => {
+    const r = num(deg, 0) * Math.PI / 180;
+    return { u: [Math.cos(r), Math.sin(r)], v: [-Math.sin(r), Math.cos(r)] };
+  };
+  const combine = (C, cu, cv, u, v) => [
+    C[0] + cu * u[0] + cv * v[0],
+    C[1] + cu * u[1] + cv * v[1],
+  ];
+
+  if (type === 'ellipse' || type === 'hyperbola') {
+    let C, a, b, u, v, c = 0, definition, expr;
+    const foci = Array.isArray(cmd.foci) ? cmd.foci : null;
+    if (foci && foci.length === 2) {
+      const F1 = refs.point(foci[0]), F2 = refs.point(foci[1]);
+      const dx = F2[0] - F1[0], dy = F2[1] - F1[1];
+      const d = Math.hypot(dx, dy);
+      if (d < 1e-9) throw new Error('conic.foci 两个焦点不能重合');
+      const k = type === 'ellipse' ? Number(cmd.sum) : Number(cmd.diff);
+      const key = type === 'ellipse' ? 'sum（常数和 2a）' : 'diff（常数差 2a）';
+      if (!Number.isFinite(k) || k <= 0) throw new Error('conic 需要 ' + key + ' 为正数');
+      a = k / 2; c = d / 2;
+      if (type === 'ellipse' && a <= c) throw new Error('椭圆 sum 必须大于两焦点距离（2a > 2c）');
+      if (type === 'hyperbola' && a >= c) throw new Error('双曲线 diff 必须小于两焦点距离（2a < 2c）');
+      b = Math.sqrt(type === 'ellipse' ? a * a - c * c : c * c - a * a);
+      C = [(F1[0] + F2[0]) / 2, (F1[1] + F2[1]) / 2];
+      u = [dx / d, dy / d]; v = [-u[1], u[0]];
+      definition = type === 'ellipse' ? 'foci+sum' : 'foci+diff';
+      expr = type + ': ' + definition.split('+')[1] + '=' + fmt(k) + ', a=' + fmt(a) + ', b=' + fmt(b)
+        + ', 中心(' + fmt(C[0]) + ',' + fmt(C[1]) + '), 焦距2c=' + fmt(2 * c);
+    } else {
+      C = point2(cmd.center, [0, 0]);
+      a = pos(cmd.a, 'a', 3); b = pos(cmd.b, 'b', 2);
+      const bs = basis(cmd.rotate); u = bs.u; v = bs.v;
+      c = Math.sqrt(type === 'ellipse' ? Math.max(0, a * a - b * b) : a * a + b * b);
+      definition = 'standard';
+      expr = type + ': (x-' + fmt(C[0]) + ')²/' + fmt(a * a) + (type === 'ellipse' ? ' + ' : ' − ')
+        + '(y-' + fmt(C[1]) + ')²/' + fmt(b * b) + ' = 1'
+        + (num(cmd.rotate, 0) ? ', 旋转' + fmt(num(cmd.rotate, 0)) + '°' : '');
+    }
+    const S = 2.4;      // 双曲线参数 s∈[-S,S]，cosh(2.4)≈5.6，落在 ±10 视野内
+    const GAP = 0.06;   // t≈0.5 的 NaN 断开带，保证 JXG 采样能命中
+    const at = (t) => {
+      if (type === 'ellipse') {
+        const th = 2 * Math.PI * t;
+        return combine(C, a * Math.cos(th), b * Math.sin(th), u, v);
+      }
+      if (Math.abs(t - 0.5) < GAP / 2) return [NaN, NaN];
+      const right = t < 0.5;
+      const span = 0.5 - GAP / 2;
+      const q = right ? t / span : (t - 0.5 - GAP / 2) / span;
+      const s = (2 * q - 1) * S;
+      return combine(C, (right ? 1 : -1) * a * Math.cosh(s), b * Math.sinh(s), u, v);
+    };
+    return { type, expr, at, tMin: 0, tMax: 1,
+      meta: { definition, center: C, a, b, c, axis: u } };
+  }
+
+  if (type === 'parabola') {
+    let V, p, u, v, definition, expr;
+    if (cmd.focus != null && cmd.directrix != null) {
+      const F = refs.point(cmd.focus);
+      const seg = refs.line(cmd.directrix);   // [[x1,y1],[x2,y2]]
+      const A = seg[0], B = seg[1];
+      const dx = B[0] - A[0], dy = B[1] - A[1];
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-9) throw new Error('conic.directrix 准线的两个端点不能重合');
+      const t0 = [dx / len, dy / len];
+      const n0 = [-t0[1], t0[0]];
+      const signed = (F[0] - A[0]) * n0[0] + (F[1] - A[1]) * n0[1];
+      const d0 = Math.abs(signed);
+      if (d0 < 1e-9) throw new Error('conic.focus 不能落在准线上');
+      const n = signed >= 0 ? n0 : [-n0[0], -n0[1]];   // 从准线指向焦点
+      u = n; v = t0;
+      p = d0 / 2;                                      // 焦准距的一半
+      V = [F[0] - p * u[0], F[1] - p * u[1]];         // 顶点 = 焦点到准线垂足的中点
+      definition = 'focus+directrix';
+      expr = 'parabola: 焦点(' + fmt(F[0]) + ',' + fmt(F[1]) + '), 准线过('
+        + fmt(A[0]) + ',' + fmt(A[1]) + ')-(' + fmt(B[0]) + ',' + fmt(B[1])
+        + '), p=' + fmt(p) + ', 顶点(' + fmt(V[0]) + ',' + fmt(V[1]) + ')';
+    } else {
+      V = point2(cmd.vertex, [0, 0]);
+      p = pos(cmd.p, 'p', 1);
+      const bs = basis(cmd.rotate); u = bs.u; v = bs.v;
+      definition = 'standard';
+      expr = 'parabola: (y-' + fmt(V[1]) + ')² = ' + fmt(4 * p) + '·(x-' + fmt(V[0])
+        + ')（轴向旋转' + fmt(num(cmd.rotate, 0)) + '°, p=' + fmt(p) + '）';
+    }
+    const VMAX = Math.sqrt(4 * p * 9);   // 轴向最远约到 9，落在 ±10 视野内
+    const at = (t) => {
+      const s = (2 * t - 1) * VMAX;
+      return combine(V, (s * s) / (4 * p), s, u, v);
+    };
+    return { type, expr, at, tMin: 0, tMax: 1,
+      meta: { definition, vertex: V, p, axis: u } };
+  }
+  throw new Error('conic.type 只能是 ellipse / hyperbola / parabola');
+}
+
 export function createExecutor(board) {
   const registry = new Map();    // id -> JXG 元素
   const plainPoints = new Set(); // 可通过 moves 覆盖坐标的自由点
@@ -410,6 +552,22 @@ export function createExecutor(board) {
     else return null;
     return [cx, cy, r];
   }
+
+  /** conic 的语义引用解析：点 id → 坐标，直线 id → 两端点坐标（供 conicSpec 纯函数使用） */
+  const conicRefs = {
+    point: (r) => {
+      const el = resolve(r);
+      if (!el || typeof el.X !== 'function' || typeof el.Y !== 'function') {
+        throw new Error('conic 引用的「' + r + '」不是点');
+      }
+      return [el.X(), el.Y()];
+    },
+    line: (r) => {
+      const ep = lineEndpoints(resolve(r));
+      if (!ep) throw new Error('conic 引用的「' + r + '」不是直线/线段');
+      return ep;
+    },
+  };
 
   /** 点 P 到过 A、B 两点的直线的距离 */
   function pointLineDist(P, A, B) {
@@ -730,6 +888,28 @@ export function createExecutor(board) {
           };
         }
         return board.create('functiongraph', [fn, from, to], { ...opt, strokeColor: '#C62828', strokeWidth: 2 });
+      }
+      case 'conic': {
+        // 圆锥曲线（本轮新增，对标大角几何「自研数学 DSL / 符号计算」）：
+        // AI 只声明语义参数（第一定义 foci+sum/diff、第二定义 focus+directrix、标准式），
+        // conicSpec 统一换算成参数曲线采样函数，交给 JSXGraph 的 curve 元素绘制；
+        // 双曲线两支之间返回 NaN 断开（与 function 的 ymin/ymax 裁剪同理）。
+        const spec = conicSpec(cmd, conicRefs);
+        const fx = (t) => spec.at(t)[0];
+        const fy = (t) => spec.at(t)[1];
+        const el = board.create('curve', [fx, fy, spec.tMin, spec.tMax], {
+          ...opt,
+          strokeColor: cmd.color || '#C62828',
+          highlightStrokeColor: cmd.color || '#C62828',
+          strokeWidth: cmd.strokeWidth != null ? num(cmd.strokeWidth, 2) : 2,
+          ...(cmd.dash != null ? { dash: num(cmd.dash, 0) } : {}),
+        });
+        // 方程与参数挂到元素上：describe() 的「数值快照」/ inspect 才能回读，
+        // AI 在已有圆锥曲线上继续构造时不用猜参数（与 function 的 __aiExpr/__aiRange 一致）。
+        el.__aiExpr = spec.expr;
+        el.__aiRange = [spec.tMin, spec.tMax];
+        el.__aiConic = { type: spec.type, ...spec.meta };
+        return el;
       }
       case 'text': {
         // bind：动态测量文本（内容为函数，拖拽时实时刷新）
@@ -1052,6 +1232,13 @@ export function createExecutor(board) {
           .filter((v) => v && typeof v.X === 'function' && typeof v.Y === 'function')
           .map((v) => fmtPoint([v.X(), v.Y()]));
         if (vs.length) desc = 'polygon@[' + vs.join(' ') + (el.vertices.length > 6 ? ' …' : '') + ']';
+      } else if (el.__aiConic) {
+        // 圆锥曲线：回读语义参数（中心/顶点、a/b/p），AI 在已有曲线上继续构造时不用猜
+        const m = el.__aiConic;
+        const c = m.center || m.vertex || [0, 0];
+        desc = 'conic:' + m.type + '@' + m.definition + ',中心(' + fmtNum(c[0]) + ',' + fmtNum(c[1]) + ')'
+          + (Number.isFinite(m.a) ? ',a=' + fmtNum(m.a) + ',b=' + fmtNum(m.b) : '')
+          + (Number.isFinite(m.p) ? ',p=' + fmtNum(m.p) : '');
       } else if (t === 'functiongraph' || t === 'curve') {
         desc = 'function' + (el.__aiExpr ? ':"' + el.__aiExpr + '"' : '')
           + (Array.isArray(el.__aiRange) ? '@[' + fmtNum(el.__aiRange[0]) + ',' + fmtNum(el.__aiRange[1]) + ']' : '');

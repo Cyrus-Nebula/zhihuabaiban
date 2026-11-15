@@ -160,6 +160,18 @@
  * TODO(下一步): ① 圆锥曲线（椭圆第一定义：两焦点+常数和，用辅助圆法/滑动条轨迹 few-shot 或 locus 协议）；
  *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；
  *   ⑤ [本轮已完成] 相似三角形 few-shot（例22）；⑥ 其它易错图形（如"旋转相似"、弓形面积阴影、函数图像对称演示）。
+
+ * 本轮（AI作图对标大角几何·增量·2026-11-15 第二轮）：只追加 2D 作图主干逻辑，3D 命令分支零改动、不动 appId/editor.html。
+ *   落实三处 TODO 一致的头号待办①「圆锥曲线（椭圆第一定义 / 第二定义）」——新增原生 conic 命令，
+ *   把「两焦点+常数和」「焦点+准线」「标准方程」这类数学定义直接交给执行器换算成参数曲线，
+ *   AI 不再手算 a/b/c 拼两条 function 曲线或逐点插值猜坐标（对标大角几何自研 DSL / 符号计算）。
+ *   本文件只追加：命令清单登记 conic、「圆锥曲线」小节、例23（椭圆第一定义 foci+sum，末尾 verify 核
+ *   |PF1|+|PF2|=sum）、例24（第二定义 focus+directrix 抛物线 + 双曲线标准式）；3D 追加段落整段零改动、无删除行。
+ *   配套 js/executor.js 的 conicSpec 纯函数 + conic 执行分支 + elementSummary 的 __aiConic 数值快照；
+ *   docs/AI作图回归用例清单.md 用例 59~61。
+ * TODO(下一步): ① 第二定义通用离心率形式（focus+directrix+eccentricity 覆盖 e<1/=1/>1）；
+ *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
+ *   ④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；⑤ 其它易错图形（旋转相似、弓形面积阴影、函数图像对称演示）。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -287,6 +299,12 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - perpendicular {"op":"perpendicular","id":"p1","of":"l1","through":"A"}  垂线
 - parallel   {"op":"parallel","id":"pl1","of":"l1","through":"A"}    平行线
 - function   {"op":"function","id":"f1","expr":"x^2","from":-5,"to":5}  函数曲线（from/to 是定义域，默认 -10~10；可选 "ymin"/"ymax" 做值域裁剪，如只要抛物线在 x 轴上方的部分：{"op":"function","id":"f1","expr":"x^2-4","from":-5,"to":5,"ymin":0}）
+- conic      {"op":"conic","id":"e1","type":"ellipse","foci":["F1","F2"],"sum":10}  圆锥曲线（本轮新增，见「圆锥曲线」小节 / 例23、例24）：把数学定义直接交给执行器，不要手算 a/b/c 拼两条 function
+  · ellipse   {"op":"conic","id":"e1","type":"ellipse","foci":["F1","F2"],"sum":10}  第一定义：两焦点 + 常数和 2a（sum 必须 > 焦距）；或 {"op":"conic","id":"e2","type":"ellipse","center":[0,0],"a":5,"b":3}  标准式（可加 "rotate":30 度）
+  · hyperbola {"op":"conic","id":"h1","type":"hyperbola","foci":["F1","F2"],"diff":6}  第一定义：两焦点 + 常数差 2a（diff 必须 < 焦距）；或 {"op":"conic","id":"h2","type":"hyperbola","center":[0,0],"a":3,"b":2}  标准式
+  · parabola  {"op":"conic","id":"p1","type":"parabola","focus":"F","directrix":"d"}  第二定义：焦点 + 准线（准线是已定义的 line/segment id）；或 {"op":"conic","id":"p2","type":"parabola","vertex":[0,0],"p":2}  标准式 (y-k)²=4p(x-h)（可加 "rotate":90 度）
+  · 也认中文 type："椭圆"/"双曲线"/"抛物线"；可选 "color"/"strokeWidth"/"dash" 改线型。conic 是普通图元：可 style / label / 被 intersect 引用、进文档；describe()/inspect 回读 "conic:ellipse@..." 数值摘要。
+  · 约束：foci/focus/directrix 里的 id 必须先建好（先创建后引用）；sum/diff/a/b/p/center/vertex 一律写数字、不写表达式；双曲线两支自动断开，不用拆成两条命令。
 - slider     {"op":"slider","id":"a","x1":-8,"y1":-9,"x2":-2,"y2":-9,"min":0,"max":5,"value":1,"step":0.1}  滑动条（用户可拖动的参数控件；x1,y1→x2,y2 是它在画板上的位置，省略会自动排到左下角）
 - animate    {"op":"animate","id":"a"} | {"op":"animate","ids":["a","b"]} | {"op":"animate","ids":"__all__","pingpong":true,"speed":"normal"}  自动播放动画（让指定滑动条自动连续改值，依赖它的几何实时演示；speed: slow/normal/fast；pingpong:true 往复；仅前端播放，不进画板文档）
 - text       {"op":"text","id":"t1","x":0,"y":5,"text":"说明文字"}    自由文本
@@ -332,6 +350,16 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
     用来把顶点 / 对称轴 / 最值落成数字；核构造结果请照常用 verify kind:evaluate 写 expect（见例21）。
 - 画板自带坐标轴：引用 x 轴用 id "xaxis"、y 轴用 "yaxis"（如求函数与 x 轴靠左的交点：{"op":"intersect","id":"P1","of":["f1","xaxis"],"select":"left"}），不要自己画坐标轴。
 - 提醒：两圆相交、直线与圆相交、函数与直线相交往往有 2 个交点，只写一条 intersect 只画得出一个点，需要两个点就写两条并给出不同 select。
+
+# 圆锥曲线（conic · 本轮新增）
+- 用户要椭圆 / 双曲线 / 抛物线时，优先用一条 conic 命令表达数学定义，不要用两条 function 拼上下半支，也不要逐点插值猜坐标：
+  · 椭圆第一定义："两焦点 F1/F2，点到两焦点距离之和 = 10" → 先建 F1/F2 两个 point，再 {"op":"conic","id":"e1","type":"ellipse","foci":["F1","F2"],"sum":10}；执行器自动求中心、a=sum/2、c=|F1F2|/2、b=√(a²−c²) 并画出整条闭合曲线（含倾斜椭圆，焦点不必在 x 轴上）。
+  · 双曲线第一定义："距离之差 = 6" → {"op":"conic","id":"h1","type":"hyperbola","foci":["F1","F2"],"diff":6}（diff 必须小于焦距）；两支由执行器自动画出并断开。
+  · 抛物线第二定义："焦点 F、准线 d" → 先建焦点 point 与准线 line（两个已定义的点连线），再 {"op":"conic","id":"p1","type":"parabola","focus":"F","directrix":"d"}；执行器按「到焦点距离 = 到准线距离」求顶点与焦准距 p。
+  · 只给标准方程时写标准式：ellipse / hyperbola 用 center+a+b，parabola 用 vertex+p；可选 "rotate" 旋转（度）。
+- 铁律：先创建后引用——foci / focus / directrix 里的 id 必须在前面的命令里已建好；sum/diff/a/b/p/center/vertex 一律写数字，不写表达式；椭圆 sum 必须 > 焦距、双曲线 diff 必须 < 焦距，否则命令报错；a/b/p 必须为正数。
+- 状态回读：conic 是普通图元，describe()/inspect 会回 "conic:ellipse@foci+sum,中心(0,0),a=5,b=4" 一类数值摘要；在已有圆锥曲线上继续作图时直接用这些数值，不要猜。
+- 自检：末尾用 verify 把定义落成数字断言（例23 用 distance 分别核 |PF1|、|PF2|，其和 = sum；例24 用 distance 与 evaluate 核 |PF|=点到准线距离）。pass:false 会触发自动修正轮。
 
 # 滑动条与动态演示（重点能力）
 - 需要"动态演示/参数变化/动画/可调"的效果时，用 slider 造参数，再让它驱动几何体：
@@ -771,6 +799,43 @@ H(intersection@(0,-1)), 高 AH=4.000, ∠AHB=90.0°, online(H,lBC)=0.000, f1(fun
 //   ② 平行线法靠 DE∥BC 自动保证 ∠ADE=∠ABC（AA 相似），别逐点手算缩放坐标；
 //   ③ 若题目明确"以某点 O 为位似中心"，改用 例19 的 transform type=scale（更省、不画辅助线）；平行线法专用于"没有给定中心、只在边上取定比分点"的情形；
 //   ④ 末尾 verify 用 relation-assertion（parallel/online）证明相似、用 distance 核相似比，pass:false 触发自动修正轮。
+
+== 例23：椭圆第一定义（两焦点 + 常数和，conic 原生命令 + verify 自检） ==
+用户："画一个椭圆，焦点 F1(-3,0)、F2(3,0)，椭圆上任意一点到两焦点的距离之和等于 10，标出焦点并验证定义。"
+思路：不要手算 a=5、c=3、b=4 再拼 y=±4·sqrt(1−x²/25) 两条 function（定义域、拼接、端点都容易错），
+      也不要逐点插值猜椭圆上的点。用 conic 把「第一定义」整句交出去，执行器换算并画出闭合曲线。
+      验证定义时取右顶点 P(a,0)=(5,0)：|PF1|=a+c=8、|PF2|=a−c=2，两者和 =10 = sum。
+{"op":"point","id":"F1","x":-3,"y":0}
+{"op":"point","id":"F2","x":3,"y":0}
+{"op":"conic","id":"e1","type":"ellipse","foci":["F1","F2"],"sum":10}
+{"op":"point","id":"P","x":5,"y":0}                                   // 右顶点 (a,0)=(5,0)，在椭圆上
+{"op":"label","target":"P","text":"P"}
+{"op":"style","target":"e1","strokeColor":"#1D4ED8","strokeWidth":2}
+{"op":"verify","kind":"distance","of":["F1","F2"],"expect":6,"tol":0.05}     // 焦距 2c=6
+{"op":"verify","kind":"distance","of":["P","F1"],"expect":8,"tol":0.05}     // a+c=8
+{"op":"verify","kind":"distance","of":["P","F2"],"expect":2,"tol":0.05}     // a−c=2 ⇒ |PF1|+|PF2|=10=sum ✓
+// 要点：① sum 是「距离之和」=2a（不是 a），焦距 = |F1F2| = 2c，必须 sum > 焦距，否则不是椭圆；
+//   ② foci 用已建好的点 id（先创建后引用），sum 写数字不写表达式；③ 椭圆可以是倾斜的（焦点不在 x 轴），
+//   执行器按焦点连线方向自动旋转，不要自己算旋转角；④ 末尾 verify 把定义落成数字，pass:false 自动修正。
+
+== 例24：抛物线第二定义（焦点 + 准线）与双曲线标准式 ==
+用户："画以 F(2,0) 为焦点、直线 x=-2 为准线的抛物线；再画一条 a=3、b=2 的双曲线。"
+思路：抛物线第二定义「到焦点距离 = 到准线距离」直接交给 conic 的 focus+directrix，不要手算 p=2、
+      顶点 (0,0) 再拼 y²=8x；准线必须先由两个点连成 line，再把 line 的 id 交给 directrix。
+      双曲线标准式用 center+a+b 一条命令，两支自动断开，不要拆成两条 function。
+{"op":"point","id":"F","x":2,"y":0}
+{"op":"point","id":"D1","x":-2,"y":-5}
+{"op":"point","id":"D2","x":-2,"y":5}
+{"op":"line","id":"d","through":["D1","D2"]}                          // 准线 x=-2（先建点再连线）
+{"op":"conic","id":"p1","type":"parabola","focus":"F","directrix":"d"}  // 第二定义：执行器求顶点(0,0)、p=2，即 y²=8x
+{"op":"conic","id":"h1","type":"hyperbola","center":[0,0],"a":3,"b":2} // 标准式 x²/9 − y²/4 = 1（两支自动断开）
+{"op":"point","id":"Q","x":2,"y":4}                                   // y²=8x 上的点 (2,4)
+{"op":"verify","kind":"distance","of":["Q","F"],"expect":4,"tol":0.05}        // |QF|=4，Q 到准线 x=-2 的距离也是 4 ⇒ 满足第二定义
+{"op":"verify","kind":"evaluate","expr":"8*x","x":2,"expect":16,"tol":0.05}  // y²=8x ⇒ 4²=16 ✓
+{"op":"verify","kind":"evaluate","expr":"4*(x^2/9-1)","x":5,"expect":7.111,"tol":0.01}  // 双曲线 y²=4(x²/9−1) 在 x=5 ⇒ 64/9≈7.111
+// 要点：① directrix 必须是已定义的 line/segment id，不能裸坐标；② 抛物线开口自动朝焦点，不用写方向；
+//   ③ 双曲线两支由执行器断开，不要拆成两条命令或两条 function；④ 标准式 a/b 写正数、不写表达式；
+//   ⑤ verify 的期望值写算好的数字（4 / 16 / 7.111），不要写表达式。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
