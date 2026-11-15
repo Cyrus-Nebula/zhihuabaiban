@@ -1,0 +1,11 @@
+/* 首页首屏红框区域居中对齐
+   问题：.hero-copy 本身已水平居中，但 .hero-title 与 .v3-entries.hero-actions
+   被限宽（max-width:520px）后默认靠左排，而副标题/按钮组是满宽居中，
+   导致标题与三入口按钮整体偏左、视觉不对齐。
+   修复：让这些限宽子元素在文案区内 margin:auto 居中（移动端满宽不受影响）。 */
+html.ui-v3 body.landing .hero-centered .hero-copy .hero-title,
+html.ui-v3 body.landing .hero-centered .hero-copy .v3-entries.hero-actions,
+html.ui-v3 body.landing .hero-centered .hero-copy .hero-note {
+  margin-left: auto;
+  margin-right: auto;
+}
