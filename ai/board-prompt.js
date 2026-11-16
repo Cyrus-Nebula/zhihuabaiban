@@ -1524,3 +1524,39 @@ export const BOARD3D_ALIGN_PROMPT = `
 - 同一批命令里可以先 add3d 建好对象再 align3d；目标坐标由画板按当前场景真实几何计算，不要自己在提示里逐个写绝对坐标。
 - 补充铁律：align3d 是 3D 命令；2D 的 align / distribute / 对齐 / 分布等命令在本分支依旧不认识，不要输出。`;
 
+
+/* ============================================================ *
+ * 2026-11-17 D14 追加段：helix3d 空间螺旋线 / 弹簧（独立自主 3D 画板任务）
+ * 协作铁律：仅在本文件最末尾追加，上方 2D 主干 BOARD_SYSTEM_PROMPT 与全部
+ * 既有 3D 追加段（量测 / 回注标注 / transform / 批量 / duplicate / radial /
+ * mirror / grid / align）逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 新命令单独成组，与 js/board3d-executor.js 的 BOARD3D_HELIX_OPS 一一对应。
+ * 拼在文件最末尾同样是为了让 fitPrompt 短上下文裁剪时保留尾部。
+ * ============================================================ */
+
+/** 3D 扩展命令 op（2026-11-17 D14 追加，与 js/board3d-executor.js 的 BOARD3D_HELIX_OPS 一致） */
+export const BOARD3D_HELIX_PROMPT_OPS = Object.freeze(['helix3d']);
+
+/** 3D 螺旋线命令追加段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_HELIX_PROMPT = `
+
+# 补充命令：helix3d 空间螺旋线 / 弹簧（仅本 3D 分支可用，2026-11-17 追加）
+- 作用：按参数方程**生成**一条空间螺旋曲线（弹簧 / 螺纹 / DNA 单链 / 盘旋而上的楼梯扶手），画板会自动采样成一串首尾相接的线段。用户说「画一条弹簧」「螺纹线」「绕 Z 轴盘旋向上的螺旋」「螺旋线半径 1 螺距 0.8 转 5 圈」时用它。不需要场景里预先有源对象。
+- 格式：{"op":"helix3d","id":"spring","axis":"z","radius":1,"pitch":0.8,"turns":5,"segments":12}
+  · id        可选，生成对象的 id 前缀（默认 'helix'；各段自动编号为 <id>_s1、_s2…，采样点 <id>_p1…）；
+  · axis      可选，'x' / 'y' / 'z'（默认 'z'），绕该坐标轴盘旋；
+  · radius    可选，半径 > 0（默认 1）；
+  · pitch     可选，每圈沿轴向上升的距离（默认 1）；0 = 平面圆（不自交闭合），负数 = 反向盘旋；
+  · turns     可选，圈数 (0, 12]（默认 3）；
+  · segments  可选，每圈采样段数，3~48 的整数（默认 12），越大越圆滑、对象越多；segment 总数上限 512，超出整条拒绝；
+  · center    可选，螺旋起始中心 [x,y,z]（默认 [0,0,0]）；
+  · phase     可选，起始角（角度制，默认 0）；
+  · asPoints  可选布尔，是否在采样点放小球标记（默认 false）；
+  · color / opacity 可选，整条螺旋线样式。
+  · 数值参数只要出现就必须是合法数字（不能是表达式 / 算式 / null），否则整条原子拒绝、零副作用。
+  · 示例：{"op":"helix3d","id":"spring","radius":1,"pitch":0.6,"turns":6,"segments":12}
+  · 示例：{"op":"helix3d","id":"dna1","axis":"z","radius":1.2,"pitch":2,"turns":4,"color":"#e05252"}
+  · 示例：{"op":"helix3d","id":"ring","pitch":0,"turns":2,"segments":24,"asPoints":true}（平面圆环 + 采样点）
+- 与 radial3d / add3d line 的区别：add3d line 只画手工给定两端点的一条直线段；radial3d 把**已有对象**绕轴均分复制成一圈（离散、对象不变形）；helix3d 是按参数方程**连续采样生成**一条螺旋曲线，段数 = turns×segments，无需源对象。要「一圈球」用 radial3d，要「一条弹簧线」用 helix3d。
+- 同一批命令里可以先 add3d 建别的物体再 helix3d；采样坐标由画板按参数方程算出，不要自己在提示里逐段写端点坐标。
+- 补充铁律：helix3d 是 3D 命令；2D 的螺旋 / 弹簧 / 曲线等命令在本分支依旧不认识，不要输出。`;

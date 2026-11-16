@@ -142,6 +142,14 @@ async function send() {
           .join('、');
         appendLog('ai', `已按 ${mode} 对齐 ${al.applied.length} 个对象：${bits}`);
       }
+      // 2026-11-17 D14：helix3d 展示画板按参数方程生成的螺旋线段数（与 meta 一致）。
+      for (const hx of results) {
+        if (!hx.ok || hx.op !== 'helix3d') continue;
+        const m = hx.meta || {};
+        const shape = m.axis ? `绕 ${String(m.axis).toUpperCase()} 轴` : '';
+        const turns = m.turns != null ? `、${m.turns} 圈` : '';
+        appendLog('ai', `已生成螺旋线 ${hx.created.length} 段${shape ? '（' + shape + turns + '）' : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
