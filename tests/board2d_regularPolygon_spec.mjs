@@ -10,6 +10,8 @@
  * edge 的 side:left|right / flip 落在哪一侧、数值换算（边心距 / 顶点半径）；
  * vertexIds 校验；以及 expr 摘要逐字节冻结（防 AI 回放/状态回读格式回归）。
  * 另附几何性质断言：正多边形顶点到中心等距、边心距正确、首顶点落在给定点。
+ * 2026-11-16 第七轮追加 section I：edge + toward 点定侧（叉积自动判 left/right、
+ * 与 side/flip 互斥、共线/未知点/非 edge 定义抛错、meta.towardSide 回读、expr 格式不变）。
  *
  * 运行：node tests/board2d_regularPolygon_spec.mjs
  * 硬约束：纯 2D，不触碰 3D 分支 / editor.html / appId。
@@ -165,6 +167,54 @@ section('H. 几何性质与显式 vertexIds');
   const ids = ['A1', 'B2', 'C3', 'D4', 'E5', 'F6'];
   const r = spec({ id: 'hex', sides: 6, radius: 2, vertexIds: ids });
   ok(r.vertexIds.join(',') === ids.join(','), '显式 vertexIds 原样采用');
+}
+
+/* ---------- I. edge + toward 点定侧（2026-11-16 第七轮新增，落实连续多轮 TODO ⑥） ---------- */
+section('I. edge + toward 点定侧（MCP 式「读取画板状态 → 继续构造」）');
+{
+  const A = [0, 0], B = [2, 0];
+  const base = { id: 'sq', sides: 4, edge: [A, B] };
+  const up = spec({ ...base, toward: [1, 2] });
+  const down = spec({ ...base, toward: [1, -2] });
+  ok(nearPt(up.center, [1, 1]) && up.meta.towardSide === 'left', 'toward 在 AB 上方 → 中心 (1,1)、towardSide=left');
+  ok(nearPt(down.center, [1, -1]) && down.meta.towardSide === 'right', 'toward 在 AB 下方 → 中心 (1,-1)、towardSide=right');
+  ok(up.expr === spec({ ...base, side: 'left' }).expr, 'toward(上) 与 side:left 产出完全一致的 expr（expr 格式不变）');
+  ok(down.expr === spec({ ...base, side: 'right' }).expr, 'toward(下) 与 side:right 产出完全一致的 expr');
+  ok(nearPt(up.vertices[0], A) && near(dist(up.vertices[0], up.vertices[1]), 2), 'toward 定侧后首顶点仍落在 A、边长仍 = |AB|');
+}
+{
+  // 斜边验证：A→B 不再水平，AI 手写 left/right 极易判反；toward 用叉积自动定侧
+  const A = [0, 0], B = [2, 2];
+  const r = spec({ id: 'sq', sides: 4, edge: [A, B], toward: [0, 3] });
+  const l = spec({ id: 'sq', sides: 4, edge: [A, B], side: 'left' });
+  ok(r.expr === l.expr && r.meta.towardSide === 'left', '斜边：toward(0,3) 自动判为 left，与显式 side:left 一致');
+  const r2 = spec({ id: 'sq', sides: 4, edge: [A, B], toward: [3, 0] });
+  ok(r2.expr === spec({ id: 'sq', sides: 4, edge: [A, B], side: 'right' }).expr, '斜边：toward(3,0) 自动判为 right');
+}
+{
+  const refs = { point: (id) => (id === 'C' ? [1, 2] : id === 'D' ? [1, -2] : null) };
+  const a = spec({ id: 'sq', sides: 4, edge: [[0, 0], [2, 0]], toward: 'C' }, refs);
+  const b = spec({ id: 'sq', sides: 4, edge: [[0, 0], [2, 0]], toward: [1, 2] });
+  ok(a.expr === b.expr, 'toward 用点 id（refs.point）与直接给坐标产出一致');
+  const c = spec({ id: 'sq', sides: 4, edge: [[0, 0], [2, 0]], toward: 'D' }, refs);
+  ok(c.meta.towardSide === 'right', 'toward 点 id 在另一侧 → right');
+  ok(throws(() => spec({ id: 'sq', sides: 4, edge: [[0, 0], [2, 0]], toward: 'missing' }, refs), 'toward'), 'toward 引用不到点抛错（不静默忽略）');
+}
+{
+  const base = { id: 'sq', sides: 4, edge: [[0, 0], [2, 0]] };
+  ok(throws(() => spec({ ...base, toward: [1, 2], side: 'right' }), '混用'), 'toward 与 side 混用抛错');
+  ok(throws(() => spec({ ...base, toward: [1, 2], flip: true }), '混用'), 'toward 与 flip 混用抛错');
+  ok(throws(() => spec({ ...base, toward: [1, 0] }), '直线上'), 'toward 落在 AB 所在直线上抛错（不静默猜）');
+  ok(throws(() => spec({ ...base, toward: [3, 0] }), '直线上'), 'toward 在 AB 延长线上同样抛错');
+  ok(throws(() => spec({ id: 'x', sides: 4, radius: 1, toward: [1, 2] }), 'edge'), 'toward 用在非 edge 定义下抛错');
+  ok(spec(base).expr === 'regularPolygon: inscribed n=4 R=1.414 center(1,1) rotate=-135 def=edge', '不带 toward 的 edge 行为逐字节不变（回归护栏）');
+}
+{
+  // 外切 + toward：radius 仍是边心距，中心方位由 toward 决定
+  const r = spec({ id: 'sq', sides: 4, mode: 'circumscribed', edge: [[0, 0], [2, 0]], toward: [1, -2] });
+  ok(near(r.center[1], -1) && near(r.radius, 1), '外切 + toward(下)：中心 (1,-1)、radius=边心距=1');
+  ok(near(r.vertexRadius, Math.SQRT2), '外切 + toward：顶点半径仍 √2');
+  ok(r.meta.towardSide === 'right', '外切 + toward：towardSide 照常回读');
 }
 
 console.log(`\n=== regularPolygonSpec: ${passed} passed, ${failed} failed ===`);

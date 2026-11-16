@@ -52,6 +52,9 @@
  *             circle 读已画圆的圆心半径、vertex 用已有点定首顶点、radius 可填滑动条 id 动态联动；
  *             edge:[A,B] 以给定边反推中心/半径/朝向（a=s/(2tan(π/n))、顶点半径=s/(2sin(π/n))、
  *               side:left/right 选边的一侧），与 center/radius/circle/vertex/rotate 互斥；
+ *               toward:点id|[x,y]（2026-11-16 第七轮新增）：用已有的一点「朝哪侧」自动定 side，
+ *               按 (A→B)×(A→T) 符号取 left/right，与 side/flip 互斥；T 落在 AB 直线上抛错（不静默猜），
+ *               meta.towardSide 供 describe()/inspect 数值快照回读；
  *             顶点按 vertexIds 或 <id>1..<id>n 注册，挂 __aiRegular/__aiRegularVertexIds 供数值快照回读与删除联动
  *   move      {id,x,y} | {id,v}                      增量修正：就地移动已存在的自由点 / 改滑动条当前值（不新建图元、不改 id）。
  *                                                    同 id 重新 point 会被 execute 判「id 重复定义」而失败，自检自动修正改坐标一律用 move；
@@ -215,6 +218,24 @@
  *   ② 把 conicSpec 也补入库无头单测（第一定义 foci+sum / 第二定义 focus+directrix+e / 三分支离心率）；
  *   ③ 自检状态条做成 AI 面板固定 DOM 徽标；④ 收敛判定引入「残差改善量」；
  *   ⑤ 其它易错图形（弓形面积阴影、旋转相似）；⑥ edge 的 toward 点 / 显式边心距朝向语义。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-16 第七轮）：只追加 2D 作图主干逻辑，
+ *   3D 命令分支 / editor.html / appId / js/board.js 零改动，既有例1-29 few-shot 与命令执行语义逐字未动。
+ *   落实连续多轮 TODO 交接项⑥ 的前半——给 regularPolygon 的 edge:[A,B] 新增 toward 点朝向语义：
+ *   此前「以 AB 为一边补全正 n 边形」只能用 side:left/right 定侧，斜边 / 任意朝向的边上 AI 极易把
+ *   左右判反（用户说的是「朝三角形内部 / 朝 C 点那侧补」）。本轮让 AI 直接引用状态快照里已有的点 id，
+ *   执行器按 (A→B)×(A→T) 的符号自动取 left/right（MCP 式「读取画板状态 → 继续构造」的又一种入口），
+ *   把朝向判定也交给符号计算，AI 不必自己判方位；toward 与 side/flip 互斥，T 落在 AB 所在直线上或
+ *   引用不到点时整条命令抛错（不静默猜测），meta.towardSide 记录判定侧别供 describe()/inspect 回读。
+ *   配套：js/executor.js 头部协议注释 + regularPolygonSpec JSDoc/edge 分支 + meta；
+ *   ai/board-prompt.js 命令清单登记 toward、「正多边形·edge toward 点定侧」小节与例30 few-shot；
+ *   tests/board2d_regularPolygon_spec.mjs 新增 toward 断言；docs/AI作图回归用例清单.md 用例 74/75。
+ *   expr 摘要格式逐字节不变（toward 只改 center 数值），旧 59 项断言全部保持通过。
+ * TODO(下一步): ① 把 conicSpec 也补入库无头单测（第一定义 foci+sum / 第二定义 focus+directrix+e / 三分支离心率）；
+ *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
+ *   ④ 其它易错图形（弓形面积阴影、旋转相似）；⑤ edge 的「显式边心距」朝向语义
+ *     （注意：边长 s 与边数 n 已唯一确定 a=s/(2tan(180°/n))，显式给 a 与「AB 是一条边」冲突，
+ *      宜另立 center+apothem 定义或改由 center/vertex 表达，不要塞进 edge 破坏几何自洽）。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -602,6 +623,10 @@ export function conicSpec(cmd, refs) {
  *             （2026-11-16 新增，落实 TODO ⑤）。与 center/radius/circle/vertex/rotate 互斥；
  *             边心距 a=s/(2tan(π/n))、顶点半径 s/(2sin(π/n))；A 恒为第 0 个顶点、B 为相邻顶点。
  *             side:left(默认)/right 或中文「左」「右」、flip:true 决定正多边形落在有向边 AB 的哪一侧。
+ *   toward    已定义点 id 或 [x,y]（2026-11-16 第七轮新增，仅 edge 定义可用）：用「朝哪个点」定侧，
+ *             执行器按 (A→B)×(A→T) 的符号自动选 left/right，AI 不必自己判方位（斜边上 left/right 极易判反）；
+ *             与 side/flip 互斥；T 落在 AB 所在直线上或引用不到点时抛错（不静默猜测），
+ *             判定结果写进 meta.towardSide 供 describe()/inspect 回读。
  *   sides/n   边数，整数 3~24（默认 6）
  *   mode      inscribed 内接（默认，顶点在圆上）/ circumscribed 外切（边与圆相切，
  *             顶点到圆心 = R/cos(180°/n)）；也认中文「内接」「外切」
@@ -652,6 +677,12 @@ export function regularPolygonSpec(cmd, refs) {
   let radius = NaN;
   let definition = 'center+radius';
   let vertexAngleDeg = 0;
+  let towardSide = null;   // edge + toward 点定侧时记录最终落在 left / right，供 describe() 回读
+  // toward 是 edge 专属的朝向语义；在 center+radius / circle / vertex 定义里出现说明 AI 规划有误，
+  // 整条失败而不是静默忽略（避免 AI 以为朝向已生效、实际画到默认侧）。
+  if (cmd.toward != null && cmd.edge == null) {
+    throw new Error('regularPolygon.toward 仅在 edge:[A,B] 定义下可用');
+  }
   if (cmd.edge != null) {
     const conflict = ['center', 'radius', 'circle', 'vertex', 'rotate'].filter((k) => cmd[k] != null);
     if (conflict.length) {
@@ -674,6 +705,26 @@ export function regularPolygonSpec(cmd, refs) {
       if (!dir) throw new Error('regularPolygon.side 只能是 left / right（左 / 右）');
     }
     if (cmd.flip === true) dir = -dir;
+    // toward 点朝向（2026-11-16 第七轮新增，落实连续多轮 TODO ⑥）：
+    // 用画板上已有的一点决定正多边形落在有向边 A→B 的哪一侧——AI 不必自己判 left/right
+    // （斜边 / 任意朝向的边上极易判反），直接引用状态快照里的点 id 即可，属 MCP 式
+    // 「读取画板状态 → 继续构造」。与 side / flip 互斥，避免两种朝向语义打架。
+    if (cmd.toward != null) {
+      if (cmd.side != null || cmd.flip != null) {
+        throw new Error('regularPolygon.toward 不能与 side / flip 混用（朝向已由 toward 点唯一决定）');
+      }
+      const T = point2(cmd.toward, 'toward');
+      if (!Array.isArray(T) || !Number.isFinite(T[0]) || !Number.isFinite(T[1])) {
+        throw new Error('regularPolygon.toward 需要 [x,y] 或已定义的点 id');
+      }
+      // (A→B) × (A→T) 的 z 分量：>0 表示 T 在 AB 的逆时针一侧（dir=+1），<0 在另一侧。
+      const cross = dx * (T[1] - A[1]) - dy * (T[0] - A[0]);
+      if (!Number.isFinite(cross) || Math.abs(cross) < 1e-9) {
+        throw new Error('regularPolygon.toward 点不能落在边 AB 所在直线上（无法判定朝向）');
+      }
+      dir = cross > 0 ? 1 : -1;
+      towardSide = cross > 0 ? 'left' : 'right';
+    }
     // 边心距 a = s/(2tan(π/n))，顶点半径 vr = s/(2sin(π/n))：内接与外切的中心都在
     // AB 中垂线上距边 a 处，只是「radius」语义不同（外接圆半径 vs 内切圆半径）。
     const apothem = s / (2 * Math.tan(Math.PI / sides));
@@ -747,6 +798,9 @@ export function regularPolygonSpec(cmd, refs) {
   // 的 __aiExpr（describe / 回放）保持逐字节不变，便于无头回归对照。
   const expr = `regularPolygon: ${mode} n=${sides} R=${fmt(radius)} center(${fmt(center[0])},${fmt(center[1])}) rotate=${fmt(rotate)}${definition === 'edge' ? ' def=edge' : ''}`;
   const meta = { definition, center, radius, sides, mode, rotate, vertexRadius, vertexIds };
+  // toward 定侧只影响 center 的数值（已体现在 expr 里），额外把判定出的侧别记进 meta，
+  // 让 describe()/inspect 的 __aiRegular 快照能回读；expr 格式保持逐字节不变（旧回归护栏不破）。
+  if (towardSide) meta.towardSide = towardSide;
   return { vertices, angles, center, radius, sides, mode, rotate, vertexRadius, vertexIds, expr, meta };
 }
 
@@ -1135,6 +1189,8 @@ export function createExecutor(board) {
             return { center: [g[0], g[1]], radius: g[2] };
           },
         };
+        // toward 点定侧也走这里的 refs.point（点 id → 坐标），与 edge 两端点共用同一套
+        // 「先创建后引用」解析；执行分支无需新增 case，语义在纯函数 regularPolygonSpec 内闭环。
         const spec = regularPolygonSpec(cmd, polyRefs);
         // 幂等校验：任一顶点 id 已被占用就整条失败，避免留下半套图形 / 覆盖别的对象
         for (const vid of spec.vertexIds) {

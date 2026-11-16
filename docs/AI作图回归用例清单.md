@@ -142,6 +142,7 @@
 - [本轮已完成 2026-11-14] 相似/位似变换协议（落实待办⑤ 的「相似/位似变换」缺口）：给 2D `transform` op 新增 `type=scale`（位似比 k + center，圆/多边形半径随 |k| 缩放）。`js/executor.js` 的 `transformFn` 新增 scale 分支、transform 执行分支对圆/多边形半径乘 |k|、头部协议注释登记；`ai/board-prompt.js` 在 transform 命令清单登记 scale 并新增 例19 few-shot（含 `verify` 核对位似比），顺手修了 例5 的重复注释行。只追加 2D 作图主干逻辑，未碰 3D 分支 / `editor.html` / 另一任务负责的文件。回归用例见 53。下一步：内/外接多边形、圆锥曲线第二定义（待办⑤ 余下缺口）、inspect 带 x 查派生量、自检状态条固定徽标、残差改善量收敛。
 
 - [本轮已完成 2026-11-15 第二轮] `conic` 原生圆锥曲线命令（落实三处 TODO 一致的头号待办「圆锥曲线 / conic 协议」）：`js/executor.js` 新增模块级纯函数 `conicSpec()` + `conic` 执行分支（把第一定义 `foci+sum` / `foci+diff`、第二定义 `focus+directrix`、标准式 `center+a+b` / `vertex+p` 统一换算成参数曲线，双曲线两支以 NaN 断开）+ `elementSummary` 的 `__aiConic` 数值摘要；`ai/board-prompt.js` 仅追加 2D 主干（命令清单登记、小节、例23/例24），3D 段零改动。见用例 59~61。下一步：① 第二定义通用离心率形式（focus+directrix+eccentricity 覆盖 e<1/=1/>1）；② 自检状态条固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 收敛后回画 `probeVerify` 最终 ✔ 读数；⑤ 其它易错图形（旋转相似、弓形面积阴影、函数图像对称演示）。
+- [本轮已完成 2026-11-16 第七轮] `regularPolygon edge` 新增 `toward` 点定侧（落实连续多轮 TODO 交接项⑥ 前半）：AI 直接引用状态快照里已有的点 id，执行器按 `(A→B)×(A→T)` 叉积自动判 `left/right`，斜边上不再人工判反（MCP 式「读画板状态→继续构造」）。`js/executor.js` 的 `regularPolygonSpec` edge 分支 + 协议注释 / JSDoc + `meta.towardSide`；`ai/board-prompt.js` 命令清单登记 toward + 新小节 + 例30 few-shot；`tests/board2d_regularPolygon_spec.mjs` section I（19 项断言，共 78/78）；见用例 74/75。下一步：① `conicSpec` 补入库无头单测（第一定义 foci+sum / 第二定义 focus+directrix+e / 三分支离心率）；② 自检状态条固定 DOM 徽标；③ 收敛判定引入「残差改善量」；④ 其它易错图形（弓形面积阴影、旋转相似）；⑤ `edge` 的「显式边心距」语义（边长 s 与 n 已唯一确定 a=s/(2tan(180°/n))，显式给 a 与「AB 是一条边」冲突，宜另立定义而非塞进 edge）。
 
 ## 易错图形补充：中位线 / 扇形弓形 / 函数图像平移（本轮新增 2026-11-13）
 
@@ -376,6 +377,28 @@
 > 几何性质与显式 `vertexIds`）。覆盖 `regularPolygonSpec` 四种定半径定义、内接外切两模式、
 > edge 的 side/flip/数值换算、12 类非法参数抛错、几何性质与 `expr` 摘要逐字节冻结。
 > 该单测由纯函数直接驱动，无浏览器 / JSXGraph 依赖，稳定可复跑；真实渲染与拖动联动仍需带浏览器环境目视确认（见「已知限制」）。
+
+## 正多边形·edge toward 点定侧（本轮新增 2026-11-16 第七轮）
+
+> 落实连续多轮 TODO 交接项⑥ 的前半——此前「以 AB 为一边补全正 n 边形」只能用 `side:left/right` 定侧，
+> 斜边 / 任意朝向的边上 AI 极易把左右判反（用户说的是「朝三角形内侧 / 朝 C 点那一侧补」）。
+> 本轮给 `regularPolygon` 的 `edge:[A,B]` 新增 `toward` 参数：直接引用状态快照里已有的点 id，
+> 执行器按 `(A→B)×(A→T)` 的符号自动取 `left/right`（MCP 式「读取画板状态 → 继续构造」的又一种入口），
+> 把朝向判定也交给符号计算。配套 `js/executor.js` 的 `regularPolygonSpec` edge 分支 + 头部协议注释 + JSDoc、
+> `ai/board-prompt.js` 命令清单登记 toward +「正多边形·edge toward 点定侧」小节 + 例30 few-shot、
+> `tests/board2d_regularPolygon_spec.mjs` 新增 section I（19 项断言）。
+> 纯 2D 增量，3D 分支 / `editor.html` / `appId` / `js/board.js` 零改动，`expr` 摘要格式逐字节不变。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 74 | 三角形 A(0,0) B(4,0) C(1,3)，以 AB 为一边、朝 C 点那侧（三角形内侧）补正方形并验证边长 | `point` A/B/C → `polygon` tri → `regularPolygon` sq edge:["A","B"] sides:4 **toward:"C"** vertexIds:[Q0..Q3]（执行器按叉积判 left，中心 (2,2)、Q0=A、Q1=B、Q2=(4,4)、Q3=(0,4)）→ `verify` distance(A,Q0)=0 / distance(B,Q1)=0 / distance(Q0,Q1)=4 / distance(Q2,Q3)=4 / distance(A,Q3)=4 | ✅ | 别自己判 `side:left/right`：斜边上左右极易判反，直接把已有的点 id 交给 `toward`；不要为补正方形 `clear` 已有三角形、不要重复 `point` 已有 id；`toward` 与 `side`/`flip` **互斥**（同时给整条失败）、只在 `edge` 定义下可用；`toward` 点落在 AB 所在直线（含延长线）或引用不到点时整条报错，换一个明确在某侧的点；`verify` 只写可直接给出的预期值；见 `ai/board-prompt.js` 例30 |
+| 75 | 斜边定侧 / 与 side 等价 / 非法参数 / 单测护栏 | `regularPolygon` sq2 edge:[[0,0],[2,2]] sides:4 toward:[0,3]（斜边，叉积自动判 left，与 `side:"left"` 产出同一 `expr`）→ toward:[3,0] 判 right → 点 id 写法 `toward:"C"`（refs.point 与 `[x,y]` 等价）→ 外切 + toward 下方（中心 (1,-1)、radius=边心距=1、顶点半径 √2）→ 非法：`toward` 与 `side`/`flip` 混用 / 与 AB 共线 / 用在非 `edge` 定义 / 引用未定义点 → `node tests/board2d_regularPolygon_spec.mjs` | ✅ | `toward` 定侧只改中心坐标，`expr` 摘要格式不变（旧 59 项断言全保持通过）；判定侧别写进 `__aiRegular.meta.towardSide` 供 `describe()`/`inspect` 回读；单测新增 19 项断言共 **78/78** 全通过，含斜边、外切、点 id、6 类抛错与「不带 toward 的 edge 行为逐字节不变」回归护栏；真实 JSXGraph 渲染仍需浏览器目视确认 |
+
+> 状态 ✅：`tests/board2d_regularPolygon_spec.mjs` 本地实跑 **78/78** 断言全通过
+> （原 8 个 section 的 59 项 + 新增 section I 的 19 项），`toward(上)` 与 `side:"left"`、
+> `toward(下)` 与 `side:"right"` 的 `expr` 逐字节一致；不带 `toward` 的 `edge` 输出与改动前一致。
+> 朝向由 `(A→B)×(A→T)` 符号判定，与人工判左右等价但不会在斜边上判反；共线 / 未知点 / 混用 /
+> 非 edge 定义一律抛错，不静默猜测。真实画板渲染与 `meta.towardSide` 的面板呈现仍需浏览器环境确认。
 
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的

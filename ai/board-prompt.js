@@ -236,6 +236,24 @@
  * TODO(下一步): ① [本轮已完成] regularPolygonSpec 无头单测入库；② conicSpec 也补入库无头单测
  *     （第一定义 foci+sum / 第二定义 focus+directrix+e）；③ 自检状态条固定 DOM 徽标；
  *     ④ 收敛判定引入「残差改善量」；⑤ 其它易错图形（弓形面积阴影、旋转相似）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-16 第七轮）：只追加 2D 作图主干逻辑，3D 命令分支零改动、
+ *   不动 appId/editor.html/js/board.js，核心工作流 / 铁律 / 既有例1-29 逐字未动、无删除行。
+ *   落实连续多轮 TODO 交接项⑥ 的前半——给 regularPolygon 的 edge:[A,B] 新增 toward 点朝向语义：
+ *   此前「以 AB 为一边补全正 n 边形」只能写 side:left/right，斜边 / 任意朝向的边上 AI 极易把左右判反，
+ *   而用户说的是「朝三角形内部 / 朝 C 点那一侧补」。本轮让 AI 直接引用状态快照里已有的点 id，
+ *   执行器按 (A→B)×(A→T) 符号自动取 left/right（MCP 式「读取画板状态 → 继续构造」的又一种入口），
+ *   把朝向判定也交给符号计算。toward 与 side/flip 互斥；T 落在 AB 所在直线上、引用不到点、
+ *   或用在非 edge 定义下时整条命令抛错（不静默猜测）；meta.towardSide 记录判定侧别供回读。
+ *   本文件只追加：命令清单 regularPolygon 的 toward 子项、「正多边形·edge toward 点定侧」小节、
+ *   例30 few-shot（朝三角形内侧以一条边补全正方形 + verify 自检）；3D 追加段落整段零改动。
+ *   配套 js/executor.js 的 regularPolygonSpec edge 分支 + 头部协议注释 + JSDoc；
+ *   tests/board2d_regularPolygon_spec.mjs 新增 section I（19 项断言，共 78/78 全通过，expr 格式不变）；
+ *   docs/AI作图回归用例清单.md 用例 74/75。
+ * TODO(下一步): ① conicSpec 补入库无头单测（第一定义 foci+sum / 第二定义 focus+directrix+e / 三分支离心率）；
+ *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
+ *   ④ 其它易错图形（弓形面积阴影、旋转相似）；⑤ edge 的「显式边心距」语义
+ *     （边长 s 与 n 已唯一确定 a=s/(2tan(180°/n))，显式给 a 与「AB 是一条边」冲突，宜另立定义，勿塞进 edge）。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -377,6 +395,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
   · vertexIds:["A","B","C",…] 给 n 个不重复 id（长度必须=边数，不能与主 id 或已有 id 重名）；省略则按 <id>1..<id>n 自动命名。顶点是普通 point，可继续被线段/中点/intersect/verify 引用
   · 可选 "color"/"strokeWidth"/"dash"/"fill"/"fillColor"/"fillOpacity" 改线型；describe()/inspect 回读 "regularPolygon:inscribed@n=6,中心(0,0),R=2,旋转0°,顶点[hex1 …]"；删主图元会连带清掉派生顶点
   · edge:["A","B"] 以画板上已有的一条边定整个正多边形（本轮新增，见「正多边形·给定一条边」小节 / 例29）：{"op":"regularPolygon","id":"hex","edge":["A","B"],"sides":6}——执行器由边长 s=|AB| 精确算 边心距 a=s/(2tan(180°/n))、顶点半径 s/(2sin(180°/n))，中心落在 AB 中垂线距边 a 处，第 0 个顶点正好是 A、相邻顶点是 B；side:"left"(默认)/"right"（或中文「左」「右」）、flip:true 选正多边形落在有向边 A→B 的哪一侧；edge 与 center/radius/circle/vertex/rotate **互斥**（混用整条失败），两端点不能重合、side 只能 left/right、sides 仍须 3~24 整数；内接 radius=外接圆半径、外切 radius=内切圆半径（边心距），顶点照旧按 vertexIds 或 <id>1..<id>n 注册、可继续被 verify 引用
+  · toward:"C" 或 toward:[x,y]（本轮新增，见「正多边形·edge toward 点定侧」小节 / 例30）：用画板上已有的一点决定正多边形落在边的哪一侧，执行器按 (A→B)×(A→T) 叉积自动判 left/right，AI 不必自己判方位；与 side / flip 互斥，toward 点与 AB 共线、引用不到点、或用在非 edge 定义下整条命令失败；判定侧别写进 meta.towardSide 供状态回读
 - slider     {"op":"slider","id":"a","x1":-8,"y1":-9,"x2":-2,"y2":-9,"min":0,"max":5,"value":1,"step":0.1}  滑动条（用户可拖动的参数控件；x1,y1→x2,y2 是它在画板上的位置，省略会自动排到左下角）
 - animate    {"op":"animate","id":"a"} | {"op":"animate","ids":["a","b"]} | {"op":"animate","ids":"__all__","pingpong":true,"speed":"normal"}  自动播放动画（让指定滑动条自动连续改值，依赖它的几何实时演示；speed: slow/normal/fast；pingpong:true 往复；仅前端播放，不进画板文档）
 - text       {"op":"text","id":"t1","x":0,"y":5,"text":"说明文字"}    自由文本
@@ -477,6 +496,21 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
   要改整体请 move A/B 后先 remove 主图元再重发（同名重发会因顶点 id 重复定义失败），或 clear 重画。
 - 自检：末尾用 verify 把「A 落在顶点上」「边长处处 = |AB|」落成数字断言
   （distance(A, <id>1)=0 / distance(<id>1, <id>2)=|AB|）；外切再核边中点到中心 = radius。见例29。
+
+# 正多边形·edge toward 点定侧（本轮新增 2026-11-16 第七轮）
+- 用户说「以 AB 为一边，朝 C 点那一侧补全正方形」「在三角形内部以这条边作正六边形」「朝圆心方向补」时，
+  用 toward 直接给那个已有的点（点 id 或 [x,y]），不要自己判 side:left/right：
+  {"op":"regularPolygon","id":"sq","edge":["A","B"],"sides":4,"toward":"C"}
+- 执行器按 (A→B)×(A→T) 的符号自动选侧：toward 在有向边 A→B 的逆时针一侧等价于 side:"left"，
+  另一侧等价于 side:"right"。斜边 / 倾斜的边上 left/right 极易判反，交给执行器算才稳（对标大角几何符号计算）。
+  这正是「读取画板状态 → 继续构造」：toward 点直接引用状态快照里已有的 id，不用抄坐标、不用 clear 重画。
+- 铁律：toward 只在 edge:[A,B] 定义下可用；与 side / flip **互斥**（同时给整条失败，避免两种朝向语义打架）；
+  toward 点必须已建好（或写 [x,y] 数值）；该点不能落在 AB 所在直线上（含延长线，否则判别不出侧别，整条失败）；
+  朝向定下来后，其余约束与「给定一条边」小节完全相同（edge 与 center/radius/circle/vertex/rotate 互斥、
+  sides 3~24 整数、外切 radius 是边心距、顶点是静态派生点）。
+- 状态回读：describe()/inspect 的 __aiRegular.meta.towardSide 给出判定出的 left / right；
+  expr 摘要格式不变（toward 只改变 center 的数值）。末尾照常用 verify 核「首顶点落在 A / 边长 = |AB|」，
+  pass:false 触发自动修正轮。见例30。
 
 # 滑动条与动态演示（重点能力）
 - 需要"动态演示/参数变化/动画/可调"的效果时，用 slider 造参数，再让它驱动几何体：
@@ -1054,6 +1088,31 @@ H(intersection@(0,-1)), 高 AH=4.000, ∠AHB=90.0°, online(H,lBC)=0.000, f1(fun
 //   ④ 外切版加 mode:"circumscribed"：AB 与内切圆相切，radius 回读 √3（边心距）而不是 2，
 //      顶点半径仍是 2；⑤ vertexIds 长度必须=6 且互不重复，省略则自动 hex1..hex6（把 V0/V1 换成 hex1/hex2）；
 //   ⑥ 顶点是静态派生点，要改整体请 move A/B 后先 remove("hex") 再重发（同名重发会因顶点 id 冲突失败）。
+
+== 例30：朝三角形内侧以一条边补全正方形（regularPolygon edge + toward 点定侧；本轮新增） ==
+用户："画三角形 A(0,0) B(4,0) C(1,3)，以 AB 为一条边、朝 C 点那一侧（也就是三角形内侧）补一个正方形，并验证边长。"
+思路：AB 是水平边（A→B 向右），"上方"恰好是左侧，这种简单情形写 side:"left" 也行；但若 AB 是斜边、
+      或用户说的是"朝 C 那一侧"，AI 判断 left/right 极易出错。直接用 toward:"C" 把朝向交给执行器：
+      它按 (A→B)×(A→C) 的符号自动取 left/right，不必抄 C 的坐标、也不必 clear 重画已有三角形。
+      一条 regularPolygon 交出「边 + 边数 + 朝哪个点」，末尾用 verify 把首顶点落在 A、边长 = |AB| = 4
+      写成数字断言，pass:false 触发自动修正轮。
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":4,"y":0}
+{"op":"point","id":"C","x":1,"y":3}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"regularPolygon","id":"sq","edge":["A","B"],"sides":4,"toward":"C","vertexIds":["Q0","Q1","Q2","Q3"]}
+{"op":"verify","kind":"distance","of":["A","Q0"],"expect":0,"tol":0.05}          // 第 0 个顶点正好是 A
+{"op":"verify","kind":"distance","of":["B","Q1"],"expect":0,"tol":0.05}          // 相邻顶点正好是 B
+{"op":"verify","kind":"distance","of":["Q0","Q1"],"expect":4,"tol":0.05}          // 边长 = |AB| = 4
+{"op":"verify","kind":"distance","of":["Q2","Q3"],"expect":4,"tol":0.05}          // 换任意相邻顶点也 = 4
+{"op":"verify","kind":"distance","of":["A","Q3"],"expect":4,"tol":0.05}          // 另一条邻边也 = 4
+// 要点：① toward 用已建点的 id（先创建后引用），也可写 [1,3] 直接给数值；这是「读画板状态→继续构造」的入口，
+//   不要为了画正方形而 clear 已有的三角形，也不要重复 point 已有 id；
+//   ② toward 与 side / flip 互斥，同时给整条失败；toward 只在 edge 定义下可用，别加到 center+radius 版；
+//   ③ toward 点不能落在 AB 所在直线上（含延长线）——判不出侧别时执行器整条报错，请换一个明确在某侧的点；
+//   ④ 想补到另一侧就换一个那侧的点（或改回 side:"right" 与之二选一），别同时写两种朝向；
+//   ⑤ 执行器算边心距 4/(2tan45°)=2、中心 (2,2)，Q0=A(0,0)、Q1=B(4,0)、Q2=(4,4)、Q3=(0,4)；
+//      verify 只写「落在 A / B」「边长 = 4」这类可直接给出的预期值，别写含符号推导的断言。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
