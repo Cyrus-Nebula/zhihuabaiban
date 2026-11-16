@@ -317,6 +317,19 @@
 > `describe()` 输出与改动前**逐项一致**。真实 JSXGraph 渲染与拖动联动仍需带浏览器环境目视确认
 > （见「已知限制」）。
 
+## 函数图像对称演示（本轮新增 2026-11-16 第四轮）
+
+> 落实连续多轮 TODO 交接项④「其它易错图形」——函数图像对称演示（与用例 46 / `ai/board-prompt.js` 例15
+> 的「平移演示」成姊妹篇）。纯提示词增量：AI 之前容易把"沿 y 轴翻折"做成两张静态 `function` 或
+> `transform reflect` 静态副本（不能参数化联动），或把"关于 y 轴对称 f(-x)"误写成"-f(x)"（那是关于 x 轴）。
+> 本轮新增 `ai/board-prompt.js` 例28，给出「滑动条 t 参数化 m=1-2t、expr:"(m*x)^2" 连续翻折 + animate」范式；
+> 全程复用既有 `slider`/`function`/`animate`/`verify`，未触碰 `js/executor.js` 执行分支，
+> 3D 分支 / `editor.html` / `appId` 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 70 | 画 y=x²，动画演示它沿 y 轴翻折（关于 y 轴对称）的连续过程 | `slider` t min:0 max:1 value:0 step:0.01 → `function` f1 expr:"((1-2*t)*x)^2" from:-5 to:5（水平缩放因子 m=1-2t，t:0→1 从原图经压扁到关于 y 轴的镜像）→ `animate` ids:[t] pingpong:true → `verify` evaluate "((1-2*t)*x)^2" x:2 expect:4 rtol:0.01（t=0 基准 f(2)=4） | ✅ | 对称演示用「滑动条 + 参数化表达式」+ `animate`，别用两张静态 `function` 或 `transform reflect` 静态副本（不能实时联动）；关于 y 轴是 f(-x)（换 x 符号），别写成 -f(x)（那是关于 x 轴）；插值用 m=1-2t 而非 -t（后者起点 m=0 直接压扁、缺原图）；关于 x 轴写 -f(x)、原点写 -f(-x)；`slider` 先建后引用、含变量的 verify 需浏览器环境确认；见 `ai/board-prompt.js` 例28 |
+
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
   JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在
