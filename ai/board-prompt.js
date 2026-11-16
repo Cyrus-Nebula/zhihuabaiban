@@ -220,10 +220,22 @@
  *   核心工作流 / 铁律 / 既有例1-28 / 3D 追加段落逐字未动、无删除行。
  *   js/executor.js 同步 regularPolygonSpec 的 edge 分支 + 协议注释 + 执行分支注释；
  *   docs/AI作图回归用例清单.md 用例 71/72。无头桩回归 119 项断言全通过（旧 10 组定义结果与 HEAD 逐字节一致）。
- * TODO(下一步): ① 把 2D 协议的无头桩回归脚本入库成 tests/ 单测（regularPolygonSpec 优先，edge 分支一并覆盖）；
+ * TODO(下一步): ① [本轮已完成 2026-11-16 第六轮] 把 2D 协议的无头桩回归脚本入库成 tests/ 单测
+ *      （见 tests/board2d_regularPolygon_spec.mjs，regularPolygonSpec 含 edge 分支，59 项断言）；
  *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
  *   ④ 其它易错图形（弓形面积阴影、旋转相似）；⑤ [本轮已完成 2026-11-16 第五轮] edge:[A,B] 定半径与朝向；
  *   ⑥ edge 支持 toward 点 / 显式边心距等更自然的朝向语义。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-16 第六轮）：只追加头部 TODO 注释，纯 2D 回归基建，
+ *   3D 命令分支 / editor.html / appId 零改动，核心工作流 / 命令协议 / 例1-29 few-shot 逐字未动。
+ *   落实连续多轮 TODO 交接项①——把此前只在沙盒临时跑的 2D 协议无头桩回归正式入库成 tests/ 单测
+ *   （tests/board2d_regularPolygon_spec.mjs，直接 import js/executor.js 的 regularPolygonSpec 纯函数，
+ *   59 项断言全通过，覆盖四种定半径 + 内接/外切 + edge side/flip + 12 类非法参数 + expr 摘要冻结）。
+ *   这是提示词里「把符号计算交给执行器 / 坐标数值化 / 先创建后引用」等铁律的机器化回归护栏：
+ *   AI 命令协议的执行语义一旦被后续改动破坏，单测会立刻红灯。docs 回归清单用例 73。
+ * TODO(下一步): ① [本轮已完成] regularPolygonSpec 无头单测入库；② conicSpec 也补入库无头单测
+ *     （第一定义 foci+sum / 第二定义 focus+directrix+e）；③ 自检状态条固定 DOM 徽标；
+ *     ④ 收敛判定引入「残差改善量」；⑤ 其它易错图形（弓形面积阴影、旋转相似）。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。

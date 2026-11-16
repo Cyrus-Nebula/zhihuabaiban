@@ -358,6 +358,25 @@
 > 真实 JSXGraph 渲染、`fixed:true` 派生顶点交互仍需带浏览器环境目视确认（见「已知限制」）。
 > edge 定义的顶点是静态派生点：改整体需先 `remove` 主图元再重发（同名重发会因顶点 id 冲突失败）。
 
+## 2D 协议无头单测入库（本轮新增 2026-11-16 第六轮）
+
+> 落实连续多轮 TODO 交接项①——此前 `regularPolygonSpec` 的无头桩回归只在沙盒里临时跑、未入库，
+> 易随环境丢失，无法在后续改动（尤其符号计算 / 坐标数值化 / 先创建后引用等铁律相关逻辑）后自动复验。
+> 本轮把它正式入库成 `tests/board2d_regularPolygon_spec.mjs`：Node 22 可直接 `import`
+> `js/executor.js` 导出的纯函数（ESM 语法探测，无需 `package.json`），**真实调用纯函数**做数值断言，
+> 而非旧桩的静态正则比对。运行：`node tests/board2d_regularPolygon_spec.mjs`。
+> 该单测是 AI 命令协议执行语义的机器化回归护栏，纯 2D，3D 分支 / `editor.html` / `appId` 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 73 | 对正多边形 DSL 执行器做无头回归：四种定半径 + 内接/外切 + edge 分支 + 非法参数 + expr 格式冻结 | `node tests/board2d_regularPolygon_spec.mjs`（直接 `import` `regularPolygonSpec` 纯函数）：断言 ①`center+radius` 内接六边形 6 顶点到心等距=2、`expr` 逐字节冻结；②外切正方形 vertexRadius=2√2、边长=2R=4；③`circle`/`vertex`/`rotate`/中文别名与 `sides\|n\|edges` 三别名；④`edge` 内接/外切中心与半径换算、`side:left\|right`/`flip`/点 id、首顶点落在 A；⑤12 类非法参数抛错；⑥几何性质（顶点等距、边长=2R·sin(180°/n)）与显式 `vertexIds` | ✅ | 单测必须**真实调用** `regularPolygonSpec` 并做容差数值断言（`near`/`nearPt`），不要用静态正则替代；`expr` 摘要逐字节冻结，防 AI 回放 / `describe()` 状态回读格式被无意改动而回归；`sides=3.5` 必须抛错（不静默四舍五入成 4）；Node 22 的 ESM 语法探测可直接 import 无 `type` 字段的 `.js`，无需加 `package.json`；沙箱无真实 JSXGraph，渲染/拖动仍需带浏览器目视确认 |
+
+> 状态 ✅：`tests/board2d_regularPolygon_spec.mjs` 本地实跑 **59/59** 断言全通过（8 个 section：
+> `center+radius` / `sides` 别名与中文 mode / `rotate` / `circle` / `vertex` / `edge` / 错误分支 /
+> 几何性质与显式 `vertexIds`）。覆盖 `regularPolygonSpec` 四种定半径定义、内接外切两模式、
+> edge 的 side/flip/数值换算、12 类非法参数抛错、几何性质与 `expr` 摘要逐字节冻结。
+> 该单测由纯函数直接驱动，无浏览器 / JSXGraph 依赖，稳定可复跑；真实渲染与拖动联动仍需带浏览器环境目视确认（见「已知限制」）。
+
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
   JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在

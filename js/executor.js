@@ -196,11 +196,25 @@
  *       供 describe()/inspect 数值快照继续回读中心/R/旋转/顶点 id。
  *   配套：ai/board-prompt.js 命令清单登记 +「正多边形·edge」追加小节 + 例29 few-shot；
  *   docs/AI作图回归用例清单.md 用例 71/72。无头桩回归见本轮说明（旧定义结果逐项对照不变）。
- * TODO(下一步): ① 给 2D 协议补入库无头单测脚本（regularPolygonSpec 优先，edge 分支一并覆盖）；
+ * TODO(下一步): ① [本轮已完成 2026-11-16 第六轮] 给 2D 协议补入库无头单测脚本（见 tests/board2d_regularPolygon_spec.mjs）；
  *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
  *   ④ 其它易错图形（弓形面积阴影、旋转相似——函数图像对称演示已补，见例28）；
  *   ⑤ [本轮已完成 2026-11-16 第五轮] regularPolygon 支持「给定一条边两个顶点」定半径与朝向（edge:[A,B]）；
  *   ⑥ edge 支持「给定边 + 一个已有点在内部/外部」的朝向语义（toward 点），或边中点到中心的显式距离。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-16 第六轮）：只入库 2D 回归基建，改本文件头部注释 + 新增 tests/ 单测，
+ *   3D 分支 / editor.html / appId 零触碰，执行逻辑零改动。
+ *   落实连续多轮 TODO 交接项①——此前 regularPolygonSpec 的无头桩回归只在沙盒里临时跑，未入库，易随环境丢失。
+ *   本轮新增 tests/board2d_regularPolygon_spec.mjs：直接 import 本模块导出的纯函数 regularPolygonSpec
+ *   （Node 22 ESM 语法探测可直接加载 .js，无需 package.json），59 项断言全通过，覆盖：
+ *   center+radius / circle / vertex / edge 四种定半径、inscribed/circumscribed 两模式、sides|n|edges 三别名、
+ *   rotate 旋转、edge 的 side:left|right / flip / 数值换算、vertexIds 校验、12 类非法参数抛错、
+ *   几何性质（顶点等距/边长公式/首顶点落点）与 expr 摘要逐字节冻结（防回放/状态回读格式回归）。
+ *   运行：node tests/board2d_regularPolygon_spec.mjs。配套 docs/AI作图回归用例清单.md 用例 73。
+ * TODO(下一步): ① [本轮已完成 2026-11-16 第六轮] regularPolygonSpec 无头单测入库；
+ *   ② 把 conicSpec 也补入库无头单测（第一定义 foci+sum / 第二定义 focus+directrix+e / 三分支离心率）；
+ *   ③ 自检状态条做成 AI 面板固定 DOM 徽标；④ 收敛判定引入「残差改善量」；
+ *   ⑤ 其它易错图形（弓形面积阴影、旋转相似）；⑥ edge 的 toward 点 / 显式边心距朝向语义。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
