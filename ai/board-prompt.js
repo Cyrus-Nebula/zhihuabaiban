@@ -1489,3 +1489,38 @@ export const BOARD3D_GRID_PROMPT = `
 - 同一批命令里可以先 add3d 建好源对象再 grid3d；副本由画板按当前场景真实几何生成，不要自己在提示里算每个副本坐标。
 - 补充铁律：grid3d 是 3D 命令；2D 的 array / 阵列 / 复制等命令在本分支依旧不认识，不要输出。`;
 
+/* ============================================================ *
+ * 2026-11-17 D13 追加段：align3d 多对象对齐 / 等距分布（独立自主 3D 画板任务）
+ * 协作铁律：仅在本文件最末尾追加，上方 2D 主干 BOARD_SYSTEM_PROMPT 与全部
+ * 既有 3D 追加段（量测 / 回注标注 / transform / 批量 / duplicate / radial /
+ * mirror / grid）逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 新命令单独成组，与 js/board3d-executor.js 的 BOARD3D_ALIGN_OPS 一一对应。
+ * 拼在文件最末尾同样是为了让 fitPrompt 短上下文裁剪时保留尾部。
+ * ============================================================ */
+
+/** 3D 扩展命令 op（2026-11-17 D13 追加，与 js/board3d-executor.js 的 BOARD3D_ALIGN_OPS 一致） */
+export const BOARD3D_ALIGN_PROMPT_OPS = Object.freeze(['align3d']);
+
+/** 3D 对齐 / 分布命令追加段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_ALIGN_PROMPT = `
+
+# 补充命令：align3d 多对象对齐 / 等距分布（仅本 3D 分支可用，2026-11-17 追加）
+- 作用：把**已经存在**的多个对象，沿某一条坐标轴对齐到同一绝对坐标，或在该轴上等距排开（对象数量不变，只改位置）。用户说「把这几个球的底部对齐」「让这排柱子顶部齐平」「把这些点居中对齐」「把 5 个球沿 X 均匀排开」「在 z=-3 到 z=3 之间等距分布」时用它，不必自己读出并计算每个对象的坐标。
+- 格式：{"op":"align3d","ids":["a","b","c"],"axis":"x","mode":"min"}
+  · ids 必填，2~32 个互不重复、且已存在于当前画板对象列表（或本轮前面已 add3d）的对象 id，对齐至少需要 2 个；
+  · axis 可选，'x' / 'y' / 'z'（默认 'x'），只改这一条轴的坐标，其余两轴保持不动；
+  · mode 可选，四种（默认 'center'）：
+    - 'min'：全部对齐到组内**最小**坐标（左 / 下对齐）；
+    - 'max'：全部对齐到组内**最大**坐标（右 / 上对齐）；
+    - 'center'：全部对齐到 (最小+最大)/2（居中对齐）；
+    - 'distribute'：按当前坐标顺序**等距重排**，默认首尾两个对象不动（保持组内 min/max 端点）。
+  · to 可选数值，仅 min/max/center 生效：显式指定目标坐标（覆盖自动算出的 min/max/中值），例如把一批物体底部对齐到 y=0；
+  · start / end 可选数值，仅 distribute 生效：显式指定分布区间端点（缺省用组内当前 min/max），例如 start=-3,end=3 把它们均匀铺在区间里；
+  · 数值参数只要在命令里出现就必须是合法数字（不能是表达式 / 字符串算式 / null），否则整条命令原子拒绝、零副作用。
+  · 示例：{"op":"align3d","ids":["cube","ball","pyr"],"axis":"y","mode":"min"}（底部对齐到最低那个）
+  · 示例：{"op":"align3d","ids":["p1","p2","p3","p4"],"axis":"y","mode":"center","to":0}（全部居中到 y=0）
+  · 示例：{"op":"align3d","ids":["s1","s2","s3","s4","s5"],"axis":"z","mode":"distribute","start":-3,"end":3}
+- 与 transform3d / 阵列命令的区别：transform3d 按**相对增量**移动（AI 要自己知道每个对象挪多少），align3d 按画板读出的**当前真实坐标**算绝对目标（AI 只说「对齐 / 均匀排开」即可）；duplicate3d / radial3d / mirror3d / grid3d 都会**新建副本**、对象数变多，align3d 只调整已有对象、对象数不变。
+- 同一批命令里可以先 add3d 建好对象再 align3d；目标坐标由画板按当前场景真实几何计算，不要自己在提示里逐个写绝对坐标。
+- 补充铁律：align3d 是 3D 命令；2D 的 align / distribute / 对齐 / 分布等命令在本分支依旧不认识，不要输出。`;
+

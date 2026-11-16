@@ -132,6 +132,16 @@ async function send() {
         const ids = g.created.map((c) => c.id).join('、');
         appendLog('ai', `已生成 ${size} 网格阵列 ${g.created.length} 个对象：${ids}`);
       }
+      // 2026-11-17 D13：align3d 展示画板按当前真实坐标算出的目标轴坐标（数值以画板返回为准）。
+      for (const al of results) {
+        if (!al.ok || al.op !== 'align3d' || !Array.isArray(al.applied)) continue;
+        const axis = al.axis || '?';
+        const mode = al.mode || '?';
+        const bits = al.applied
+          .map((a) => `${a.id}→${axis}=${Array.isArray(a.patch && a.patch.pos) ? a.patch.pos[['x', 'y', 'z'].indexOf(axis)] : '?'}`)
+          .join('、');
+        appendLog('ai', `已按 ${mode} 对齐 ${al.applied.length} 个对象：${bits}`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
