@@ -330,6 +330,34 @@
 |---|------|-----------|------|------|
 | 70 | 画 y=x²，动画演示它沿 y 轴翻折（关于 y 轴对称）的连续过程 | `slider` t min:0 max:1 value:0 step:0.01 → `function` f1 expr:"((1-2*t)*x)^2" from:-5 to:5（水平缩放因子 m=1-2t，t:0→1 从原图经压扁到关于 y 轴的镜像）→ `animate` ids:[t] pingpong:true → `verify` evaluate "((1-2*t)*x)^2" x:2 expect:4 rtol:0.01（t=0 基准 f(2)=4） | ✅ | 对称演示用「滑动条 + 参数化表达式」+ `animate`，别用两张静态 `function` 或 `transform reflect` 静态副本（不能实时联动）；关于 y 轴是 f(-x)（换 x 符号），别写成 -f(x)（那是关于 x 轴）；插值用 m=1-2t 而非 -t（后者起点 m=0 直接压扁、缺原图）；关于 x 轴写 -f(x)、原点写 -f(-x)；`slider` 先建后引用、含变量的 verify 需浏览器环境确认；见 `ai/board-prompt.js` 例28 |
 
+## 正多边形·给定一条边（regularPolygon edge:[A,B]，本轮新增 2026-11-16 第五轮）
+
+> 落实连续多轮 TODO 交接项⑤「正多边形支持给定一条边的两个顶点定半径与朝向」。此前 AI 遇到
+> 「已知一条边 AB，补全正 n 边形」只能手算 `s/(2sin(180°/n))` 逐个 `point`，或用
+> 「垂直平分线 + 辅助圆 + `intersect`」凑中心，既违背「坐标数值化 / 把符号计算交给执行器」，
+> 又容易把中心放错边的一侧。本轮给 `regularPolygon` 新增 `edge:[A,B]` 写法（对标大角几何
+> 自研数学 DSL）：执行器由边长精确算 边心距 `a=s/(2tan(180°/n))`、顶点半径 `s/(2sin(180°/n))`，
+> 中心落在 AB 中垂线距边 a 处，`side:left/right` 选侧，第 0 个顶点正好落在 A 上。
+> 配套 `ai/board-prompt.js` 命令清单 +「正多边形·给定一条边」小节 + 例29，
+> `js/executor.js` 的 `regularPolygonSpec` edge 分支 + 协议注释 + 执行分支注释。
+> 纯 2D 增量，3D 分支 / `editor.html` / `appId` / `js/board.js` 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 71 | 已知 A(-1,0)、B(1,0)，以 AB 为一条边在上方补全正六边形并验证边长 | `point` A(-1,0) / B(1,0) → `segment` ab → `regularPolygon` hex edge:["A","B"] sides:6 side:"left" vertexIds:[V0..V5]（执行器算 边心距 √3≈1.732、顶点半径 2、中心(0,√3)，V0=A、V1=B）→ `verify` distance(A,V0)=0 / distance(B,V1)=0 / distance(V0,V1)=2 / distance(V2,V3)=2 | ✅ | 一条 `edge` 命令画一圈，别逐个 `point` 手算 1.732、更别用垂直平分线+辅助圆凑中心；`edge` 两端点是已建点 id（先创建后引用），也可写 `[[-1,0],[1,0]]`；默认 `side:"left"` 是 A→B 的逆时针一侧（A→B 向右即「上方」）；`edge` 与 `center`/`radius`/`circle`/`vertex`/`rotate` **互斥**，混用整条失败；`vertexIds` 长度=6、省略则 `hex1..hex6`；见 `ai/board-prompt.js` 例29 |
+| 72 | 给定边画正方形 / 翻到另一侧 / 外切模式 / 非法参数与状态回读 | `point` A2(0,0) / B2(2,0) → `regularPolygon` sq edge:["A2","B2"] sides:4（中心(1,1)、顶点 (0,0)/(2,0)/(2,2)/(0,2)、边长 2）→ `regularPolygon` sqR edge:["A2","B2"] sides:4 side:"right"（或中文「右」/ `flip:true`，中心(1,-1)）→ `regularPolygon` sqC edge:["A2","B2"] sides:4 mode:"circumscribed" side:"right"（中心(1,-1)、radius=1=边心距、顶点半径 √2、边中点(切点)到中心=1）→ `verify` distance(A2,sq1)=0 / distance(sq1,sq2)=2 / distance(A2,sqC1)=0 | ✅ | `side:left` 默认可省，`side:"right"`/`flip:true`/中文「右」等价（同一条边、同一组顶点集合，只是绕行方向不同，B 变成最后一个顶点）；外切时 radius 回读**内切圆半径(边心距)**而非外接圆半径，AB 与内切圆相切于边中点；`inspect` id:sq 回 `regularPolygon:inscribed@…` 且 `__aiRegular.meta.definition="edge"`、`__aiExpr` 尾部带 `def=edge`；非法参数一律 `ok:false` **不注册任何元素**：`edge` 长度≠2 / 非数组 / 两端点重合 / 与 `center`/`radius`/`circle`/`vertex`/`rotate` 混用 / `side:wat` / 引用未定义点 / `sides` 2、25、3.5 / `vertexIds` 长度不符或重复 |
+
+> 状态 ✅：`regularPolygonSpec` 的 edge 分支已用无头桩回归 **119/119** 全通过：
+> 正六边形 A(-1,0)→B(1,0) 六顶点全部落在半径 2 圆上、六边等长且边长=2、V0=A / V1=B；
+> `side:right`/`flip:true`/中文「右」三者顶点集合逐点一致且 B 落在最后一个顶点；
+> 正方形 A2(0,0)→B2(2,0) 四顶点 (0,0)/(2,0)/(2,2)/(0,2)；外切模式边中点(切点)到中心
+> 恰等于内切圆半径 √3（用例 71 的六边形）与 1（用例 72 的正方形）；`[x,y]` 端点与点 id
+> 等价、`vertexIds`/中文 mode 生效、12 类非法参数抛错。
+> **旧定义（`center+radius` / `circle` / `vertex` / `rotate` / 滑动条 / 中文别名）10 组结果与
+> 改动前 HEAD 逐字节一致**，8 组旧非法参数仍抛错，`__aiExpr` 不带 `def=edge` 标记。
+> 真实 JSXGraph 渲染、`fixed:true` 派生顶点交互仍需带浏览器环境目视确认（见「已知限制」）。
+> edge 定义的顶点是静态派生点：改整体需先 `remove` 主图元再重发（同名重发会因顶点 id 冲突失败）。
+
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
   JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在

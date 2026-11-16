@@ -46,10 +46,12 @@
  *             | {type:'parabola',focus:F,directrix:直线id} | {type:'parabola',vertex:[h,k],p}
  *             圆锥曲线（本轮新增，见 conicSpec）：第一定义 / 第二定义 / 标准式统一换算成参数曲线；
  *             双曲线两支以 NaN 断开；方程与参数挂 __aiExpr/__aiConic 供 describe() 数值快照回读
- *   regularPolygon {id,center,radius|circle|vertex,sides,mode?,rotate?,vertexIds?}  正多边形（本轮新增，见 regularPolygonSpec）：
+ *   regularPolygon {id,center,radius|circle|vertex|edge:[A,B],sides,mode?,rotate?,side?,flip?,vertexIds?}  正多边形（本轮新增，见 regularPolygonSpec）：
  *             AI 只给语义参数，执行器用三角函数精确算 n 个顶点并落成「n 个可引用 point + 1 个 polygon」；
  *             inscribed 内接（顶点在圆上）/ circumscribed 外切（边与圆相切，顶点半径 R/cos(180°/n)）；
  *             circle 读已画圆的圆心半径、vertex 用已有点定首顶点、radius 可填滑动条 id 动态联动；
+ *             edge:[A,B] 以给定边反推中心/半径/朝向（a=s/(2tan(π/n))、顶点半径=s/(2sin(π/n))、
+ *               side:left/right 选边的一侧），与 center/radius/circle/vertex/rotate 互斥；
  *             顶点按 vertexIds 或 <id>1..<id>n 注册，挂 __aiRegular/__aiRegularVertexIds 供数值快照回读与删除联动
  *   move      {id,x,y} | {id,v}                      增量修正：就地移动已存在的自由点 / 改滑动条当前值（不新建图元、不改 id）。
  *                                                    同 id 重新 point 会被 execute 判「id 重复定义」而失败，自检自动修正改坐标一律用 move；
@@ -180,6 +182,25 @@
  * TODO(下一步): ① 给 2D 协议补入库无头单测脚本（regularPolygonSpec 优先）；② 自检状态条固定 DOM 徽标；
  *   ③ 收敛判定引入「残差改善量」；④ 其它易错图形（弓形面积阴影、函数图像对称演示）；
  *   ⑤ 正多边形支持「给定一条边 two vertices」定半径/朝向的写法。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-16 第五轮）：只改 2D 协议，3D 分支 / editor.html / appId 零触碰。
+ *   落实上一轮 TODO 交接项⑤「给定一条边的两个顶点定半径/朝向」——给 regularPolygon 新增 edge:[A,B] 写法，
+ *   把「已知一条边 → 求正 n 边形中心」的三角换算也收进执行器（对标大角几何自研 DSL / 符号计算）：
+ *   (1) regularPolygonSpec 新增 edge 分支：边长 s=|AB| → 边心距 a=s/(2tan(π/n))、顶点半径=s/(2sin(π/n))，
+ *       中心 = AB 中点 ± a·单位法向（side:left/right、中文「左」「右」、flip:true 选侧），
+ *       内接 radius=顶点半径、外切 radius=边心距；rotate 由 A 的极角反推使第 0 个顶点正好落在 A 上；
+ *       edge 与 center/radius/circle/vertex/rotate 互斥、端点重合/非法 side/非法数组一律抛错不注册。
+ *   (2) 执行分支复用既有 polyRefs.point 解析 A/B（无新分支），edge 模式 centerEl/radiusGetter 均为 null、
+ *       dynamic=false（顶点按推导值静态落成 fixed:true 的 point，与其它静态定义一致）；
+ *       __aiExpr 仅在 edge 定义时加 ' def=edge' 标记，既有定义逐字节不变；__aiRegular.meta.definition='edge'
+ *       供 describe()/inspect 数值快照继续回读中心/R/旋转/顶点 id。
+ *   配套：ai/board-prompt.js 命令清单登记 +「正多边形·edge」追加小节 + 例29 few-shot；
+ *   docs/AI作图回归用例清单.md 用例 71/72。无头桩回归见本轮说明（旧定义结果逐项对照不变）。
+ * TODO(下一步): ① 给 2D 协议补入库无头单测脚本（regularPolygonSpec 优先，edge 分支一并覆盖）；
+ *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
+ *   ④ 其它易错图形（弓形面积阴影、旋转相似——函数图像对称演示已补，见例28）；
+ *   ⑤ [本轮已完成 2026-11-16 第五轮] regularPolygon 支持「给定一条边两个顶点」定半径与朝向（edge:[A,B]）；
+ *   ⑥ edge 支持「给定边 + 一个已有点在内部/外部」的朝向语义（toward 点），或边中点到中心的显式距离。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -563,6 +584,10 @@ export function conicSpec(cmd, refs) {
  *   radius    正数（内接=外接圆半径 R，外切=内切圆半径 R）；可填滑动条 id 实现动态联动
  *   circle    已画圆的 id：直接读它的圆心 + 半径（与 center/radius 二选一，MCP 式读画板状态）
  *   vertex    已定义点 id：以它作第一个顶点来定半径与起始角（与 radius 二选一）
+ *   edge      [A,B] 两个已定义点（点 id 或 [x,y]）：以 AB 为正 n 边形的一条边，反推中心/半径/朝向
+ *             （2026-11-16 新增，落实 TODO ⑤）。与 center/radius/circle/vertex/rotate 互斥；
+ *             边心距 a=s/(2tan(π/n))、顶点半径 s/(2sin(π/n))；A 恒为第 0 个顶点、B 为相邻顶点。
+ *             side:left(默认)/right 或中文「左」「右」、flip:true 决定正多边形落在有向边 AB 的哪一侧。
  *   sides/n   边数，整数 3~24（默认 6）
  *   mode      inscribed 内接（默认，顶点在圆上）/ circumscribed 外切（边与圆相切，
  *             顶点到圆心 = R/cos(180°/n)）；也认中文「内接」「外切」
@@ -605,12 +630,47 @@ export function regularPolygonSpec(cmd, refs) {
   const mode = MODE[String(cmd.mode == null ? 'inscribed' : cmd.mode).toLowerCase()];
   if (!mode) throw new Error('regularPolygon.mode 只能是 inscribed / circumscribed（内接 / 外切）');
 
-  // 中心 + 半径：circle > radius > vertex（三选一，优先级从高到低）
+  // 中心 + 半径：edge > circle > radius > vertex（四选一，优先级从高到低）
+  // 2026-11-16 新增 edge：给定正 n 边形「一条边的两个端点」反推中心 / 半径 / 朝向，
+  //   把 sin/tan 三角换算收进执行器（对标大角几何自研数学 DSL / 符号计算），
+  //   AI 只声明「这条边 + 边数 + 落在哪一侧」，不必手算边长→外接圆半径。
   let center = [0, 0];
   let radius = NaN;
   let definition = 'center+radius';
   let vertexAngleDeg = 0;
-  if (cmd.circle != null) {
+  if (cmd.edge != null) {
+    const conflict = ['center', 'radius', 'circle', 'vertex', 'rotate'].filter((k) => cmd[k] != null);
+    if (conflict.length) {
+      throw new Error('regularPolygon.edge 不能与 ' + conflict.join('/') + ' 混用（edge 已定中心/半径/朝向）');
+    }
+    if (!Array.isArray(cmd.edge) || cmd.edge.length !== 2) {
+      throw new Error('regularPolygon.edge 必须是 [A,B] 两个点（点 id 或 [x,y]）');
+    }
+    const A = point2(cmd.edge[0], 'edge[0]');
+    const B = point2(cmd.edge[1], 'edge[1]');
+    const dx = B[0] - A[0], dy = B[1] - A[1];
+    const s = Math.hypot(dx, dy);
+    if (!Number.isFinite(s) || s < 1e-9) throw new Error('regularPolygon.edge 两个端点不能重合');
+    // 有向边 A→B 的单位法向（默认取左法向，即中心落在 AB 的逆时针一侧）；
+    // side:right / flip:true 让正多边形落到另一侧（仍是同一条边、同一组顶点集合）。
+    const SIDE = { left: 1, 左: 1, 逆时针: 1, right: -1, 右: -1, 顺时针: -1 };
+    let dir = 1;
+    if (cmd.side != null) {
+      dir = SIDE[String(cmd.side).toLowerCase()];
+      if (!dir) throw new Error('regularPolygon.side 只能是 left / right（左 / 右）');
+    }
+    if (cmd.flip === true) dir = -dir;
+    // 边心距 a = s/(2tan(π/n))，顶点半径 vr = s/(2sin(π/n))：内接与外切的中心都在
+    // AB 中垂线上距边 a 处，只是「radius」语义不同（外接圆半径 vs 内切圆半径）。
+    const apothem = s / (2 * Math.tan(Math.PI / sides));
+    const vr = s / (2 * Math.sin(Math.PI / sides));
+    const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+    center = [mx + dir * apothem * (-dy / s), my + dir * apothem * (dx / s)];
+    radius = mode === 'circumscribed' ? apothem : vr;
+    definition = 'edge';
+    // 让第 0 个顶点正好落在 A 上（顶点角 = rotate + offset + k·2π/n，offset 见下方循环）
+    vertexAngleDeg = Math.atan2(A[1] - center[1], A[0] - center[0]) * 180 / Math.PI;
+  } else if (cmd.circle != null) {
     const g = refs && typeof refs.circle === 'function' ? refs.circle(cmd.circle) : null;
     if (!g || !Array.isArray(g.center) || !Number.isFinite(g.radius) || g.radius <= 0) {
       throw new Error('regularPolygon.circle 必须引用已画好的圆（取不到圆心/半径）');
@@ -635,9 +695,10 @@ export function regularPolygonSpec(cmd, refs) {
     throw new Error('regularPolygon.radius 必须是正数（或给 circle / vertex 定半径）');
   }
 
-  // 旋转：显式 rotate 优先；vertex 定顶点时让第一个顶点正好落在 V 上
+  // 旋转：显式 rotate 优先；vertex / edge 定顶点时让第一个顶点正好落在给定点上
+  //   （外切顶点相对内接多偏 180°/n 的 offset，这里预先减掉，保证 k=0 落在 A / V 上）
   let rotate = Number.isFinite(Number(cmd.rotate)) && cmd.rotate != null ? Number(cmd.rotate) : 0;
-  if (definition === 'center+vertex' && cmd.rotate == null) {
+  if ((definition === 'center+vertex' || definition === 'edge') && cmd.rotate == null) {
     rotate = vertexAngleDeg - (mode === 'circumscribed' ? 180 / sides : 0);
   }
   const rotateRad = rotate * Math.PI / 180;
@@ -668,7 +729,9 @@ export function regularPolygonSpec(cmd, refs) {
     throw new Error('regularPolygon.vertexIds 不能与主 id「' + cmd.id + '」同名');
   }
 
-  const expr = `regularPolygon: ${mode} n=${sides} R=${fmt(radius)} center(${fmt(center[0])},${fmt(center[1])}) rotate=${fmt(rotate)}`;
+  // expr 尾部只在 edge 定义时多一个标记：既有 center+radius / circle / vertex 分支
+  // 的 __aiExpr（describe / 回放）保持逐字节不变，便于无头回归对照。
+  const expr = `regularPolygon: ${mode} n=${sides} R=${fmt(radius)} center(${fmt(center[0])},${fmt(center[1])}) rotate=${fmt(rotate)}${definition === 'edge' ? ' def=edge' : ''}`;
   const meta = { definition, center, radius, sides, mode, rotate, vertexRadius, vertexIds };
   return { vertices, angles, center, radius, sides, mode, rotate, vertexRadius, vertexIds, expr, meta };
 }
@@ -1035,6 +1098,10 @@ export function createExecutor(board) {
         // AI 只给中心/半径/边数/内接或外切/旋转，执行器用三角函数精确算 n 个顶点，
         // 落成「n 个可引用的独立 point + 一个 polygon」，不再让 AI 手算 cos(2πk/n)
         // （见 ai/board-prompt.js 例20 手算法的易错点：1.732 抄错、外切顶点放错半径）。
+        // 2026-11-16 第五轮同步：cmd.edge=[A,B] 时两点由下面的 polyRefs.point 解析，
+        // 中心/半径/朝向全由 regularPolygonSpec 推导；此时 cmd.center/cmd.radius 都为空，
+        // centerEl / radiusGetter 自然为 null → dynamic=false，顶点按推导值静态落成 fixed:true 的
+        // point（与 circle / vertex 定义的静态行为一致），无需在此另开分支。
         const polyRefs = {
           point: (r) => {
             const el = resolve(r);
