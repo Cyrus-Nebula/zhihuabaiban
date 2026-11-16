@@ -1458,3 +1458,34 @@ export const BOARD3D_MIRROR_PROMPT = `
 - 同一批命令里可以先 add3d 建好源对象再 mirror3d；副本由画板按当前场景真实几何生成，不要自己在提示里算反射坐标。
 - 补充铁律：mirror3d 是 3D 命令；2D 的 reflect / mirror / symmetry / 轴对称等命令在本分支依旧不认识，不要输出。`;
 
+/* ============================================================ *
+ * 2026-11-17 D12 追加段：grid3d 矩形 / 立体网格阵列（独立自主 3D 画板任务）
+ * 协作铁律：仅在本文件最末尾追加，上方 2D 主干 BOARD_SYSTEM_PROMPT 与全部
+ * 既有 3D 追加段（量测 / 回注标注 / transform / 批量 / duplicate / radial /
+ * mirror）逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 新命令单独成组，与 js/board3d-executor.js 的 BOARD3D_GRID_OPS 一一对应。
+ * 拼在文件最末尾同样是为了让 fitPrompt 短上下文裁剪时保留尾部。
+ * ============================================================ */
+
+/** 3D 扩展命令 op（2026-11-17 D12 追加，与 js/board3d-executor.js 的 BOARD3D_GRID_OPS 一致） */
+export const BOARD3D_GRID_PROMPT_OPS = Object.freeze(['grid3d']);
+
+/** 3D 网格阵列命令追加段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_GRID_PROMPT = `
+
+# 补充命令：grid3d 矩形 / 立体网格阵列（仅本 3D 分支可用，2026-11-17 追加）
+- 作用：把一个**已经存在**的对象沿 X/Y/Z 三轴按份数复制成矩形方阵或立体点阵（源对象保持不变）。用户说「摆成 3×3 方阵」「铺一排 5 个球」「搭一个 2×2×2 的点阵」「做成长方体排列的柱子」时用它，不必自己算每个位置的坐标。
+- 格式：{"op":"grid3d","id":"cube","size":[3,1,3],"spacing":[2,0,2],"center":true}
+  · id 必填，源对象 id（必须已存在于当前画板对象列表，或本轮前面已 add3d）；
+  · size 可选，三轴份数 [nx,ny,nz]（默认 [3,1,1]，即沿 X 排 3 个）：每轴整数、钳制到 1~32，总份数 nx*ny*nz 不得超过 512（超过即整条命令失败，不会截断）；
+  · spacing 可选，三轴步长 [sx,sy,sz]（默认 [2,2,2]），可有 0 或负数；第 (i,j,k) 份位置 = 源位置 + [i*sx, j*sy, k*sz]（i/j/k 从 0 起）；
+  · center 可选，布尔（默认 false）：true 时整组以源对象当前位置为几何中心（各轴自动回退 (份数-1)/2 个步长），false 时源对象就是网格一角（第一份与源重合）；
+  · newId 可选，名称前缀（省略时自动生成 <id>_grid1..n；自动 id 与现有冲突会避让，显式单份 id 冲突直接报错）；
+  · 可选覆盖字段：color / opacity / scale / params（只写要改的键，其余沿用源对象；pos / rot 由网格几何决定，不接受覆盖）。
+  · 示例：{"op":"grid3d","id":"cube","size":[3,1,1]}
+  · 示例：{"op":"grid3d","id":"ball","size":[3,1,3],"spacing":[2,0,2],"center":true,"color":"#e11d48"}
+  · 示例：{"op":"grid3d","id":"pillar","size":[2,2,2],"spacing":[1.5,1.5,1.5]}
+- 与环形阵列的区别：grid3d 走**直角坐标方阵**（整齐成排 / 成层），radial3d 走**极坐标圆环**（绕轴围一圈）；要「一圈柱子」用 radial3d，要「方阵 / 矩阵 / 点阵」用 grid3d。
+- 同一批命令里可以先 add3d 建好源对象再 grid3d；副本由画板按当前场景真实几何生成，不要自己在提示里算每个副本坐标。
+- 补充铁律：grid3d 是 3D 命令；2D 的 array / 阵列 / 复制等命令在本分支依旧不认识，不要输出。`;
+

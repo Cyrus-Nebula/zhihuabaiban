@@ -495,3 +495,166 @@ export function resolveMirror3D(cmd, state) {
   };
 }
 
+/* ============================================================ *
+ * 2026-11-17 D12 追加段：grid3d 矩形 / 立体网格阵列（独立自主 3D 画板任务）
+ * 协作铁律：本段只追加，上方 resolveDuplicate3D / resolveRadial3D /
+ * resolveMirror3D 及全部工具函数逐字未动。
+ * 作用：把「摆成 3×3 方阵 / 铺一排 5 个 / 搭 2×2×2 的点阵」这类意图，
+ * 从当前 state 按源 id 读出一个对象，沿 X/Y/Z 三轴按各自份数均匀克隆成
+ * 矩形（或立体）网格，产出可直接交给 board3dApi.add() 的新对象规格。
+ * 与 radial3d（环形阵列）互补：grid3d 走直角坐标网格，radial3d 走极坐标环。
+ * 纯函数、只读、脏输入原子拒绝。
+ *
+ * 几何口径：
+ *   - size=[nx,ny,nz] 各轴份数（每轴 1~32）；总份数 nx*ny*nz ≤ GRID3D_COPIES_MAX，
+ *     超限原子拒绝，避免一条命令刷屏；
+ *   - 第 (i,j,k) 份位置 = basePos + [i*sx, j*sy, k*sz]（i,j,k 从 0 起）；
+ *     center=true 时每轴再减 (轴份数-1)/2 * 步长，使整组以源对象为几何中心；
+ *   - rot / scale / color / opacity / params 沿用源对象，可被可选覆盖字段改写；
+ *   - pos / rot 由网格几何决定，不接受覆盖（口径同 radial3d / mirror3d）。
+ * ============================================================ */
+
+/** 一条 grid3d 命令最多生成的总份数（nx*ny*nz，防刷屏；与 duplicate3d 32 同量级但按总量算） */
+export const GRID3D_COPIES_MAX = 512;
+
+/** 单轴份数上限（size 的每一维钳制到 [1, GRID3D_AXIS_MAX]） */
+export const GRID3D_AXIS_MAX = 32;
+
+/** 默认每轴步长（当 spacing 缺省时） */
+const GRID_DEFAULT_SPACING = [2, 2, 2];
+
+/**
+ * 解析一条 grid3d 命令（只读）。
+ *
+ * @param {Object} cmd 形如：
+ *   {"op":"grid3d","id":"cube","size":[3,1,3],"spacing":[2,0,2],"center":true}
+ *   - id       必填，源对象 id（场景中已存在）
+ *   - size     可选，三轴份数 [nx,ny,nz]（默认 [3,1,1]，即沿 X 排 3 个）；
+ *              每轴整数钳制 [1, GRID3D_AXIS_MAX]，总份数超过 GRID3D_COPIES_MAX 原子拒绝
+ *   - spacing  可选，三轴步长 [sx,sy,sz]（默认 [2,2,2]，元素钳制 ±COORD_LIMIT，可为负/0）
+ *   - center   可选，布尔（默认 false）：true 时整组以源对象 pos 为几何中心
+ *   - newId    可选，名称前缀（合法性同 duplicate3d，批量时作为前缀）
+ *   - 可选覆盖：color / opacity / scale / params（pos / rot 由网格几何决定，不接受覆盖）
+ * @param {Object} state 形如 { objects: [...] }，只读
+ * @returns {{ok:boolean, items?:Array, meta?:Object, error?:string}}
+ */
+export function resolveGrid3D(cmd, state) {
+  if (!cmd || typeof cmd !== 'object') return { ok: false, error: '命令为空' };
+  const srcId = cmd.id;
+  if (!isId(srcId)) return { ok: false, error: '源对象 id 非法' };
+
+  const objs = state && Array.isArray(state.objects) ? state.objects : [];
+  const src = objs.find((o) => o && o.id === srcId);
+  if (!src) return { ok: false, error: `要阵列的源对象 id 不存在：${String(srcId)}` };
+  if (!src.type) return { ok: false, error: '源对象缺少 type，无法阵列' };
+
+  const used = new Set(objs.map((o) => o && o.id).filter(Boolean));
+
+  // size：三轴份数，默认 [3,1,1]；非三元组 / 含非数值 → 原子拒绝（不静默回落）
+  let size = [3, 1, 1];
+  if (cmd.size !== undefined) {
+    if (!Array.isArray(cmd.size) || cmd.size.length !== 3) return { ok: false, error: 'size 必须是三元组 [nx,ny,nz]' };
+    const s = cmd.size.map(num);
+    if (s.some((x) => x === null)) return { ok: false, error: 'size 的每一轴都必须是数字' };
+    size = s.map((x) => Math.min(GRID3D_AXIS_MAX, Math.max(1, Math.round(x))));
+  }
+  const total = size[0] * size[1] * size[2];
+  if (total > GRID3D_COPIES_MAX) {
+    return { ok: false, error: `网格总份数 ${total} 超过上限 ${GRID3D_COPIES_MAX}` };
+  }
+
+  // spacing：三轴步长，默认 [2,2,2]；非三元组 / 含非数值 → 原子拒绝
+  let spacing = GRID_DEFAULT_SPACING.slice();
+  if (cmd.spacing !== undefined) {
+    if (!Array.isArray(cmd.spacing) || cmd.spacing.length !== 3) return { ok: false, error: 'spacing 必须是三元组 [sx,sy,sz]' };
+    const sp = cmd.spacing.map(num);
+    if (sp.some((x) => x === null)) return { ok: false, error: 'spacing 的每一轴都必须是数字' };
+    spacing = sp.map((x) => Math.min(COORD_LIMIT, Math.max(-COORD_LIMIT, x)));
+  }
+
+  // center：布尔白名单（非法拒绝，不静默当 false）
+  let center = false;
+  if (cmd.center !== undefined) {
+    if (typeof cmd.center !== 'boolean') return { ok: false, error: 'center 必须是布尔值' };
+    center = cmd.center;
+  }
+
+  // newId：合法性 + 显式单份冲突检查（与 duplicate3d / radial3d 同口径）
+  const hasExplicitNewId = cmd.newId !== undefined;
+  if (hasExplicitNewId && !isId(cmd.newId)) {
+    return { ok: false, error: `newId 非法：${String(cmd.newId)}` };
+  }
+  const single = total === 1;
+  if (hasExplicitNewId && single && used.has(cmd.newId)) {
+    return { ok: false, error: `目标 id 已存在：${cmd.newId}` };
+  }
+
+  const basePos = Array.isArray(src.pos) ? vec3Clamped(src.pos, [0, 0, 0]) : [0, 0, 0];
+  const baseRot = Array.isArray(src.rot) ? vec3Clamped(src.rot, [0, 0, 0]) : [0, 0, 0];
+  const baseScale = Array.isArray(src.scale) ? scale3(src.scale) : [1, 1, 1];
+  const srcParams = src.p && typeof src.p === 'object' && !Array.isArray(src.p) ? src.p : {};
+
+  // 可选覆盖字段（与 radial3d / mirror3d 完全一致的解析口径）
+  const overrideScale = cmd.scale !== undefined ? scale3(cmd.scale) : baseScale;
+  const overrideColor = cmd.color !== undefined ? color(cmd.color, src.color || '#4f6bed') : (src.color || '#4f6bed');
+  const overrideOpacity = cmd.opacity !== undefined ? opacity(cmd.opacity) : (num(src.opacity) === null ? 1 : opacity(src.opacity));
+  const p = { ...srcParams };
+  if (cmd.params && typeof cmd.params === 'object' && !Array.isArray(cmd.params)) {
+    for (const k of Object.keys(cmd.params)) {
+      const n = num(cmd.params[k]);
+      if (n !== null) p[k] = n;
+    }
+  }
+
+  // center 偏移：每轴起点回退 (份数-1)/2 个步长
+  const baseName = hasExplicitNewId ? cmd.newId : `${srcId}_grid`;
+  const items = [];
+  const positions = [];
+  for (let ix = 0; ix < size[0]; ix++) {
+    for (let iy = 0; iy < size[1]; iy++) {
+      for (let iz = 0; iz < size[2]; iz++) {
+        const idx = [ix, iy, iz];
+        let id;
+        if (single) {
+          id = baseName;
+        } else {
+          id = `${baseName}${items.length + 1}`.slice(0, 64);
+        }
+        if (used.has(id)) {
+          let k = 2;
+          let cand = `${id}_${k}`.slice(0, 64);
+          while (used.has(cand)) { cand = `${id}_${++k}`.slice(0, 64); }
+          id = cand;
+        }
+        used.add(id);
+
+        const pos = basePos.slice();
+        for (let axis = 0; axis < 3; axis++) {
+          const offset = center ? (idx[axis] - (size[axis] - 1) / 2) : idx[axis];
+          const val = basePos[axis] + spacing[axis] * offset;
+          pos[axis] = Math.min(COORD_LIMIT, Math.max(-COORD_LIMIT, val));
+        }
+
+        items.push({
+          id,
+          type: src.type,
+          text: typeof src.text === 'string' ? src.text : '',
+          color: overrideColor,
+          opacity: overrideOpacity,
+          pos,
+          rot: baseRot.slice(),
+          scale: overrideScale.slice(),
+          p: { ...p },
+        });
+        positions.push(pos.slice());
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    items,
+    meta: { source: srcId, size: size.slice(), spacing: spacing.slice(), center, count: total, positions },
+  };
+}
+

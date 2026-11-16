@@ -125,6 +125,13 @@ async function send() {
         const pos = c && Array.isArray(c.pos) ? c.pos.join(', ') : '';
         appendLog('ai', `已关于 ${axis}=${through} 平面镜像生成 ${c ? c.id : '?'}：pos=[${pos}]`);
       }
+      // 2026-11-17 D12：grid3d 网格阵列展示画板实际生成的份数、size 与 id。
+      for (const g of results) {
+        if (!g.ok || g.op !== 'grid3d' || !Array.isArray(g.created)) continue;
+        const size = g.meta && Array.isArray(g.meta.size) ? g.meta.size.join('×') : '?';
+        const ids = g.created.map((c) => c.id).join('、');
+        appendLog('ai', `已生成 ${size} 网格阵列 ${g.created.length} 个对象：${ids}`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
