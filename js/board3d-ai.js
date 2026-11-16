@@ -109,6 +109,21 @@ async function send() {
         const axis = r.meta && r.meta.axis ? r.meta.axis : '?';
         const ids = r.created.map((c) => c.id).join('、');
         appendLog('ai', `已绕 ${axis} 轴环形阵列 ${r.created.length} 个对象：${ids}`);
+      }      // 2026-11-16 D10：radial3d 环形阵列展示画板实际生成的份数、环绕轴与 id。
+      for (const r of results) {
+        if (!r.ok || r.op !== 'radial3d' || !Array.isArray(r.created)) continue;
+        const axis = r.meta && r.meta.axis ? r.meta.axis : '?';
+        const ids = r.created.map((c) => c.id).join('、');
+        appendLog('ai', `已绕 ${axis} 轴环形阵列 ${r.created.length} 个对象：${ids}`);
+      }
+      // 2026-11-16 D11：mirror3d 镜像复制展示画板实际生成的副本、镜像平面与位置。
+      for (const r of results) {
+        if (!r.ok || r.op !== 'mirror3d' || !Array.isArray(r.created)) continue;
+        const axis = r.meta && r.meta.axis ? r.meta.axis : '?';
+        const through = r.meta && typeof r.meta.through === 'number' ? r.meta.through : 0;
+        const c = r.created[0];
+        const pos = c && Array.isArray(c.pos) ? c.pos.join(', ') : '';
+        appendLog('ai', `已关于 ${axis}=${through} 平面镜像生成 ${c ? c.id : '?'}：pos=[${pos}]`);
       }
     }
     if (data.message) {

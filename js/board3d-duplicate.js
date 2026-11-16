@@ -345,3 +345,153 @@ export function resolveRadial3D(cmd, state) {
     meta: { source: srcId, count, center, axis, radius, startAngle, sweep, rotate, angles },
   };
 }
+
+/* ============================================================ *
+ * 2026-11-16 D11 追加段：mirror3d 镜像复制（独立自主 3D 画板任务）
+ * 协作铁律：本段只追加，上方 resolveDuplicate3D / resolveRadial3D 及全部工具函数逐字未动。
+ * 作用：把「把这个棱锥关于 YZ 平面镜像一份 / 沿 x=2 做对称 / 左右翻一个」这类意图，
+ * 从当前 state 按源 id 读出一个对象，关于指定坐标平面镜像复制出一份，
+ * 产出可直接交给 board3dApi.add() 的新对象规格。纯函数、只读、脏输入原子拒绝。
+ *
+ * 几何口径（避免破面）：镜像不改变 scale（负缩放会翻转法线 / 背面，Three.js 下易破面），
+ * 而用「位置关于平面反射 + 朝向按反射共轭取反」表达：
+ *   - 位置：沿法线轴 ai 的分量 pos[ai] = 2*through - pos[ai]，其余两轴不变；
+ *   - 朝向：把欧拉角里「除 ai 外的两个分量」取反（M R M 共轭，M 为该轴反射），
+ *     ai 对应的分量不变；keepOrientation:true 时 rot 完全沿用源对象；
+ *   - line 图元的端点参数（p.x1/x2、y1/y2、z1/z2）沿 ai 分量同样反射，
+ *     否则线段镜像后端点仍留在原侧；其余图元的 p 是长度 / 半径 / 边数，与镜像无关。
+ * ============================================================ */
+
+/** 一条 mirror3d 命令只产出 1 份镜像副本（批量阵列请用 duplicate3d / radial3d 组合） */
+export const MIRROR3D_COPIES = 1;
+
+/** 镜像平面法线轴白名单 */
+const MIRROR_AXES = Object.freeze(['x', 'y', 'z']);
+
+/** 轴 -> 索引 / 平面名 / line 端点参数键 */
+const MIRROR_AXIS_META = Object.freeze({
+  x: { idx: 0, plane: 'yz', lineKeys: ['x1', 'x2'] },
+  y: { idx: 1, plane: 'xz', lineKeys: ['y1', 'y2'] },
+  z: { idx: 2, plane: 'xy', lineKeys: ['z1', 'z2'] },
+});
+
+/**
+ * 解析一条 mirror3d 命令（只读）。
+ *
+ * @param {Object} cmd 形如：
+ *   {"op":"mirror3d","id":"pyr","axis":"x","through":1,"newId":"pyr_mir"}
+ *   - id              必填，源对象 id（场景中已存在）
+ *   - axis            镜像平面法线轴 'x'|'y'|'z'（默认 'x'，即关于 yz 平面 / x=through 镜像）
+ *   - through         镜像平面在该轴上的坐标（默认 0，钳制 ±COORD_LIMIT）
+ *   - keepOrientation 布尔（默认 false）：false 时 rot 按反射共轭取反，true 时完全沿用源朝向
+ *   - newId           可选，显式目标 id（合法性同 duplicate3d，冲突即拒绝）
+ *   - 可选覆盖：color / opacity / scale / params（pos / rot 由镜像几何决定，不接受覆盖）
+ * @param {Object} state 形如 { objects: [...] }，只读
+ * @returns {{ok:boolean, items?:Array, meta?:Object, error?:string}}
+ */
+export function resolveMirror3D(cmd, state) {
+  if (!cmd || typeof cmd !== 'object') return { ok: false, error: '命令为空' };
+  const srcId = cmd.id;
+  if (!isId(srcId)) return { ok: false, error: '源对象 id 非法' };
+
+  const objs = state && Array.isArray(state.objects) ? state.objects : [];
+  const src = objs.find((o) => o && o.id === srcId);
+  if (!src) return { ok: false, error: `要镜像的源对象 id 不存在：${String(srcId)}` };
+  if (!src.type) return { ok: false, error: '源对象缺少 type，无法镜像' };
+
+  const axis = cmd.axis === undefined ? 'x' : cmd.axis;
+  if (!MIRROR_AXES.includes(axis)) return { ok: false, error: `axis 非法，只能是 x/y/z：${String(axis)}` };
+  const axisMeta = MIRROR_AXIS_META[axis];
+  const ai = axisMeta.idx;
+
+  // through：默认 0；显式给定时严格数值化并钳制
+  let through = 0;
+  if (cmd.through !== undefined) {
+    const t = num(cmd.through);
+    if (t === null) return { ok: false, error: 'through 必须是数字' };
+    through = Math.min(COORD_LIMIT, Math.max(-COORD_LIMIT, t));
+  }
+
+  // keepOrientation：布尔白名单（非法拒绝，不静默当 false）
+  let keepOrientation = false;
+  if (cmd.keepOrientation !== undefined) {
+    if (typeof cmd.keepOrientation !== 'boolean') return { ok: false, error: 'keepOrientation 必须是布尔值' };
+    keepOrientation = cmd.keepOrientation;
+  }
+
+  // newId：合法性 + 单份冲突检查（与 duplicate3d / radial3d 同口径）
+  const used = new Set(objs.map((o) => o && o.id).filter(Boolean));
+  const hasExplicitNewId = cmd.newId !== undefined;
+  if (hasExplicitNewId && !isId(cmd.newId)) {
+    return { ok: false, error: `newId 非法：${String(cmd.newId)}` };
+  }
+  if (hasExplicitNewId && used.has(cmd.newId)) {
+    return { ok: false, error: `目标 id 已存在：${cmd.newId}` };
+  }
+
+  const basePos = Array.isArray(src.pos) ? vec3Clamped(src.pos, [0, 0, 0]) : [0, 0, 0];
+  const baseRot = Array.isArray(src.rot) ? vec3Clamped(src.rot, [0, 0, 0]) : [0, 0, 0];
+  const baseScale = Array.isArray(src.scale) ? scale3(src.scale) : [1, 1, 1];
+  const srcParams = src.p && typeof src.p === 'object' && !Array.isArray(src.p) ? src.p : {};
+
+  // 位置反射：只改法线轴分量，其余两轴原样
+  const pos = basePos.slice();
+  pos[ai] = Math.min(COORD_LIMIT, Math.max(-COORD_LIMIT, 2 * through - basePos[ai]));
+
+  // 朝向反射：除 ai 外的两个欧拉分量取反；keepOrientation 时沿用源 rot
+  const rot = baseRot.slice();
+  if (!keepOrientation) {
+    for (let k = 0; k < 3; k++) if (k !== ai) rot[k] = -rot[k];
+  }
+
+  // p：line 的端点沿 ai 反射；其余类型原样。随后叠加 cmd.params 覆盖（口径同 radial3d）。
+  const p = { ...srcParams };
+  if (src.type === 'line') {
+    for (const k of axisMeta.lineKeys) {
+      const n = num(p[k]);
+      if (n !== null) p[k] = Math.min(COORD_LIMIT, Math.max(-COORD_LIMIT, 2 * through - n));
+    }
+  }
+  if (cmd.params && typeof cmd.params === 'object' && !Array.isArray(cmd.params)) {
+    for (const k of Object.keys(cmd.params)) {
+      const n = num(cmd.params[k]);
+      if (n !== null) p[k] = n;
+    }
+  }
+
+  // 可选覆盖字段（与 radial3d 完全一致的解析口径）
+  const overrideScale = cmd.scale !== undefined ? scale3(cmd.scale) : baseScale;
+  const overrideColor = cmd.color !== undefined ? color(cmd.color, src.color || '#4f6bed') : (src.color || '#4f6bed');
+  const overrideOpacity = cmd.opacity !== undefined ? opacity(cmd.opacity) : (num(src.opacity) === null ? 1 : opacity(src.opacity));
+
+  // 目标 id：显式 newId，或 <src>_mir；自动 id 与现有冲突时追加 _2、_3 … 避让
+  let id = hasExplicitNewId ? cmd.newId : `${srcId}_mir`.slice(0, 64);
+  if (used.has(id)) {
+    let k = 2;
+    let cand = `${id}_${k}`.slice(0, 64);
+    while (used.has(cand)) { cand = `${id}_${++k}`.slice(0, 64); }
+    id = cand;
+  }
+
+  const item = {
+    id,
+    type: src.type,
+    text: typeof src.text === 'string' ? src.text : '',
+    color: overrideColor,
+    opacity: overrideOpacity,
+    pos,
+    rot,
+    scale: overrideScale.slice(),
+    p: { ...p },
+  };
+
+  return {
+    ok: true,
+    items: [item],
+    meta: {
+      source: srcId, axis, through, plane: axisMeta.plane,
+      pos: pos.slice(), keepOrientation,
+    },
+  };
+}
+

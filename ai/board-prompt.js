@@ -1266,3 +1266,35 @@ export const BOARD3D_RADIAL_PROMPT = `
   · 示例：{"op":"radial3d","id":"hand","count":4,"axis":"z","startAngle":0,"sweep":360,"rotate":true,"color":"#e11d48"}
 - 同一批命令里可以先 add3d 建好源对象再 radial3d；副本由画板按当前场景真实几何生成，不要自己在提示里逐份算 cos/sin 坐标。
 - 补充铁律：radial3d 是 3D 命令；2D 的 polarArray / circularArray / array 等命令在本分支依旧不认识，不要输出。`;
+
+/* ============================================================ *
+ * 2026-11-16 D11 追加段：mirror3d 镜像复制命令（独立自主 3D 画板任务）
+ * 协作铁律：本段只追加、不覆盖、不删除。上方 2D 主干（BOARD_SYSTEM_PROMPT 及例 1–8）、
+ * 既有 BOARD3D_SYSTEM_PROMPT / 量测段 / 回注标注段 / transform 段 / 批量段 /
+ * duplicate 段 / radial 段逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 新命令单独成组，与 js/board3d-executor.js 的 BOARD3D_MIRROR_OPS 一一对应。
+ * 拼在文件最末尾同样是为了让 fitPrompt 短上下文裁剪时保留尾部。
+ * ============================================================ */
+
+/** 3D 扩展命令 op（2026-11-16 D11 追加，与 js/board3d-executor.js 的 BOARD3D_MIRROR_OPS 一致） */
+export const BOARD3D_MIRROR_PROMPT_OPS = Object.freeze(['mirror3d']);
+
+/** 3D 镜像复制命令追加段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_MIRROR_PROMPT = `
+
+# 补充命令：mirror3d 镜像复制（仅本 3D 分支可用，2026-11-16 追加）
+- 作用：把一个**已经存在**的对象关于指定坐标平面镜像复制出**一份**（源对象保持不变）。用户说「把这个棱锥左右翻一个」「关于 YZ 平面做个对称」「沿 x=2 镜像一份」「做个轴对称的立体」时用它，不必自己算反射坐标。
+- 格式：{"op":"mirror3d","id":"pyr","axis":"x","through":0}
+  · id 必填，源对象 id（必须已存在于当前画板对象列表，或本轮前面已 add3d）；
+  · axis 可选，镜像平面法线轴 'x' / 'y' / 'z'（默认 'x'）：'x' 关于 yz 平面（x=through）镜像，'y' 关于 xz 平面，'z' 关于 xy 平面；
+  · through 可选，平面在该轴上的坐标（默认 0）：反射公式为 新坐标 = 2*through - 原坐标；
+  · keepOrientation 可选，布尔（默认 false）：false 时副本朝向按镜像规则翻转（除镜像轴外的两个旋转分量取反，线段的端点也一起反射），true 时完全沿用源的朝向；
+  · newId 可选，显式目标 id（省略时自动生成 <id>_mir；自动 id 与现有冲突会避让，显式 id 冲突直接报错）；
+  · 可选覆盖字段：color / opacity / scale / params（只写要改的键，其余沿用源对象；pos / rot 由镜像几何决定，不接受覆盖）。
+  · 示例：{"op":"mirror3d","id":"pyr","axis":"x"}
+  · 示例：{"op":"mirror3d","id":"tower","axis":"y","through":2,"color":"#e11d48"}
+  · 示例：{"op":"mirror3d","id":"seg","axis":"z","keepOrientation":true,"newId":"seg_mirror"}
+- 镜像只复制一份、不动源对象；要「一排 / 一圈」请再对副本用 duplicate3d（count 等距阵列）或 radial3d（环形阵列）。
+- 同一批命令里可以先 add3d 建好源对象再 mirror3d；副本由画板按当前场景真实几何生成，不要自己在提示里算反射坐标。
+- 补充铁律：mirror3d 是 3D 命令；2D 的 reflect / mirror / symmetry / 轴对称等命令在本分支依旧不认识，不要输出。`;
+

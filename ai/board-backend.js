@@ -22,7 +22,8 @@
 
 import {
   BOARD_SYSTEM_PROMPT, BOARD3D_SYSTEM_PROMPT, BOARD3D_MEASURE_PROMPT, BOARD3D_MEASURE_LABEL_PROMPT,
-  BOARD3D_TRANSFORM_PROMPT, BOARD3D_BATCH_PROMPT, BOARD3D_DUPLICATE_PROMPT, BOARD3D_RADIAL_PROMPT, isBoard3DIntent,
+  BOARD3D_TRANSFORM_PROMPT, BOARD3D_BATCH_PROMPT, BOARD3D_DUPLICATE_PROMPT, BOARD3D_RADIAL_PROMPT,
+  BOARD3D_MIRROR_PROMPT, isBoard3DIntent,
 } from './board-prompt.js';
 import { DEFAULT_MODEL, resolveModel, supportsVision, findModel } from './models.js';
 
@@ -280,14 +281,15 @@ export async function handleBoardAi(request, env) {
   // （measure3d 空间量测 / 结果回注标注）+ 2026-11-15 追加段（transform3d 相对变换）
   // + 2026-11-15 追加段（transform3d 的 ids 批量写法）
   // + 2026-11-16 追加段（duplicate3d 复制对象）
-  // + 2026-11-16 追加段（radial3d 环形阵列）；
+  // + 2026-11-16 追加段（radial3d 环形阵列）
+  // + 2026-11-16 追加段（mirror3d 镜像复制）；
   // 新段一律拼在末尾：fitPrompt 按短上下文裁剪时保留尾部，追加段不会被截掉。
   // 2D 主干提示词逐字不变、零回归。
   const mode = resolveBoardMode(payload, message);
   const budget = inputBudget(cfg.model);
   const systemPrompt = fitPrompt(
     mode === '3d'
-      ? BOARD3D_SYSTEM_PROMPT + BOARD3D_MEASURE_PROMPT + BOARD3D_MEASURE_LABEL_PROMPT + BOARD3D_TRANSFORM_PROMPT + BOARD3D_BATCH_PROMPT + BOARD3D_DUPLICATE_PROMPT + BOARD3D_RADIAL_PROMPT
+      ? BOARD3D_SYSTEM_PROMPT + BOARD3D_MEASURE_PROMPT + BOARD3D_MEASURE_LABEL_PROMPT + BOARD3D_TRANSFORM_PROMPT + BOARD3D_BATCH_PROMPT + BOARD3D_DUPLICATE_PROMPT + BOARD3D_RADIAL_PROMPT + BOARD3D_MIRROR_PROMPT
       : BOARD_SYSTEM_PROMPT,
     budget
   );
