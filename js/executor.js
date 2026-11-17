@@ -25,7 +25,10 @@
  *   perpendicular {id,of,through}              垂线
  *   parallel  {id,of,through}                  平行线
  *   slider    {id,x1,y1,x2,y2,min,max,value?,step?}  滑动条参数控件（拖动改值）
- *   function  {id,expr,from,to}                函数曲线（JSXGraph语法，如 "x^2"）
+ *   function  {id,expr,from,to,ymin?,ymax?,segments?,exclude?}  函数曲线（JSXGraph语法，如 "x^2"）
+ *             （from/to 整体定义域；ymin/ymax 值域裁剪；segments:[[a,b],…] 多段定义域白名单、
+ *               exclude:[[a,b],…] 挖洞黑名单，端点一律数字，二者可叠加，见 parseFunctionSegments；
+ *               区间外采样点记 NaN 自动断开，__aiSegments 供 describe()/inspect 回读分段）
  *   text      {id,x,y,text}                    自由文本
  *   text      {id,x,y,bind:{kind,of}}          动态测量文本（kind: distance/length/radius/angle/value）
  *   angle     {id,points:[A,B,C]}              角（B为顶点）
@@ -259,6 +262,26 @@
  *   ③ 其它易错图形（弓形面积阴影、旋转相似）；④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；
  *   ⑤ remove 的级联在真实 JSXGraph 上目视确认（parents / childElements 形状因引擎版本而异，
  *     沙箱无头单测只能用 mock 依赖图覆盖）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-17 第十一轮）：只改 2D 协议，3D 分支 / editor.html / appId / js/board.js 零改动。
+ *   落实任务清单 §2「扩展 JSON 命令协议」里唯一未落地的一项——函数图像「分段裁剪 / 多区间定义域」。
+ *   此前画「定义域 [-5,-1]∪[1,5]」「y=1/x 挖掉 x=0 附近」「tan(x) 断在渐近线」「只看 x<0 与 x≥2 两段」
+ *   只能拆多条 function 各自 from/to 拼接（用例 11 的权宜做法）：同一函数占多个 id、样式要逐条重复、
+ *   intersect of:[f1,…] 不知引用哪段、改一处要改一批。本轮把分段下沉成 function 原生能力：
+ *   (1) 新增导出纯函数 parseFunctionSegments(cmd, from, to) + normalizeIntervals：
+ *       segments:[[a,b],…] 白名单（多段并集）/ exclude:[[a,b],…] 黑名单（挖洞），可叠加；
+ *       端点数值化（NaN/倒序自动归一、排序合并重叠相邻段、钳制到 from~to、上限 12 段、非法项静默丢弃不整批失败），
+ *       返回 inRange(x) 与 summary，供无头单测直接 import（tests/board2d_function_segments_spec.mjs）。
+ *   (2) case 'function' 把 seg.inRange(x) 接入原有 ymin/ymax 的「采样点记 NaN」路径（同一 JessieCode 编译闭包），
+ *       区间外自动断开、多段之间不连线；未写分段时 active=false，走原整段出图路径，零回归。
+ *   (3) 分段元数据挂 el.__aiSegments，describe()/inspect 数值快照回读「这条曲线画了哪几段」，
+ *       AI 在已有曲线上继续构造 / 局部重画时不必猜定义域（对标大角几何 MCP 式读画板状态）。
+ *   前端零改动：segments/exclude 随 doc.commands 一起回放 / 保存，后端 commandUsable 无字段白名单不会拦。
+ *   配套：ai/board-prompt.js 命令清单登记 + 「函数图像分段裁剪」小节 + 例34 few-shot、
+ *   docs 用例 81/82、tests 无头单测 + run-2d-specs.mjs 聚合入口。
+ * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 分段交界处的空心/实心端点标记（新 op 或 point+style 组合）；
+ *   ⑤ 分段裁剪在真实 JSXGraph 上目视确认（NaN 断点是否如预期断开、线宽/颜色，沙箱无头只验证区间纯函数）。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -905,6 +928,74 @@ export function planRemove(cmd, registry) {
   };
 }
 
+/* ---------- 函数图像分段裁剪 / 多区间定义域（2026-11-17 第十一轮新增）----------
+ * 此前 `function` 只有 from~to 一个连续定义域 + ymin/ymax 值域裁剪。遇到
+ *   「定义域 [-5,-1]∪[1,5]」「y=1/x 去掉 x=0 附近」「tan(x) 断在渐近线」
+ *   「只看 x<0 和 x≥2 两段」这类需求，AI 只能拆成多条 function 各自 from/to
+ *   拼接（回归清单用例 11 的权宜做法），于是同一个函数占多个 id、样式要逐条
+ *   重复设置、交点筛选（intersect of:[f1,…]）不知道该引用哪一段，改一处要改一批。
+ * 本轮把「分段」下沉为 function 的原生能力：
+ *   segments: [[a,b], [c,d], …]   只画这些 x 闭区间的并集（白名单 / 多段定义域）
+ *   exclude:  [[a,b], …]          在这些 x 闭区间内不画（黑名单 / 挖洞去间断）
+ *   二者可叠加：先按 segments 取并集，再减去 exclude；都不写则整条 from~to 全画。
+ * 关键约束：端点一律写数字（坐标数值化），不写 "pi"/"a"/表达式；区间自动
+ *   归一（去 NaN、交换倒序、按起点排序、合并重叠/相邻段、钳制到 from~to），
+ *   段数上限 12，超出只取前 12 段；非法项静默丢弃、不整批失败。
+ * 实现与 ymin/ymax 值域裁剪走同一条路径：把区间外的采样点记成 NaN，
+ *   JSXGraph 的 functiongraph 会自动断开/略过，滑动条联动（JessieCode）照旧。
+ * 纯函数导出（不依赖 board / DOM），供 tests/board2d_function_segments_spec.mjs
+ *   无头回归直接 import；区间元数据挂 __aiSegments 供 describe()/inspect 回读。
+ */
+const FUNC_SEG_MAX = 12;
+
+/** 把一段区间数组归一成「已排序、已合并、已钳制」的闭区间列表（纯函数） */
+function normalizeIntervals(raw, from, to) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const item of raw) {
+    if (!Array.isArray(item) || item.length < 2) continue;
+    let a = Number(item[0]), b = Number(item[1]);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    if (a > b) { const t = a; a = b; b = t; }
+    // 钳制到函数整体定义域 [from,to]，完全落在域外的段直接丢掉
+    a = Math.max(a, from); b = Math.min(b, to);
+    if (b < a) continue;
+    out.push([a, b]);
+    if (out.length >= FUNC_SEG_MAX) break;
+  }
+  out.sort((p, q) => p[0] - q[0]);
+  const merged = [];
+  for (const seg of out) {
+    const last = merged[merged.length - 1];
+    if (last && seg[0] <= last[1]) { if (seg[1] > last[1]) last[1] = seg[1]; }
+    else merged.push(seg);
+  }
+  return merged;
+}
+
+/**
+ * 解析 function 命令的分段定义域（导出纯函数，供无头单测）。
+ * @param {object} cmd function 命令
+ * @param {number} from 整体定义域下界（已归一）
+ * @param {number} to   整体定义域上界（已归一）
+ * @returns {{active:boolean, segments:number[][], exclude:number[][], inRange:function(number):boolean, summary:string}}
+ *   active=false 表示没写分段（走原有整段出图路径，零回归）；
+ *   inRange(x) 判断某个 x 采样点是否该画；summary 是给状态快照回读的简短文本。
+ */
+export function parseFunctionSegments(cmd, from, to) {
+  const segments = normalizeIntervals(cmd && cmd.segments, from, to);
+  const exclude = normalizeIntervals(cmd && cmd.exclude, from, to);
+  const active = segments.length > 0 || exclude.length > 0;
+  const inSeg = (x) => segments.length === 0 || segments.some(([a, b]) => x >= a && x <= b);
+  const inExc = (x) => exclude.some(([a, b]) => x >= a && x <= b);
+  const inRange = (x) => !active || (inSeg(x) && !inExc(x));
+  const fmt = (list) => list.map(([a, b]) => '[' + a + ',' + b + ']').join('∪');
+  const parts = [];
+  if (segments.length) parts.push('segments=' + fmt(segments));
+  if (exclude.length) parts.push('exclude=' + fmt(exclude));
+  return { active, segments, exclude, inRange, summary: parts.join(' ') };
+}
+
 export function createExecutor(board) {
   const registry = new Map();    // id -> JXG 元素
   const plainPoints = new Set(); // 可通过 moves 覆盖坐标的自由点
@@ -1387,33 +1478,43 @@ export function createExecutor(board) {
       case 'function': {
         // expr 里出现滑动条名字时，JSXGraph 的表达式解析器会自动取它的实时值，
         // 因此拖动滑动条曲线会跟着重算——无需额外处理。
-        // 取值范围：from/to 是定义域（x 区间，默认 -10~10）；ymin/ymax 是值域裁剪
-        // （只画 y 落在区间内的那一段曲线，留空表示不裁剪）。
+        // 取值范围：from/to 是整体定义域（x 区间，默认 -10~10）；ymin/ymax 是值域裁剪
+        // （只画 y 落在区间内的那一段曲线，留空表示不裁剪）；segments/exclude 是分段
+        // 定义域（本轮新增，见 parseFunctionSegments：多段并集 / 挖洞，端点数值化）。
+        // 三种裁剪都落在「区间外的采样点记 NaN」这条路径上，JSXGraph 自动断开。
         const expr = String(cmd.expr || '');
         let from = num(cmd.from, -10), to = num(cmd.to, 10);
         if (to < from) { const t = from; from = to; to = t; }
         let ymin = cmd.ymin, ymax = cmd.ymax;
         if (Array.isArray(cmd.range) && ymin == null && ymax == null) { ymin = cmd.range[0]; ymax = cmd.range[1]; }
         const lo = Number(ymin), hi = Number(ymax);
+        const hasYClip = Number.isFinite(lo) || Number.isFinite(hi);
+        const seg = parseFunctionSegments(cmd, from, to);
         let fn = expr;
-        if (Number.isFinite(lo) || Number.isFinite(hi)) {
+        if (hasYClip || seg.active) {
           let a = Number.isFinite(lo) ? lo : -Infinity;
           let b = Number.isFinite(hi) ? hi : Infinity;
           if (b < a) { const t = a; a = b; b = t; }
-          // 值域裁剪：把区间外的采样点记成 NaN，JXGraph 会自动断开/略过这些点。
+          // 值域裁剪：把区间外的采样点记成 NaN；分段定义域：把 x 不在允许区间内的
+          // 采样点同样记成 NaN（JXGraph 会自动断开/略过这些点，多段之间不会连线）。
           // 表达式仍走 JessieCode 编译（与 JXGraph 内部一致），所以滑动条联动照样生效。
           const compile = board.jc && typeof board.jc.snippet === 'function';
           if (!compile) {
-            // 极端情况（引擎缺 JessieCode）：退化为只按定义域出图，不裁剪值域
+            // 极端情况（引擎缺 JessieCode）：退化为只按定义域出图，不裁剪值域/分段
             return board.create('functiongraph', [expr, from, to], { ...opt, strokeColor: '#C62828', strokeWidth: 2 });
           }
           const snip = board.jc.snippet(expr, true, 'x', false);
           fn = (x) => {
+            if (!seg.inRange(x)) return NaN;
             const v = snip(x);
             return (Number.isFinite(v) && v >= a && v <= b) ? v : NaN;
           };
         }
-        return board.create('functiongraph', [fn, from, to], { ...opt, strokeColor: '#C62828', strokeWidth: 2 });
+        const el = board.create('functiongraph', [fn, from, to], { ...opt, strokeColor: '#C62828', strokeWidth: 2 });
+        // 分段元数据挂到元素上：describe()/inspect 的数值快照要能回读「这条曲线画了哪几段」，
+        // AI 在已有曲线上继续构造 / 局部重画时不必猜定义域（MCP 式读状态）。
+        if (seg.active) el.__aiSegments = seg.summary;
+        return el;
       }
       case 'conic': {
         // 圆锥曲线（本轮新增，对标大角几何「自研数学 DSL / 符号计算」）：
@@ -1792,7 +1893,8 @@ export function createExecutor(board) {
           + (Number.isFinite(m.p) ? ',p=' + fmtNum(m.p) : '');
       } else if (t === 'functiongraph' || t === 'curve') {
         desc = 'function' + (el.__aiExpr ? ':"' + el.__aiExpr + '"' : '')
-          + (Array.isArray(el.__aiRange) ? '@[' + fmtNum(el.__aiRange[0]) + ',' + fmtNum(el.__aiRange[1]) + ']' : '');
+          + (Array.isArray(el.__aiRange) ? '@[' + fmtNum(el.__aiRange[0]) + ',' + fmtNum(el.__aiRange[1]) + ']' : '')
+          + (el.__aiSegments ? ' 分段{' + el.__aiSegments + '}' : '');
       }
     } catch (_) { desc = t; /* 单个元素取值失败就退回类型摘要 */ }
     return id + '(' + desc + ')';
