@@ -150,6 +150,13 @@ async function send() {
         const turns = m.turns != null ? `、${m.turns} 圈` : '';
         appendLog('ai', `已生成螺旋线 ${hx.created.length} 段${shape ? '（' + shape + turns + '）' : ''}。`);
       }
+      // 2026-11-17 D15：bezier3d 展示画板按控制点生成的曲线段数与次数（数值以画板返回为准）。
+      for (const bz of results) {
+        if (!bz.ok || bz.op !== 'bezier3d') continue;
+        const m = bz.meta || {};
+        const deg = m.degree != null ? `（${m.degree} 次）` : '';
+        appendLog('ai', `已生成贝塞尔曲线 ${bz.created.length} 段${deg}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
