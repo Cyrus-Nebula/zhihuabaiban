@@ -254,6 +254,22 @@
  *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
  *   ④ 其它易错图形（弓形面积阴影、旋转相似）；⑤ edge 的「显式边心距」语义
  *     （边长 s 与 n 已唯一确定 a=s/(2tan(180°/n))，显式给 a 与「AB 是一条边」冲突，宜另立定义，勿塞进 edge）。
+
+ * 本轮（AI作图对标大角几何·增量·2026-11-17 第八轮）：只追加 2D 作图主干逻辑，3D 命令分支零改动、
+ *   不动 appId/editor.html/js/board.js，核心工作流 / 铁律 / 命令协议 / 既有例1-30 逐字未动、无删除行。
+ *   落实连续多轮 TODO 交接项①——把 conicSpec 也补入库无头单测（与上一轮 regularPolygonSpec 姊妹篇）：
+ *   此前 conic 三种定义（椭圆 foci+sum / 双曲线 foci+diff / 抛物线 focus+directrix）与通用离心率
+ *   focus+directrix+eccentricity（e<1/=1/>1）只在沙盒临时验算，未入库；本轮把它固化成
+ *   tests/board2d_conic_spec.mjs，直接 import js/executor.js 的 conicSpec 纯函数，真实调用 at(t)
+ *   采样点做几何性质容差断言（|PF1|+|PF2|=sum、||PF1|−|PF2||=diff、|PF|=e·dist），覆盖标准式 /
+ *   rotate 旋转轴 / 中文 type 别名 / 12 类非法参数抛错 / 双曲线 NaN 断开带 / expr 摘要逐字节冻结。
+ *   这是提示词里「把符号计算交给执行器 / 坐标数值化 / 先创建后引用」铁律的机器化回归护栏：
+ *   conic 执行语义一旦被后续改动破坏，单测立刻红灯；旧 regularPolygonSpec 78 项无回归。
+ *   本文件只追加本段头部 TODO 交接注释（纯 2D 回归基建），3D 追加段落整段零改动。
+ *   配套 docs/AI作图回归用例清单.md 用例 76；纯 2D、无 3D / editor.html / appId 改动。
+ * TODO(下一步): ① [本轮已完成] conicSpec 无头单测入库（72 项断言全通过）；
+ *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
+ *   ④ 其它易错图形（弓形面积阴影、旋转相似）；⑤ 给测试脚本加 npm test 聚合入口（conic + regularPolygon 一起跑）。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。

@@ -400,6 +400,26 @@
 > 朝向由 `(A→B)×(A→T)` 符号判定，与人工判左右等价但不会在斜边上判反；共线 / 未知点 / 混用 /
 > 非 edge 定义一律抛错，不静默猜测。真实画板渲染与 `meta.towardSide` 的面板呈现仍需浏览器环境确认。
 
+## 圆锥曲线 conicSpec 无头单测（本轮新增 2026-11-17 第八轮）
+
+> 落实连续多轮 TODO 交接项①——把 conic 三种定义与通用离心率的符号换算固化成机器化回归护栏，
+> 与上一轮 `regularPolygonSpec` 单测是姊妹篇。`conicSpec` 是 `js/executor.js` 的模块级纯函数
+> （不依赖 JSXGraph / DOM），Node 22 的 ESM 语法探测可直接 import，无需 package.json。
+> 新增 `tests/board2d_conic_spec.mjs`，真实调用 `conicSpec().at(t)` 采样点做几何性质容差断言，
+> 覆盖第一定义 / 第二定义 / 标准式 / 通用离心率三分支 / 中文别名 / 非法参数 / `expr` 逐字节冻结。
+> 纯 2D 回归基建，`js/executor.js` 执行分支 / 3D 分支 / `editor.html` / `appId` 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 76 | 对 conic 执行器做无头回归：椭圆/双曲线第一定义、抛物线第二定义、通用离心率三分支、标准式、非法参数与 expr 冻结 | `node tests/board2d_conic_spec.mjs`（直接 `import` `conicSpec` 纯函数）：①`ellipse{foci+sum}` 采 8 点核 \|PF1\|+\|PF2\|=sum=10、a=5/b=4/c=3、倾斜焦点轴仍成立；②`hyperbola{foci+diff}` 核差=diff=4、t≈0.5 返 `[NaN,NaN]` 两支断开；③`parabola{focus+directrix}` 核 \|PF\|=dist(P,准线)、p=2、顶点(0,0)、焦点在准线下方时轴自动翻转；④标准式 ellipse/hyperbola/parabola（含 rotate:90 旋转轴）；⑤通用 e=0.5 椭圆/e=1 抛物线/e=2 双曲线，别名 `eccentricity`/`ecc`/`e` 产出一致、核 \|PF\|=e·dist；⑥中文 type；⑦12 类非法参数抛错；⑧expr 摘要逐字节冻结 | ✅ | 单测必须**真实调用** `conicSpec` 并做容差数值断言（`near`/`nearPt`/`dist`/`distLine`），不要用静态正则替代；`expr` 摘要逐字节冻结（含全角括号、`−` U+2212 减号、中文），防 AI 回放 / `describe()` 状态回读格式被无意改动而回归；双曲线 NaN 断开带用 `Number.isNaN` 判定（JSON 化会显示成 null）；旧 `regularPolygonSpec` 78 项无回归；Node 22 ESM 可直接 import 无 `type` 字段的 `.js`，无需 `package.json`；沙箱无真实 JSXGraph，曲线渲染 / 断点断开 / 线型颜色仍需浏览器目视确认 |
+
+> 状态 ✅：`tests/board2d_conic_spec.mjs` 本地实跑 **72/72** 断言全通过（7 个 section：
+> A 椭圆第一定义 / B 双曲线第一定义 / C 抛物线第二定义 / D 标准式+rotate /
+> E 通用离心率三分支 / F 中文 type 别名 / G 非法参数抛错）。几何性质全部由 `at(t)` 采样点
+> 容差断言驱动，非静态正则；`expr` 摘要逐字节冻结。回归 `tests/board2d_regularPolygon_spec.mjs`
+> **78/78** 全绿、无回归。该单测由纯函数直接驱动，无浏览器 / JSXGraph 依赖，稳定可复跑；
+> 真实曲线渲染与断点断开仍需带浏览器环境目视确认（见「已知限制」）。
+
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
   JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在
