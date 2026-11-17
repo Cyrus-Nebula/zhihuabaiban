@@ -284,6 +284,22 @@
  * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
  *   ③ 其它易错图形（弓形面积阴影、旋转相似）；④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；
  *   ⑤ [本轮已完成] 2D 单测聚合入口（见 tests/run-2d-specs.mjs，node 直接跑，不加 package.json 以免影响 Pages 构建）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-17 第十轮）：只追加 2D 作图主干逻辑，3D 命令分支零改动、
+ *   不动 appId/editor.html/js/board.js，核心工作流 / 铁律 / 命令协议 / 既有例1-31 逐字未动、无删除行。
+ *   落实连续多轮 TODO 交接项④「其它易错图形」里剩的两项——弓形面积阴影、旋转相似：
+ *   (1) 例32「弓形面积阴影」：协议无原生「填充弓形/扇形」命令，arc 只画线不填充、circle 填充是整圆，
+ *       AI 之前容易硬找 fill 参数或把整圆涂色。范式＝弧上按角度取若干采样点（R·cosθ/R·sinθ 数值化）
+ *       → polygon 连采样点（首尾闭合边即弦）→ style fill:true 上阴影 → arc/segment 补光滑弧边与弦；
+ *       扇形变式把圆心 O 加进 polygon 即可。末尾 oncircle + 弦长 verify 自检。
+ *   (2) 例33「旋转相似」：协议无单条「旋转相似」命令，AI 易手算 cos/sin 复合坐标；范式＝两条 transform
+ *       链式组合（先 type:scale 放大、再对结果 type:rotate，同一 center），transform 输出以 id 注册可被
+ *       下一条 of 引用；逐顶点 verify 相似比（distance 比值）与旋转角（angle），只写可直接给出的预期值。
+ *   纯提示词增量，未触碰 js/executor.js 执行分支（全程只用既有 point/polygon/style/arc/segment/transform/verify），
+ *   无 3D / editor.html / appId 改动；配套 docs/AI作图回归用例清单.md 用例 79/80。
+ * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ [本轮已完成] 易错图形补遗（弓形面积阴影/旋转相似，见例32/33）；
+ *   ⑤ 更多易错图形 few-shot（如旋转体截面、极坐标曲线、含参不等式区域，需确认执行器是否支持）。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -1166,6 +1182,55 @@ H(intersection@(0,-1)), 高 AH=4.000, ∠AHB=90.0°, online(H,lBC)=0.000, f1(fun
 // 要点：① remove 的 id "hex" 必须来自状态快照（别凭空猜、别 clear 整板）；② 级联已清掉 hex1..hex6，
 //   所以用同名 id "hex" 重发不会报「id 重复定义」，新顶点换成 P1/P2/P3；③ c1 / O 没被删，直接引用，
 //   绝不重新 point / circle；④ verify 只写能直接给出的预期值（三顶点共圆、边长 R√3），别写含符号推导的断言。
+
+== 例32：弓形面积阴影 / 扇形阴影（弧上采样点→polygon→fill；易错：找不存在的"填充弓形"参数 / 把整圆涂色 / 只画弧不填区域） ==
+用户："画一个圆心 O(0,0)、半径 3 的圆，把第一象限那段弧和弦围成的弓形区域涂上阴影。"
+思路：协议里 arc 只画弧线、不填充面积；circle 的 fill 是整圆。**没有任何"填充弓形/扇形"的原生参数**，别去硬找。
+正确做法是「用折线逼近弧」：在弧上按角度取若干采样点（数值化 R·cosθ、R·sinθ），用 polygon 把这些点连起来
+（首尾两点之间那条闭合边正好就是弦），再对该 polygon 发 style fill:true 上阴影，最后用 arc 补一条光滑弧边、
+segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~9 个点足够）。
+{"op":"point","id":"O","x":0,"y":0,"fixed":true}
+{"op":"circle","id":"c1","center":"O","radius":3}
+{"op":"point","id":"P0","x":3,"y":0}                       // 0° 端点：(3,0)
+{"op":"point","id":"P1","x":2.121,"y":2.121}               // 45°：3·cos45°≈2.121
+{"op":"point","id":"P2","x":1.5,"y":2.598}                 // 60°：3·cos60°=1.5，3·sin60°≈2.598
+{"op":"point","id":"P3","x":0,"y":3}                       // 90° 端点：(0,3)
+{"op":"polygon","id":"bow","points":["P0","P1","P2","P3"]} // 闭合边 P3→P0 即弦；折线逼近弧
+{"op":"style","target":"bow","fillColor":"#93C5FD","fill":true,"fillOpacity":0.35,"strokeWidth":1}
+{"op":"arc","id":"bowArc","center":"O","from":"P0","to":"P3","color":"#1D4ED8","strokeWidth":2}  // 光滑弧边盖住折线
+{"op":"segment","id":"bowChord","from":"P0","to":"P3"}     // 弦，边界更清晰
+{"op":"verify","kind":"oncircle","of":["P1","c1"],"expect":0,"tol":0.05,"label":"P1在圆上"}
+{"op":"verify","kind":"distance","of":["P0","P3"],"expect":4.243,"tol":0.05,"label":"弦长=3√2"}
+// 扇形变式：用户要"扇形阴影"时，polygon 的 points 最前面加上圆心 O → points:["O","P0","P1","P2","P3"]，
+//   这样闭合区域是两条半径 + 圆弧，才是扇形；弓形则不要 O（区域只有弧 + 弦）。
+// 要点：① 采样点坐标一律写成算好的数字（R·cosθ/R·sinθ），不写 cos(45) 之类表达式；
+//   ② fill 打在 polygon 上，不是 arc / circle；③ 采样点先 point 建好再进 polygon（先创建后引用）；
+//   ④ verify 只写能直接给出的预期值（点在圆上残差=0、弦长 3√2≈4.243），别写面积符号推导。
+
+== 例33：旋转相似（旋转+位似链式组合，两条 transform；易错：找单条"旋转相似"命令 / 手算复合坐标 / 引用不到上一条 transform 的输出） ==
+用户："以原点 O 为中心，把三角形 ABC 放大 2 倍后再逆时针旋转 90°，得到相似形，并确认相似比是 2、旋转角是 90°。"
+思路：协议没有单条「旋转相似 / spiral similarity」命令，AI 别去找、更别自己手算 cos/sin 复合后的坐标
+（既易错又冗长）。用两条 transform 链式组合——先 type:scale 放大、再 type:rotate 旋转，两条都用同一个 center:O。
+关键：transform 的输出会以它的 id 注册进画板，所以第二条 transform 的 of 可以直接引用第一条输出的 id
+（这正是「先创建后引用」在链式变换上的体现）。整份变换完若要逐顶点核对，就单独对某个已命名的点做同样的链式变换。
+{"op":"point","id":"O","x":0,"y":0,"fixed":true}
+{"op":"point","id":"A","x":1,"y":1}
+{"op":"point","id":"B","x":3,"y":1}
+{"op":"point","id":"C","x":2,"y":3}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"transform","id":"triS","of":"tri","type":"scale","k":2,"center":"O"}      // 第一步：位似放大 2 倍
+{"op":"transform","id":"triSR","of":"triS","type":"rotate","angle":90,"center":"O"} // 第二步：对 triS 旋转 90°
+// 逐点核对相似比与旋转角：对单个点 A 做同样的链式变换得到 A2，再回读数值
+{"op":"transform","id":"A1","of":"A","type":"scale","k":2,"center":"O"}           // A→A1，|OA1|=2|OA|
+{"op":"transform","id":"A2","of":"A1","type":"rotate","angle":90,"center":"O"}    // 引用上一条输出 A1
+{"op":"verify","kind":"distance","of":["O","A"],"expect":1.414,"tol":0.05,"label":"|OA|=√2"}
+{"op":"verify","kind":"distance","of":["O","A2"],"expect":2.828,"tol":0.05,"label":"|OA2|=2√2，相似比2"}
+{"op":"verify","kind":"angle","of":["A","O","A2"],"expect":90,"tol":0.5,"label":"旋转角90°"}
+// 要点：① 两条 transform 链式，第二条 of:"triS"/"A1" 引用第一条输出（输出按 id 注册），别写成原始 tri/A（那就漏了放大）；
+//   ② 两条 center 都用同一个 O（旋转相似两变换共心），angle 是度、k 写数字不写表达式；
+//   ③ 放大与旋转可交换顺序（同一中心时 scale∘rotate = rotate∘scale），结果相同；k<0 时额外带中心对称；
+//   ④ verify 只写可直接给出的预期值（|OA|=√2、|OA2|=2√2≈2.828、∠AOA2=90°），别写符号推导；
+//   ⑤ 整份 polygon 变换的副本顶点不单独命名，要逐顶点核对就按上面单独 transform 一个已命名的点。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

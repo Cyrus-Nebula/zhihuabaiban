@@ -445,12 +445,28 @@
 > 既有 `conicSpec` **72/72**、`regularPolygonSpec` **78/78** 无回归。全仓 68 个 JS 文件 `node --check` 通过。
 > 真实 JSXGraph 上级联所依赖的 `parents` / `childElements` 形状仍需带浏览器环境目视确认（见「已知限制」）。
 
+## 易错图形补遗：弓形面积阴影 / 旋转相似（本轮新增 2026-11-17 第十轮）
+
+> 落实连续多轮 TODO 交接项④「其它易错图形」里剩的两项。两者协议都没有单条原生命令，
+> 此前 AI 要么硬找不存在的参数、要么手算复合坐标。本轮只增 `ai/board-prompt.js` 例32/例33 few-shot，
+> 全程复用既有 `point`/`polygon`/`style`/`arc`/`segment`/`transform`/`verify`，**未改执行器 / 3D / editor.html**。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 79 | 圆心 O(0,0)、半径 3，把第一象限弧与弦围成的弓形区域涂阴影 | `point` O/P0(3,0)/P1(2.121,2.121)/P2(1.5,2.598)/P3(0,3)（弧上采样点 R·cosθ/R·sinθ 数值化）→ `polygon` bow points:[P0,P1,P2,P3]（闭合边 P3→P0 即弦）→ `style` bow fill:true fillColor:"#93C5FD" fillOpacity:0.35 → `arc` bowArc center:O from:P0 to:P3（光滑弧边）→ `segment` bowChord P0→P3 → `verify` oncircle(P1,c1)=0 / distance(P0,P3)=4.243≈3√2 | ✅ | **没有「填充弓形」原生参数**，别在 arc/circle 上找 fill（circle 的 fill 是整圆）；fill 打在 polygon 上；采样点先 `point` 建好再进 `polygon`（先创建后引用）；坐标写成算好的数字、不写 cos(45)；扇形变式 polygon points 前加圆心 O 才对；见 `ai/board-prompt.js` 例32 |
+| 80 | 以 O 为中心把 △ABC 放大 2 倍再逆时针旋转 90°，确认相似比 2、旋转角 90° | `point` O/A(1,1)/B(3,1)/C(2,3) → `polygon` tri → `transform` triS of:tri type:scale k:2 center:O → `transform` triSR of:triS type:rotate angle:90 center:O（链式，第二条 of 引用第一条输出 id）→ 逐点核对：单独 `transform` A1 of:A scale k2 → `transform` A2 of:A1 rotate 90 → `verify` distance(O,A)=1.414(√2) / distance(O,A2)=2.828(2√2) / angle(A,O,A2)=90 tol:0.5 | ✅ | **没有单条「旋转相似/spiral similarity」命令**，别找、别手算 cos/sin 复合坐标；两条 `transform` 链式、都带同一 center:O（共心）；第二条 of 必须引用第一条输出 id（triS/A1），写成原始 tri/A 会漏掉放大；transform 输出按 id 注册可被下一条引用（先创建后引用）；整份 polygon 副本顶点不单独命名，逐点核对就单独变换一个已命名点；verify 只写可直接给出的预期值；见 `ai/board-prompt.js` 例33 |
+
+> 状态 ✅：两例全程复用既有命令，`node --check ai/board-prompt.js` 通过；采样点/相似比/旋转角的期望值按
+> R·cosθ/R·sinθ 与位似+旋转公式手算核对（弓形弦长 3√2≈4.243、|OA|=√2≈1.414、2 倍后 2√2≈2.828、∠AOA₂=90°）。
+> 真实 JSXGraph 上 polygon 填充用折线逼近弧的圆滑度、`transform` 链式输出被下一条 of 引用的运行时行为仍需带浏览器环境目视确认（见「已知限制」）。
+
 ## TODO 交接（下一步）
 1. 自检状态条做成 AI 面板固定 DOM 徽标（现为逐轮日志行）。
 2. 收敛判定引入「残差改善量」而不只数失败项。
 3. 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数。
-4. 其它易错图形（弓形面积阴影、旋转相似）few-shot。
-5. `remove` 的级联在真实 JSXGraph 上目视确认（见「已知限制」）；`expressions` 里按标识符引用滑动条的曲线是否随级联一并删除也需浏览器复验。
+4. [本轮已完成] 其它易错图形（弓形面积阴影、旋转相似）few-shot——见例32/例33、用例 79/80。
+5. 更多易错图形 few-shot（如旋转体截面、极坐标曲线、含参不等式区域，需先确认执行器是否支持对应协议）。
+6. `remove` 的级联在真实 JSXGraph 上目视确认（见「已知限制」）；`expressions` 里按标识符引用滑动条的曲线是否随级联一并删除也需浏览器复验。
 
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
