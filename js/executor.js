@@ -6,6 +6,10 @@
  *
  * 命令协议（commands 数组，按依赖顺序执行）：
  *   clear                                      清空画板
+ *   remove    {id|ids}                         删除图元（id 字符串或 ids 数组；沿依赖图级联删除引用它的对象 + 正多边形派生顶点，
+ *                                             与画板删除工具同语义，避免留下悬空引用；不支持 "__all__"（请改用 clear）；
+ *                                             不存在的 id 记入 missing 不报错；删完可用同名 id 重新 point / regularPolygon，
+ *                                             实现「读状态 → 删旧图元 → 局部重画」，见 planRemove）
  *   point     {id,x,y,fixed?}                  点（默认可拖拽；x/y 也可以是滑动条 id）
  *   segment   {id,from,to}                     线段
  *   ray       {id,from,to}                     射线
@@ -236,6 +240,25 @@
  *   ④ 其它易错图形（弓形面积阴影、旋转相似）；⑤ edge 的「显式边心距」朝向语义
  *     （注意：边长 s 与边数 n 已唯一确定 a=s/(2tan(180°/n))，显式给 a 与「AB 是一条边」冲突，
  *      宜另立 center+apothem 定义或改由 center/vertex 表达，不要塞进 edge 破坏几何自洽）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-17 第九轮）：只改 2D 协议，3D 分支 / editor.html / appId / js/board.js 零改动。
+ *   落实「MCP 式读画板状态后修改图形」长期缺失的一环——新增原生 remove 命令：此前 executor 内部虽有
+ *   remove(id)（供前端删除工具调用），但 AI 的 JSON 命令协议里没有这个 op，而提示词 / 回归清单却反复要求
+ *   「先 remove 主图元再重发」，AI 根本发不出来；想改一个图元只能 clear 整板重画或 move 挪点。
+ *   (1) 新增导出纯函数 planRemove(cmd, registry)：规范化 id / ids、拒绝 __all__ 与非法值（清空只能 clear），
+ *       沿 JSXGraph 元素的 parents / childElements 依赖图做不动点 BFS 级联收集依赖者（与前端删除工具同语义，
+ *       防悬空），补上 regularPolygon 派生顶点，按「依赖者先删、显式目标后删」排序；引擎无依赖信息时
+ *       降级为只删显式项，不抛错、不误删。
+ *   (2) execute() 前置 remove 分支（与 clear 同级，在 build 之前），删完回传 removed / missing；
+ *       不存在的 id 宽容记入 missing，删完同名 id 可重新 point / regularPolygon 实现局部重画。
+ *   前端零改动：aiSend() 的 isTransient 只含 measure/verify/animate/inspect，remove 会进 doc.commands
+ *   可回放 / 可保存，自检修正轮与查询回读轮也不过滤它。配套 ai/board-prompt.js 命令清单登记 +
+ *   「删除与局部重画」小节 + 例31，docs 用例 77/78，tests/board2d_remove_spec.mjs 无头单测 +
+ *   tests/run-2d-specs.mjs 聚合入口（落实连续多轮 TODO ⑤）。
+ * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *   ③ 其它易错图形（弓形面积阴影、旋转相似）；④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；
+ *   ⑤ remove 的级联在真实 JSXGraph 上目视确认（parents / childElements 形状因引擎版本而异，
+ *     沙箱无头单测只能用 mock 依赖图覆盖）。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -802,6 +825,84 @@ export function regularPolygonSpec(cmd, refs) {
   // 让 describe()/inspect 的 __aiRegular 快照能回读；expr 格式保持逐字节不变（旧回归护栏不破）。
   if (towardSide) meta.towardSide = towardSide;
   return { vertices, angles, center, radius, sides, mode, rotate, vertexRadius, vertexIds, expr, meta };
+}
+
+/**
+ * remove 删除规划（模块级纯函数，不依赖 JSXGraph / DOM，可无头单测）。
+ *
+ * 从 cmd.id / cmd.ids 出发，沿注册表元素的 parents / childElements 依赖图做不动点 BFS，
+ * 把「依赖这些对象」的后代对象一并纳入删除集合（与 js/board.js 删除工具的级联语义一致，
+ * 防止删掉一个点后留下悬空的线段/圆/多边形让画板更新报错）；并补上 regularPolygon 主图元
+ * 派生的 n 个顶点 id（与 remove() 内部联动一致）。
+ *
+ * 返回 { removed: 按「依赖者先删、显式目标后删」排序的 id 列表, missing: 不存在的 id,
+ *        seeds: 显式指定且存在的 id, cascade: 由级联额外纳入的 id }。
+ * 引擎不提供 parents / childElements 时自动降级为「只删显式指定项」，不抛错、不误删。
+ * 显式拒绝 __all__ / 空值 / 非字符串：清空画板只能用 clear，避免 AI 一条命令误删整幅图。
+ */
+export function planRemove(cmd, registry) {
+  const raw = cmd && (cmd.ids !== undefined ? cmd.ids : cmd.id);
+  // 严格校验、早失败不猜：任何非字符串 / 空值 / '__all__' 成员都整条拒绝，不静默过滤脏数据。
+  if (raw === undefined || raw === null) throw new Error('remove 需要 id 或 ids；要清空请用 clear');
+  const seeds = Array.isArray(raw) ? raw : [raw];
+  if (!seeds.length) throw new Error('remove 的 ids 不能是空数组；要清空请用 clear');
+  for (const s of seeds) {
+    if (typeof s !== 'string' || !s.trim() || s.trim() === '__all__') {
+      throw new Error('remove 的 id / ids 只能是非空字符串，不支持 __all__ / 空值 / 非字符串；要清空请用 clear');
+    }
+  }
+  const ids = [...new Set(seeds.map((s) => s.trim()))];
+  const map = registry instanceof Map ? registry : new Map();
+  const missing = ids.filter((s) => !map.has(s));
+  const doomed = new Set(ids.filter((s) => map.has(s)));
+  const seedSet = new Set(doomed);
+
+  // JSXGraph 元素对象 → 注册表 id 的反向索引（childElements / parents 里通常存的是元素对象）
+  const byEl = new Map();
+  for (const [k, el] of map) if (el && typeof el === 'object') byEl.set(el, k);
+  const keyFor = (v) => {
+    if (v == null) return null;
+    if (typeof v === 'string' && map.has(v)) return v;
+    const mapped = byEl.get(v);
+    if (mapped) return mapped;
+    if (typeof v === 'object' && typeof v.id === 'string' && map.has(v.id)) return v.id;
+    return null;
+  };
+  const refsOf = (el) => {
+    const res = [];
+    if (!el || typeof el !== 'object') return res;
+    if (Array.isArray(el.parents)) res.push(...el.parents);
+    const cs = el.childElements;
+    if (cs instanceof Map) res.push(...cs.values());
+    else if (Array.isArray(cs)) res.push(...cs);
+    else if (cs && typeof cs === 'object') res.push(...Object.values(cs));
+    return res;
+  };
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [id, el] of map) {
+      if (doomed.has(id) || !el || typeof el !== 'object') continue;
+      if (refsOf(el).some((r) => { const k = keyFor(r); return k && doomed.has(k); })) {
+        doomed.add(id); changed = true;
+      }
+    }
+  }
+  // 正多边形主图元被删时，派生顶点一并纳入（与 remove() 的联动保持一致）
+  for (const id of [...doomed]) {
+    const el = map.get(id);
+    const kids = Array.isArray(el && el.__aiRegularVertexIds) ? el.__aiRegularVertexIds : [];
+    for (const k of kids) if (map.has(k)) doomed.add(k);
+  }
+  // 按依赖倒序：不动点 BFS 后加入的是依赖者，先删它们，最后删显式目标，避免悬空
+  const ordered = [...doomed].reverse();
+  return {
+    removed: ordered,
+    missing,
+    seeds: ids.filter((s) => seedSet.has(s)),
+    cascade: ordered.filter((id) => !seedSet.has(id)),
+  };
 }
 
 export function createExecutor(board) {
@@ -1567,6 +1668,15 @@ export function createExecutor(board) {
       if (!cmd || typeof cmd !== 'object') continue;
       try {
       if (cmd.op === 'clear') { clearAll(); out.push({ ok: true, op: 'clear' }); continue; }
+      if (cmd.op === 'remove') {
+        // 按 id / ids 删除图元（MCP 式「读画板状态 → 局部删除 → 重画」）：
+        // planRemove 已沿依赖图把依赖者一并纳入并按依赖倒序排好；不存在的 id 记入 missing 不整批失败；
+        // 删完后同名 id 可重新 point / regularPolygon（registry 已释放该 id，不会报「重复定义」）。
+        const plan = planRemove(cmd, registry);
+        for (const rid of plan.removed) remove(rid);
+        out.push({ ok: true, op: 'remove', removed: plan.removed, missing: plan.missing });
+        continue;
+      }
       const built = build(cmd);
       if (cmd.op === 'inspect') {
         // 主动查询：纯只读动作，读数透传给前端【查询读数】两阶段回读；不注册图元、不进文档。

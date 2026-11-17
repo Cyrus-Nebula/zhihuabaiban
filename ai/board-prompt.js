@@ -270,6 +270,20 @@
  * TODO(下一步): ① [本轮已完成] conicSpec 无头单测入库（72 项断言全通过）；
  *   ② 自检状态条做成 AI 面板固定 DOM 徽标；③ 收敛判定引入「残差改善量」；
  *   ④ 其它易错图形（弓形面积阴影、旋转相似）；⑤ 给测试脚本加 npm test 聚合入口（conic + regularPolygon 一起跑）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-17 第九轮）：只追加 2D 作图主干逻辑，3D 命令分支零改动、
+ *   不动 appId/editor.html/js/board.js，核心工作流 / 铁律 / 既有例1-30 逐字未动、无删除行。
+ *   落实「MCP 式读取画板状态后修改图形」长期缺的一环——此前若想改掉一个已经画好的图元，AI 只能
+ *   clear 整板重画（会丢掉用户已有的其它图形）或 move 挪自由点，而命令清单里根本没有 remove；
+ *   但本文件例26 / 例30 与回归清单却写着「要改整体请 remove 主图元再重发」，AI 照抄也发不出这条命令。
+ *   本轮给 2D 协议补上原生 remove：命令清单登记、「删除与局部重画（remove）」小节、例31 few-shot
+ *   （读状态快照确认要删的 id → 一条 remove 级联删掉旧图元及其派生顶点 → 用同名 id 重发 → verify 自检），
+ *   并明确「remove 级联删依赖者 / 不存在的 id 记入 missing / 不支持 __all__，清空只能用 clear」。
+ *   配套 js/executor.js 的 planRemove 纯函数 + execute 分支（依赖倒序删除、防悬空），
+ *   docs 用例 77/78，tests/board2d_remove_spec.mjs 单测 + tests/run-2d-specs.mjs 聚合入口（落实 TODO ⑤）。
+ * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *   ③ 其它易错图形（弓形面积阴影、旋转相似）；④ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；
+ *   ⑤ [本轮已完成] 2D 单测聚合入口（见 tests/run-2d-specs.mjs，node 直接跑，不加 package.json 以免影响 Pages 构建）。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -380,6 +394,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 
 # 命令协议
 - clear                        清空画板（仅用户明确要求重画/新建时使用）
+- remove     {"op":"remove","id":"hex"} | {"op":"remove","ids":["h","cM","T1"]}  删除指定图元（本轮新增，见「删除与局部重画」小节 / 例31）：级联删除依赖它的对象与正多边形派生顶点，删完可用**同名 id** 重发实现局部重画；id 必须是状态快照里已有的 id（先读状态后引用），不存在的记入 missing 不整批失败；不支持 ids:"__all__"（清空只能用 clear，且只在用户明确要求重画/新建时用）
 - point      {"op":"point","id":"A","x":0,"y":0,"fixed":false}      点（fixed:true 则不可拖动）
 - segment    {"op":"segment","id":"s1","from":"A","to":"B"}          线段
 - ray        {"op":"ray","id":"r1","from":"A","to":"B"}              射线
@@ -1129,6 +1144,28 @@ H(intersection@(0,-1)), 高 AH=4.000, ∠AHB=90.0°, online(H,lBC)=0.000, f1(fun
 //   ④ 想补到另一侧就换一个那侧的点（或改回 side:"right" 与之二选一），别同时写两种朝向；
 //   ⑤ 执行器算边心距 4/(2tan45°)=2、中心 (2,2)，Q0=A(0,0)、Q1=B(4,0)、Q2=(4,4)、Q3=(0,4)；
 //      verify 只写「落在 A / B」「边长 = 4」这类可直接给出的预期值，别写含符号推导的断言。
+
+# 删除与局部重画（remove · 本轮新增，对标「读取画板状态后修改图形」）
+- 用户说"把刚才那个正多边形换成正三角形""这条辅助线不要了""画错的那个删掉重画"时，**不要 clear 整板**（会丢掉用户已有的其它图形），也不要为了绕过「id 重复定义」给新图元另起名字堆一堆垃圾；用一条 remove 删掉旧图元，再用**同名 id** 重新发命令。
+- {"op":"remove","id":"hex"} 删单个；{"op":"remove","ids":["h","cM","T1"]} 一次删多个。id 必须是状态快照里出现过的已有 id（先读状态、后引用）；写错 / 已被删的 id 会进 missing、不整批失败。
+- remove 会**级联删除依赖它的对象**：删一个点会连带删掉引用它的线段 / 圆 / 多边形 / 交点；删 regularPolygon 主图元会连带删掉它派生的 n 个顶点（所以同名重发不会撞「顶点 id 重复定义」）。执行器按「依赖者先删、目标后删」处理，不留下悬空引用。
+- **不支持 ids:"__all__"**：清空画板只能用 clear，且只有用户明确说"清空/重画/新建"时才用。remove 只删你点名的对象。
+- 删完重发时仍严格遵守「先创建后引用」：新图元依赖的其它点/线如果没被级联删掉，直接引用它们的 id，别重新 point。末尾照常附 verify 自检（见例31）。
+
+== 例31：把已画好的正六边形改成正三角形（读状态 → remove → 同名重发 → verify 自检；易错：clear 整板 / 换个新 id 堆积垃圾 / 删完忘了派生顶点） ==
+用户："刚才那个以 O 为圆心、半径 2 的内接正六边形不要了，改成同圆内接正三角形。"
+状态快照里已有：O(0,0) / circle c1(O,2) / regularPolygon hex(inscribed@n=6, 顶点[hex1 … hex6])。
+思路：正六边形是静态派生图元（改边数不能靠 move），必须 remove 删掉 hex；级联会一并清掉 hex1..hex6，
+于是可以原样用 id "hex" 重发一条 sides:3 的 regularPolygon，圆 c1 与圆心 O 不受影响、照旧引用，不 clear、不重画已有图形。
+{"op":"remove","id":"hex"}
+{"op":"regularPolygon","id":"hex","circle":"c1","sides":3,"vertexIds":["P1","P2","P3"]}
+{"op":"verify","kind":"oncircle","of":["P1","c1"],"expect":0,"tol":0.05}
+{"op":"verify","kind":"oncircle","of":["P2","c1"],"expect":0,"tol":0.05}
+{"op":"verify","kind":"oncircle","of":["P3","c1"],"expect":0,"tol":0.05}
+{"op":"verify","kind":"distance","of":["P1","P2"],"expect":3.4641,"tol":0.01}   // 内接正三角形边长 = R√3 = 2√3 ≈ 3.4641
+// 要点：① remove 的 id "hex" 必须来自状态快照（别凭空猜、别 clear 整板）；② 级联已清掉 hex1..hex6，
+//   所以用同名 id "hex" 重发不会报「id 重复定义」，新顶点换成 P1/P2/P3；③ c1 / O 没被删，直接引用，
+//   绝不重新 point / circle；④ verify 只写能直接给出的预期值（三顶点共圆、边长 R√3），别写含符号推导的断言。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

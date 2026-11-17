@@ -420,6 +420,38 @@
 > **78/78** 全绿、无回归。该单测由纯函数直接驱动，无浏览器 / JSXGraph 依赖，稳定可复跑；
 > 真实曲线渲染与断点断开仍需带浏览器环境目视确认（见「已知限制」）。
 
+## 原生 remove 命令 · 删除与局部重画（本轮新增 2026-11-17 第九轮）
+
+> 落实「MCP 式读取画板状态后修改图形」长期缺失的一环——此前 `js/executor.js` 内部虽有
+> `remove(id)`（供画板删除工具调用），但 AI 的 JSON 命令协议里**没有 `remove` 这个 op**，
+> 而提示词例26 / 例30 与本清单用例 72 却写着「要改整体请先 `remove` 主图元再重发」，AI 照抄也发不出来；
+> 想改掉一个已画好的图元只能 `clear` 整板重画（丢掉用户其它已有图形）或 `move` 挪自由点。
+> 本轮补上原生 `remove`：`planRemove` 纯函数沿依赖图级联收集依赖者并按依赖倒序删除，
+> `execute()` 前置分支回传 `removed` / `missing`；前端 `js/board.js` **零改动**
+> （`remove` 不在 `isTransient` 名单内，会进 `doc.commands` 可回放 / 可保存，自检修正轮也不过滤它）。
+> 同时落实连续多轮 TODO ⑤：新增 `tests/run-2d-specs.mjs` 聚合 3 个 2D 单测（不新增 `package.json`，
+> 以免 Cloudflare Pages 因根目录出现 package.json 触发构建影响静态部署）。
+> 纯 2D 协议增量，3D 分支 / `editor.html` / `appId` 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 77 | 把已画好的内接正六边形改成同圆内接正三角形（读状态 → 删除 → 同名重发 → 自检） | 状态快照有 O(0,0) / `circle` c1(O,2) / `regularPolygon` hex(inscribed@n=6, 顶点 hex1..hex6) → `remove` id:"hex"（级联清掉 hex1..hex6）→ `regularPolygon` id:"hex" circle:"c1" sides:3 vertexIds:[P1,P2,P3] → `verify` oncircle(P1,c1)/(P2,c1)/(P3,c1) expect:0 tol:0.05 → `verify` distance(P1,P2) expect:3.4641 tol:0.01（内接正三角形边长 R√3 = 2√3 ≈ 3.4641） | ✅ | **别 `clear` 整板**（会丢掉 O / c1 等用户已有图形）、别给新图元另起 id 堆垃圾；删完用**同名 id** 重发才不会撞「id 重复定义」；`c1` / `O` 没被删，直接引用，不要重新 `point` / `circle`；`remove` 的 id 必须来自状态快照（先读状态后引用）；verify 只写可直接给出的预期值；见 `ai/board-prompt.js` 例31 |
+| 78 | ids 批量删除 / 级联依赖 / 缺失 id 宽容 / 非法参数 / 单测护栏 | `remove` ids:["h","cM","T1"]（一次删多条辅助线与切点）→ 删点 A 时级联删掉引用它的 `segment` s1 / `polygon` tri（依赖者先删、目标后删）→ `remove` id:"notExist" 回 `ok:true` 且 `missing:["notExist"]`，不整批失败 → 非法：`ids:"__all__"` / 空数组 / 空字符串 / 非字符串成员 / 缺 id 一律 `ok:false` → `node tests/board2d_remove_spec.mjs` → `node tests/run-2d-specs.mjs` | ✅ | `remove` **不支持 `ids:"__all__"`**（清空只能 `clear`，且只在用户明确要求重画/新建时用）；级联与画板删除工具同语义，防悬空引用；`planRemove` 在引擎无 `parents`/`childElements` 时降级为只删显式项、不抛错不误删；`removed` 按依赖倒序回传供 AI 自检；删 `regularPolygon` 主图元会连带清掉派生顶点，同名重发不撞 id |
+
+> 状态 ✅：`tests/board2d_remove_spec.mjs` 本地实跑 **38/38** 断言全通过（9 个 section：
+> 单 id / ids 去重 trim / 缺失宽容 / 多级 `parents` 级联与倒序 / 三种 `childElements` 形状 /
+> `regularPolygon` 派生顶点 / 无依赖信息降级 / 10 类非法参数抛错 / 4 层链式不动点收敛），
+> 真实调用 `planRemove` 做断言、非静态正则；`tests/run-2d-specs.mjs` 聚合 **3/3** 脚本全通过，
+> 既有 `conicSpec` **72/72**、`regularPolygonSpec` **78/78** 无回归。全仓 68 个 JS 文件 `node --check` 通过。
+> 真实 JSXGraph 上级联所依赖的 `parents` / `childElements` 形状仍需带浏览器环境目视确认（见「已知限制」）。
+
+## TODO 交接（下一步）
+1. 自检状态条做成 AI 面板固定 DOM 徽标（现为逐轮日志行）。
+2. 收敛判定引入「残差改善量」而不只数失败项。
+3. 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数。
+4. 其它易错图形（弓形面积阴影、旋转相似）few-shot。
+5. `remove` 的级联在真实 JSXGraph 上目视确认（见「已知限制」）；`expressions` 里按标识符引用滑动条的曲线是否随级联一并删除也需浏览器复验。
+
 ## 已知限制
 - `inspect` 派生量查询（本轮新增）复用 `measureValue` 求值，表达式含滑动条变量时依赖画板引擎的
   JessieCode 上下文取当前值；沙箱无头环境只验证纯数值表达式（用例 50~52），带滑动条的函数需在
@@ -430,3 +462,4 @@
 - 本轮起 read-back 闭环由 `verify` 的 `pass:false` 精确触发（纯 `measure` 只展示读数、不再消耗一次 LLM 调用）；判定容差默认 `tol=0.05`，角度用例建议显式给 `tol:0.5`。闭环最多自动修正 3 轮（每轮静默复跑原始 verify 机器判定收敛，横跳 / 失败项变多 / 连续 2 轮无改善 / 达上限提前收手），不递归；`expect`/`expectRange` 的取值合理性由 AI 在规划阶段给出，仍需带浏览器环境回归确认（用例 29/30、37~39）。
 - `conic` 用 JSXGraph 的 `curve` 元素（参数曲线函数 `[fx,fy,0,1]`）绘制：沙箱无头环境只验证了参数换算与采样点的数学正确性，**曲线在真实画板上的渲染、NaN 断点是否如预期断开、线宽/颜色**仍需带浏览器环境目视确认（用例 59~61）。`focus`+`directrix` 形态依赖注册表里准线元素的端点坐标；已画出的 `conic` 是静态参数曲线（不随焦点/准线被 `move` 拖动实时重算，回放/保存时按命令重建），与 `transform` 的静态副本行为一致。
 - `regularPolygon` 的 n 个顶点落成 `fixed:true` 的独立 `point`（用例 65~69）：沙箱无头环境只验证了顶点坐标的数学正确性与注册表/数值快照/删除联动，**真实画板上拖动滑动条 `radius` 或 `center` 点时函数坐标是否实时刷新、拖动交互是否被 `fixed` 正确禁用**仍需带浏览器环境目视确认。它按命令重建（回放/保存时重算顶点），与 `conic` / `transform` 的静态行为一致；派生顶点占 id，删除主图元时联动清理，勿把顶点 id 当成用户可长期持有的自由点。
+- `remove` 的级联依赖来自 JSXGraph 元素的 `parents` / `childElements`（用例 77/78）：沙箱无头单测只能用 mock 依赖图覆盖，真实引擎里这两种字段的形状因 JSXGraph 版本 / 图元类型而异；若引擎不提供，执行器会**降级为只删显式指定项**（不抛错、不误删），此时需按依赖倒序逐条 `remove`。真实画板上删点后依赖它的线段 / 圆是否如预期一并消失、同名 id 重发是否顺畅，仍需带浏览器环境目视确认；`expressions` 里按标识符引用滑动条的曲线（`expr:"a*x^2"`）是否随级联一并删除，也需在浏览器复验（前端删除工具已有 `exprMentions` 匹配，AI 的 `remove` 走执行器依赖图，二者语义可能不完全一致）。
