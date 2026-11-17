@@ -1755,3 +1755,38 @@ export const BOARD3D_BEZIER_PROMPT = `
 - 同一批命令里可以先 add3d 建别的物体再 bezier3d；采样坐标由画板按 de Casteljau 算法算出，不要自己在提示里逐段写端点坐标。
 - 补充铁律：bezier3d 是 3D 命令；2D 的贝塞尔 / 曲线 / 拟合等命令在本分支依旧不认识，不要输出。`;
 
+/* ============================================================ *
+ * 2026-11-18 D16 追加段：arc3d 空间圆弧（独立自主 3D 画板任务）
+ * 协作铁律：仅在本文件最末尾追加，上方 2D 主干 BOARD_SYSTEM_PROMPT 与全部
+ * 既有 3D 追加段（量测 / 回注标注 / transform / 批量 / duplicate / radial /
+ * mirror / grid / align / helix / bezier）逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 新命令单独成组，与 js/board3d-executor.js 的 BOARD3D_ARC_OPS 一一对应。
+ * 拼在文件最末尾同样是为了让 fitPrompt 短上下文裁剪时保留尾部。
+ * ============================================================ */
+
+/** 3D 扩展命令 op（2026-11-18 D16 追加，与 js/board3d-executor.js 的 BOARD3D_ARC_OPS 一致） */
+export const BOARD3D_ARC_PROMPT_OPS = Object.freeze(['arc3d']);
+
+/** 3D 空间圆弧命令追加段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_ARC_PROMPT = `
+
+# 补充命令：arc3d 空间圆弧（仅本 3D 分支可用，2026-11-18 追加）
+- 作用：给定圆心、半径、法向轴与起止角，按圆的参数方程生成一段**真圆弧**（画板自动采样成一串首尾相接的线段）。采样点严格落在半径 r 的圆上。用户说「画一段圆弧」「画拱门 / 圆角 / 扇形边界」「在 XY 平面画一个半圆」「绕 Z 轴画 90 度的弧」时用它。不需要场景里预先有源对象。
+- 格式：{"op":"arc3d","id":"arch","axis":"z","center":[0,0,0],"radius":2,"startAngle":0,"sweep":180,"segments":24}
+  · id          可选，生成对象的 id 前缀（默认 'arc'；各段自动编号为 <id>_s1、_s2…，采样点 <id>_p1…）；
+  · axis        可选，'x'/'y'/'z'（默认 'z'），圆弧所在平面的法向轴：z→XY 平面、x→YZ 平面、y→XZ 平面；
+  · center      可选，圆心 [x,y,z]（默认 [0,0,0]，数字字符串容错、坐标钳制 ±10000）；
+  · radius      可选，半径 > 0（默认 1）；
+  · startAngle  可选，起始角（角度制，默认 0）；
+  · sweep       可选，扫过的角度（角度制，默认 90），负数 = 反向扫弧；终点角 = startAngle + sweep；
+  · segments    可选，采样段数 = line 段数，1~512 的整数（默认 24），越大越圆滑、对象越多；
+  · asPoints    可选布尔，是否在每个采样点放小球标记（默认 false）；
+  · color / opacity 可选，整条圆弧的样式。
+  · 数值参数只要出现就必须是合法有限数（axis 只能是 x/y/z、segments 必须是 1~512 整数），否则整条原子拒绝、零副作用。
+  · 示例：{"op":"arc3d","id":"semi","radius":2,"startAngle":0,"sweep":180}（XY 平面上半圆）
+  · 示例：{"op":"arc3d","id":"arch","axis":"y","center":[0,1,0],"radius":3,"startAngle":0,"sweep":180,"color":"#e05252"}（XZ 平面拱形）
+  · 示例：{"op":"arc3d","id":"q","radius":1,"sweep":90,"asPoints":true}（四分之一圆弧 + 采样点）
+- 与 helix3d / bezier3d / add3d line 的区别：add3d line 只画手工给定两端点的一条直线段；helix3d 按固定参数方程生成**螺旋线**（pitch≠0 时不在同一平面）；bezier3d 由控制点列决定自由曲线、不保证落在圆上；arc3d 是半径恒定、圆心与法向轴给定的**真圆弧**（采样点到圆心距离恒等于 radius）。要「拱门 / 扇形边界 / 圆角 / 指定起止角的弧」用 arc3d。
+- 同一批命令里可以先 add3d 建别的物体再 arc3d；采样坐标由画板按圆的参数方程算出，不要自己在提示里逐段写端点坐标。
+- 补充铁律：arc3d 是 3D 命令；2D 的圆弧 / 弧线 / 扇形等命令在本分支依旧不认识，不要输出。`;
+

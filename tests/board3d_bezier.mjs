@@ -277,10 +277,10 @@ section('H. 执行器集成');
   assert(r[2].ok === false && r[3].ok === false, 'maxCommands 阻止超限命令');
 }
 {
-  // 未知 3D 命令仍由 default 拒绝，不影响既有
+  // 未知 3D 命令仍由 default 拒绝，不影响既有（D16 起 arc3d 已实现，改用未定义的占位 op）
   const api = { getState: () => ({ objects: [] }), add: (o) => o.id };
-  const r = applyBoard3DCommands([{ op: 'arc3d', points: [[0, 0, 0]] }], api);
-  assert(r[0].ok === false, '未实现的 arc3d 仍被拒绝（未误开新 op）');
+  const r = applyBoard3DCommands([{ op: 'unknown3d_placeholder', points: [[0, 0, 0]] }], api);
+  assert(r[0].ok === false, '未实现的占位 3D 命令仍被拒绝（未误开新 op）');
 }
 
 section('I. 共享文件协议两侧一致性');

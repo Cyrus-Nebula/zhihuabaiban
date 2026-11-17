@@ -157,6 +157,13 @@ async function send() {
         const deg = m.degree != null ? `（${m.degree} 次）` : '';
         appendLog('ai', `已生成贝塞尔曲线 ${bz.created.length} 段${deg}。`);
       }
+      // 2026-11-18 D16：arc3d 展示画板按圆心/半径/起止角生成的圆弧段数与扫角（数值以画板返回为准）。
+      for (const ac of results) {
+        if (!ac.ok || ac.op !== 'arc3d') continue;
+        const m = ac.meta || {};
+        const sweep = m.sweep != null ? `、扫角 ${m.sweep}°` : '';
+        appendLog('ai', `已生成空间圆弧 ${ac.created.length} 段${sweep}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
