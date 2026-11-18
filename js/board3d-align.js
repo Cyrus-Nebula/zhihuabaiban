@@ -155,3 +155,84 @@ export function resolveAlign3D(cmd, state) {
     meta: { ...meta, ids: ids.slice(), targets: targets.slice(), positions: items.map((it) => it.patch.pos.slice()) },
   };
 }
+
+/* ============================================================ *
+ * 2026-11-19 D18 追加段：align3d 多轴同时对齐（独立自主 3D 画板任务）
+ * 协作铁律：仅在本文件末尾追加；上方 D13 单轴 resolveAlign3D 与全部
+ * 工具函数逐字未动。复用单轴 resolveAlign3D 的校验 + 目标计算，只是把
+ * 多个轴的 patch 合并进同一条命令，不重复实现坐标逻辑。
+ * ============================================================ */
+
+/** 一次 align3d 多轴写法最多允许的轴规格数（世界坐标只有 x/y/z 三轴） */
+export const ALIGN3D_MULTI_MAX_AXES = 3;
+
+/**
+ * 解析一条「多轴同时对齐」align3d 命令（只读，输出全新对象 / 数组）。
+ *
+ * @param {Object} cmd 形如：
+ *   {"op":"align3d","ids":["a","b","c"],"axes":[
+ *     {"axis":"y","mode":"min"},
+ *     {"axis":"z","mode":"center","to":0},
+ *     {"axis":"x","mode":"distribute","start":-3,"end":3}
+ *   ]}
+ *   - ids  必填，2~32 个互不重复、且已存在于当前场景的对象 id（与单轴口径一致）；
+ *   - axes 必填，1~3 个轴规格对象；每项 axis 必填（x/y/z）、互不重复，
+ *     mode/to/start/end 可选，语义与单轴 resolveAlign3D 完全相同；
+ *   - 未出现在 axes 里的轴沿用对象当前坐标；任一轴规格非法 → 整条原子拒绝、零副作用。
+ * @param {Object} state 形如 { objects: [...] }，只读
+ * @returns {{ok:boolean, items?:Array, meta?:Object, error?:string}}
+ *   items 按 ids 原顺序，每项 { id, patch:{ pos:[x,y,z] } }，只改 axes 指定轴的分量；
+ *   全程不修改 cmd / state / 任何轴规格对象。
+ */
+export function resolveAlign3DMultiAxis(cmd, state) {
+  if (!cmd || typeof cmd !== 'object') return { ok: false, error: '命令为空' };
+
+  const axes = cmd.axes;
+  if (!Array.isArray(axes) || axes.length < 1 || axes.length > ALIGN3D_MULTI_MAX_AXES) {
+    return { ok: false, error: `axes 需要 1~${ALIGN3D_MULTI_MAX_AXES} 个轴规格` };
+  }
+
+  // ---- 轴规格：对象 / 轴白名单 / 去重（任一不满足 → 整条原子拒绝） ----
+  const seen = new Set();
+  for (const spec of axes) {
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+      return { ok: false, error: 'axes 每项必须是轴规格对象' };
+    }
+    if (!ALIGN3D_AXES.includes(spec.axis)) {
+      return { ok: false, error: `axis 只支持 ${ALIGN3D_AXES.join('/')}` };
+    }
+    if (seen.has(spec.axis)) return { ok: false, error: `axes 中 axis 不能重复：${spec.axis}` };
+    seen.add(spec.axis);
+  }
+
+  // ---- 逐轴复用单轴 resolveAlign3D：校验 + 目标计算完全同源，不重复造轮子 ----
+  const axisResults = [];
+  for (const spec of axes) {
+    const single = { op: 'align3d', ids: cmd.ids, axis: spec.axis };
+    if (spec.mode !== undefined) single.mode = spec.mode;
+    if (spec.to !== undefined) single.to = spec.to;
+    if (spec.start !== undefined) single.start = spec.start;
+    if (spec.end !== undefined) single.end = spec.end;
+    const r = resolveAlign3D(single, state);
+    if (!r.ok) return { ok: false, error: `轴 ${spec.axis}：${r.error}` };
+    axisResults.push({ axis: spec.axis, ai: ALIGN3D_AXES.indexOf(spec.axis), r });
+  }
+
+  // ---- 合并：以首个轴结果的完整 pos 为底（其余分量即当前值），逐轴覆盖目标分量 ----
+  const first = axisResults[0].r;
+  const items = first.items.map((it, i) => {
+    const pos = it.patch.pos.slice();
+    for (const ar of axisResults) pos[ar.ai] = ar.r.items[i].patch.pos[ar.ai];
+    return { id: it.id, patch: { pos } };
+  });
+
+  return {
+    ok: true,
+    items,
+    meta: {
+      ids: first.meta.ids.slice(),
+      axes: axisResults.map((ar) => ({ axis: ar.axis, ...ar.r.meta })),
+      positions: items.map((it) => it.patch.pos.slice()),
+    },
+  };
+}

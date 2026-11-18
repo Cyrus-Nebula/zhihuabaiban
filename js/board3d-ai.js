@@ -133,8 +133,20 @@ async function send() {
         appendLog('ai', `已生成 ${size} 网格阵列 ${g.created.length} 个对象：${ids}`);
       }
       // 2026-11-17 D13：align3d 展示画板按当前真实坐标算出的目标轴坐标（数值以画板返回为准）。
+      // 2026-11-19 D18：多轴写法（al.axes 数组）优先按 axes 逐轴展示；单轴路径逐字未动。
       for (const al of results) {
         if (!al.ok || al.op !== 'align3d' || !Array.isArray(al.applied)) continue;
+        const axes = Array.isArray(al.axes) && al.axes.length ? al.axes : null;
+        if (axes) {
+          // 多轴：每个对象展示形如 a→x=0,y=-3，数值以画板回读的 patch.pos 为准。
+          const bits = al.applied.map((a) => {
+            const pos = a.patch && a.patch.pos;
+            const kv = axes.map((ax) => `${ax}=${Array.isArray(pos) ? pos[['x', 'y', 'z'].indexOf(ax)] : '?'}`).join(',');
+            return `${a.id}→${kv}`;
+          }).join('、');
+          appendLog('ai', `已在 ${axes.join('/')} 轴对齐 ${al.applied.length} 个对象：${bits}`);
+          continue;
+        }
         const axis = al.axis || '?';
         const mode = al.mode || '?';
         const bits = al.applied

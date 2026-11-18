@@ -19,7 +19,7 @@
 import { resolveMeasure3D, measureToLabelSpec } from './board3d-measure.js';
 import { resolveTransform3D, resolveTransform3DBatch } from './board3d-transform.js';
 import { resolveDuplicate3D, resolveRadial3D, resolveMirror3D, resolveGrid3D } from './board3d-duplicate.js';
-import { resolveAlign3D } from './board3d-align.js';
+import { resolveAlign3D, resolveAlign3DMultiAxis } from './board3d-align.js';
 import { resolveHelix3D } from './board3d-helix.js';
 import { resolveBezier3D } from './board3d-bezier.js';
 import { resolveArc3D } from './board3d-arc.js';
@@ -592,6 +592,41 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           break;
         }
         case 'align3d': {
+          // 2026-11-19 D18：多轴同时对齐（axes:[{axis,mode,to?,start?,end?},...]）——不是新 op。
+          // 与下方 D13 单轴写法共用同一 known 校验 / getState 降级 / 逐项 update 口径；
+          // 仅当命令显式带 axes 时走此分支，历史单轴路径逐字未动、零回归。
+          if (Object.prototype.hasOwnProperty.call(cmd, 'axes')) {
+            const ids = cmd.ids;
+            if (!Array.isArray(ids) || !ids.length) {
+              results.push({ op, ok: false, error: 'ids 必须是非空对象 id 数组' });
+              break;
+            }
+            const badId = ids.find((id) => typeof id !== 'string' || !isId(id) || !known.has(id));
+            if (badId !== undefined) {
+              results.push({ op, ok: false, ids, error: `要对齐的对象 id 不存在：${String(badId)}` });
+              break;
+            }
+            let multiState = {};
+            try { multiState = (a.getState ? a.getState() : {}) || {}; } catch (_) { multiState = {}; }
+            const mr = resolveAlign3DMultiAxis(cmd, multiState);
+            if (!mr.ok) {
+              results.push({ op, ok: false, ids, error: mr.error });
+              break;
+            }
+            const applied = [];
+            const failed = [];
+            for (const item of mr.items) {
+              const okPatch = call('update', item.id, item.patch);
+              if (okPatch === false) failed.push({ id: item.id, error: '画板未找到该对象' });
+              else applied.push({ id: item.id, patch: item.patch });
+            }
+            results.push({
+              op, ok: failed.length === 0 && applied.length > 0,
+              ids: mr.meta.ids, axes: mr.meta.axes.map((x) => x.axis), applied, meta: mr.meta,
+              ...(failed.length ? { failed } : {}),
+            });
+            break;
+          }
           // 2026-11-17 D13：多对象对齐 / 等距分布，与 transform3d(ids) 同口径——
           // 先按 known 集合原子校验 ids，再从「当前」getState 读对象真实坐标交给纯函数算绝对目标，
           // 逐项 update（只改目标轴，其余字段沿用）；getState 缺失 / 抛错降级为空场景，整批不中断。

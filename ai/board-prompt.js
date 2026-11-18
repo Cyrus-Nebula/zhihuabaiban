@@ -1826,3 +1826,31 @@ export const BOARD3D_POLYHEDRON_PROMPT = `
 - 同一批命令里可以先 polyhedron3d 建立体再 label3d 补充其他文字，或先 add3d 建别的物体；顶点坐标由画板按标准立体坐标算出，不要自己在提示里逐条写棱端点。
 - 补充铁律：polyhedron3d 是 3D 命令；2D 的正多边形 / 多边形 / 正多面体等命令在本分支依旧不认识，不要输出。`;
 
+
+/* ============================================================ *
+ * 2026-11-19 D18 追加段：align3d 多轴同时对齐（独立自主 3D 画板任务）
+ * 协作铁律：仅在本文件最末尾追加，上方 2D 主干 BOARD_SYSTEM_PROMPT 与全部
+ * 既有 3D 追加段（量测 / 回注标注 / transform / 批量 / duplicate / radial /
+ * mirror / grid / align 单轴 / helix / bezier / arc / polyhedron）逐字未动；
+ * 既有全部 *_PROMPT_OPS 契约保持不变。本段是 align3d 的**多轴写法**补充，
+ * 不新增 op（仍复用 BOARD3D_ALIGN_PROMPT_OPS 的 'align3d'），与
+ * js/board3d-executor.js 的 D18 分支一致。拼在最末尾同样为短上下文裁剪保留尾部。
+ * ============================================================ */
+
+/** align3d 多轴写法提示词段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾；无独立 op） */
+export const BOARD3D_ALIGN_MULTI_PROMPT = `
+
+# 补充：align3d 多轴同时对齐（仍是 align3d 命令，2026-11-19 追加）
+- 作用：上面的 align3d 一次只对齐 / 分布一条轴；当要把已有对象**同时在多条轴上**对齐或排布（例如「把这几个对象在 y 方向底部对齐、同时沿 z 方向均匀排开」），把单轴的 axis/mode/to/start/end 改成 axes 数组，一条命令完成，画板只改 axes 里点名的轴、其余轴保持不动。
+- 格式：{"op":"align3d","ids":["a","b","c"],"axes":[{"axis":"y","mode":"min"},{"axis":"z","mode":"distribute","start":-3,"end":3}]}
+  · ids 与单轴写法一致（2~32 个互不重复、已存在的对象 id）；
+  · axes 必填，1~3 个轴规格对象，每项：
+    - axis 必填，'x' / 'y' / 'z'，同一条命令里不能重复；
+    - mode / to / start / end 可选，含义与单轴 align3d 完全相同（mode 四种：min / max / center / distribute；to 仅 min/max/center 生效；start/end 仅 distribute 生效）；
+  · 每条轴的坐标目标由画板按当前场景真实坐标独立计算，AI 不必自己逐个写出；
+  · 任一轴规格非法（axis 重复 / 非法 mode / 脏数值 / ids 不合法或不存在）整条原子拒绝、零副作用；
+  · 示例：{"op":"align3d","ids":["p1","p2","p3"],"axes":[{"axis":"y","mode":"min"},{"axis":"x","mode":"center","to":0}]}（底面对齐最低点 + 水平集中到 x=0）
+  · 示例：{"op":"align3d","ids":["a","b","c","d"],"axes":[{"axis":"y","mode":"max"},{"axis":"z","mode":"distribute"}]}（顶部齐平 + 沿 z 等距排开）
+- 与单轴写法的关系：只对齐一条轴时继续用 {"axis":"x","mode":...}（更简单）；两条及以上用 axes 数组。两种写法不会互相干扰，都是 align3d、对象数不变。
+- 补充铁律：这是 3D 命令；不要输出 2D 的对齐 / 分布命令。`;
+
