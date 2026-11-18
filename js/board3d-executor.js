@@ -23,6 +23,7 @@ import { resolveAlign3D } from './board3d-align.js';
 import { resolveHelix3D } from './board3d-helix.js';
 import { resolveBezier3D } from './board3d-bezier.js';
 import { resolveArc3D } from './board3d-arc.js';
+import { resolvePolyhedron3D } from './board3d-polyhedron.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -162,6 +163,19 @@ export const BOARD3D_ARC_OPS = Object.freeze(['arc3d']);
 /** 含全部扩展命令的完整集（17 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE8_OPS = Object.freeze([
   ...BOARD3D_COMPLETE7_OPS, ...BOARD3D_ARC_OPS,
+]);
+
+/**
+ * 2026-11-19 D17 增量：3D 正多面体（柏拉图立体）线框命令 polyhedron3d（语义在 js/board3d-polyhedron.js）。
+ * 补齐 tetra 之外缺失的正八面体 / 正十二面体 / 正二十面体，以「棱 + 顶点小球 + 顶点标注」呈现。
+ * 单独成组、不并入任何历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 /
+ * COMPLETE2 11 / COMPLETE3 12 / COMPLETE4 13 / COMPLETE5 14 / COMPLETE6 15 /
+ * COMPLETE7 16 / COMPLETE8 17 条），按协作铁律保持逐字不变。
+ */
+export const BOARD3D_POLYHEDRON_OPS = Object.freeze(['polyhedron3d']);
+/** 含全部扩展命令的完整集（18 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE9_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE8_OPS, ...BOARD3D_POLYHEDRON_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -675,6 +689,34 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           let arcState = {};
           try { arcState = (a.getState ? a.getState() : {}) || {}; } catch (_) { arcState = {}; }
           const r = resolveArc3D(cmd, arcState);
+          if (!r.ok) {
+            results.push({ op, ok: false, error: r.error });
+            break;
+          }
+          const created = [];
+          const failed = [];
+          for (const item of r.items) {
+            if (known.has(item.id)) { failed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { failed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            created.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: failed.length === 0 && created.length > 0,
+            count: r.items.length, created, meta: r.meta,
+            ...(failed.length ? { failed } : {}),
+          });
+          break;
+        }
+        case 'polyhedron3d': {
+          // 2026-11-19 D17：3D 正多面体（柏拉图立体），生成「棱 line + 顶点 point + 可选标注 label」。
+          // 不需要源对象；从「当前」getState 读状态仅用于生成 id 时避让已有对象，
+          // getState 缺失 / 抛错降级为空场景，整批不中断；id 冲突分项失败、如实回报。
+          let polyState = {};
+          try { polyState = (a.getState ? a.getState() : {}) || {}; } catch (_) { polyState = {}; }
+          const r = resolvePolyhedron3D(cmd, polyState);
           if (!r.ok) {
             results.push({ op, ok: false, error: r.error });
             break;

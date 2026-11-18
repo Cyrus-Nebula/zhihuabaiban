@@ -164,6 +164,17 @@ async function send() {
         const sweep = m.sweep != null ? `、扫角 ${m.sweep}°` : '';
         appendLog('ai', `已生成空间圆弧 ${ac.created.length} 段${sweep}。`);
       }
+      // 2026-11-19 D17：polyhedron3d 展示画板按标准坐标生成的立体种类 / 顶点 / 棱 / 面数（数值以画板返回为准）。
+      for (const ph of results) {
+        if (!ph.ok || ph.op !== 'polyhedron3d') continue;
+        const m = ph.meta || {};
+        const kind = m.kind || '?';
+        const v = m.vertexCount != null ? m.vertexCount : '?';
+        const e = m.edgeCount != null ? m.edgeCount : '?';
+        const f = m.faceCount != null ? m.faceCount : '?';
+        const marked = m.labelVertices ? '，已标注顶点' : '';
+        appendLog('ai', `已生成正多面体 ${kind}：${v} 顶点 / ${e} 棱 / ${f} 面${marked}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
