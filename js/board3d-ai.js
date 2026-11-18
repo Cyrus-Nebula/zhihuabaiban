@@ -187,6 +187,19 @@ async function send() {
         const marked = m.labelVertices ? '，已标注顶点' : '';
         appendLog('ai', `已生成正多面体 ${kind}：${v} 顶点 / ${e} 棱 / ${f} 面${marked}。`);
       }
+      // 2026-11-19 D19：revolve3d 展示母线点数 / 轴 / 段数 / 经线纬线圈与采样点（数值以画板返回为准）。
+      for (const rv of results) {
+        if (!rv.ok || rv.op !== 'revolve3d') continue;
+        const m = rv.meta || {};
+        const axis = m.axis || '?';
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.meridianCount) parts.push(`${m.meridianCount} 经线`);
+        if (m.ringCount) parts.push(`${m.ringCount} 纬线圈`);
+        if (m.pointCount) parts.push(`${m.pointCount} 标记点`);
+        const sweep = m.closed ? '' : `、扫角 ${m.sweep}°`;
+        appendLog('ai', `已生成旋转体（绕 ${axis} 轴，母线 ${m.profileCount || '?'} 点）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}${sweep}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

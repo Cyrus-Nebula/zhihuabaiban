@@ -24,6 +24,7 @@ import { resolveHelix3D } from './board3d-helix.js';
 import { resolveBezier3D } from './board3d-bezier.js';
 import { resolveArc3D } from './board3d-arc.js';
 import { resolvePolyhedron3D } from './board3d-polyhedron.js';
+import { resolveRevolve3D } from './board3d-revolve.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -176,6 +177,20 @@ export const BOARD3D_POLYHEDRON_OPS = Object.freeze(['polyhedron3d']);
 /** 含全部扩展命令的完整集（18 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE9_OPS = Object.freeze([
   ...BOARD3D_COMPLETE8_OPS, ...BOARD3D_POLYHEDRON_OPS,
+]);
+
+/**
+ * 2026-11-19 D19 增量：3D 旋转体 / 回转面命令 revolve3d（语义在 js/board3d-revolve.js）。
+ * 一条母线 profile 绕轴均匀旋转生成线框（经线 + 纬线圈 + 可选采样点），能表达圆台 / 圆锥 /
+ * 球 / 花瓶 / 双曲面等内置图元无法覆盖的回转面，与 radial3d（离散复制）/ polyhedron3d（多面体）互补。
+ * 单独成组、不并入任何历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 /
+ * COMPLETE2 11 / COMPLETE3 12 / COMPLETE4 13 / COMPLETE5 14 / COMPLETE6 15 /
+ * COMPLETE7 16 / COMPLETE8 17 / COMPLETE9 18 条），按协作铁律保持逐字不变。
+ */
+export const BOARD3D_REVOLVE_OPS = Object.freeze(['revolve3d']);
+/** 含全部扩展命令的完整集（19 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE10_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE9_OPS, ...BOARD3D_REVOLVE_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -752,6 +767,35 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           let polyState = {};
           try { polyState = (a.getState ? a.getState() : {}) || {}; } catch (_) { polyState = {}; }
           const r = resolvePolyhedron3D(cmd, polyState);
+          if (!r.ok) {
+            results.push({ op, ok: false, error: r.error });
+            break;
+          }
+          const created = [];
+          const failed = [];
+          for (const item of r.items) {
+            if (known.has(item.id)) { failed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { failed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            created.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: failed.length === 0 && created.length > 0,
+            count: r.items.length, created, meta: r.meta,
+            ...(failed.length ? { failed } : {}),
+          });
+          break;
+        }
+        case 'revolve3d': {
+          // 2026-11-19 D19：3D 旋转体 / 回转面，一条母线 profile 绕轴旋转采样生成一串
+          // line 段（经线 + 纬线圈，可选采样点）。不需要源对象；从「当前」getState 读状态
+          // 仅用于生成 id 时避让已有对象，getState 缺失 / 抛错降级为空场景，整批不中断；
+          // id 冲突分项失败、如实回报。
+          let revState = {};
+          try { revState = (a.getState ? a.getState() : {}) || {}; } catch (_) { revState = {}; }
+          const r = resolveRevolve3D(cmd, revState);
           if (!r.ok) {
             results.push({ op, ok: false, error: r.error });
             break;

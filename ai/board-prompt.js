@@ -1854,3 +1854,41 @@ export const BOARD3D_ALIGN_MULTI_PROMPT = `
 - 与单轴写法的关系：只对齐一条轴时继续用 {"axis":"x","mode":...}（更简单）；两条及以上用 axes 数组。两种写法不会互相干扰，都是 align3d、对象数不变。
 - 补充铁律：这是 3D 命令；不要输出 2D 的对齐 / 分布命令。`;
 
+
+/* ============================================================ *
+ * 2026-11-19 D19 追加段：revolve3d 旋转体 / 回转面（独立自主 3D 画板任务）
+ * 协作铁律：仅在本文件最末尾追加，上方 2D 主干 BOARD_SYSTEM_PROMPT 与全部
+ * 既有 3D 追加段（量测 / 回注标注 / transform / 批量 / duplicate / radial /
+ * mirror / grid / align 单轴 / helix / bezier / arc / polyhedron / align 多轴）
+ * 逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。本段新增 op 'revolve3d'，
+ * 与 js/board3d-executor.js 的 D19 分支一致。拼在最末尾同样为短上下文裁剪保留尾部。
+ * ============================================================ */
+
+/** revolve3d 旋转体提示词段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_REVOLVE_PROMPT_OPS = Object.freeze(['revolve3d']);
+
+export const BOARD3D_REVOLVE_PROMPT = `
+
+# 补充：revolve3d 旋转体 / 回转面（2026-11-19 追加）
+- 作用：给一条**母线**（profile）绕指定轴均匀旋转，生成圆柱 / 圆台 / 圆锥 / 球 / 花瓶 / 抛物面 / 双叶双曲线回转面等**回转曲面线框**（由经线 + 纬线圈组成）。补齐 Three.js 内置图元（box/sphere/cylinder/cone/prism/tetra）无法表达的任意回转形状。
+- 母线格式 profile：[[r,h],...]，2~32 个点；每个点 [r,h] 中 r≥0 是**到旋转轴的距离**、h 是**沿旋转轴的坐标**；r=0 的点落在轴心（可画圆锥顶点）。点必须按 h 从小到大（或反向）沿轮廓依次给出，画板会把相邻点连成经线。
+- 格式：{"op":"revolve3d","id":"vase","axis":"y","profile":[[0.5,-1],[1,-0.6],[0.7,0.2],[1,1]],"segments":24}
+  · axis 可选 'x'/'y'/'z'（默认 'y' 绕竖轴）；
+  · profile 必填，母线点列；
+  · segments 可选，周向分段数，整数 3~64（默认 24）；
+  · sweep 可选，旋转角度（默认 360=整圈闭合），可负=反向；非 360 为部分回转（如 180 半圈）；
+  · startAngle 可选，起始角（角度制，默认 0）；
+  · center 可选，整体平移 [x,y,z]（默认 [0,0,0]）；
+  · asMeridians 可选，是否画经线（母线在各角度的旋转轨迹，默认 true）；
+  · asRings 可选，是否画纬线圈（每个 r>0 的母线点绕轴一圈，默认 true）；
+  · asPoints 可选，是否在母线点×采样角放小球标记（默认 false）；
+  · color / opacity 可选，整条回转面的样式。
+- 常用母线示例：
+  · 圆柱（半径1、h 从 -1 到 1）：profile:[[1,-1],[1,1]]；
+  · 圆锥（顶点 h=1、底半径1 在 h=0）：profile:[[0,1],[1,0]]；
+  · 圆台（底半径1 在 h=-1、顶半径0.5 在 h=1）：profile:[[1,-1],[0.5,1]]；
+  · 花瓶 / 腰鼓（半径随高度起伏）：profile:[[0.5,-1],[1,-0.5],[0.6,0.3],[0.9,1]]。
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数；profile 非法（点数越界 / r<0 / 含非数值）、segments 非整数或越界、segment 总数超上限（经线角数×(点数-1) + 纬线圈数×segments > 1024）、三种线/点开关全关 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：radial3d 是把**已有对象**绕轴复制成离散几份（对象不变形）；revolve3d 是把**一条母线**连续旋转成回转面（新生成线框）；polyhedron3d 是五种正多面体（直线棱 + 离散顶点，非回转）；add3d cylinder/cone/sphere 是内置封闭实体、参数固定。
+- 铁律：revolve3d 是 3D 命令；2D 的旋转 / 阵列 / 圆弧命令在本分支依旧不认识，不要输出。`;
+
