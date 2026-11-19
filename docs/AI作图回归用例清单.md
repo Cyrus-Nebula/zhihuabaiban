@@ -526,5 +526,44 @@
 1. [本轮已完成] 极坐标曲线协议与 few-shot——原生 `polar` + `polarSpec` + 例36 + 用例 85/86。
 2. [待办] 自检状态条做成 AI 面板固定 DOM 徽标。
 3. [待办] 收敛判定引入「残差改善量」；收敛后把 probeVerify 结果回画成最终 ✔ 读数。
-4. [待办] 含参不等式区域（需先确认执行器是否支持区域填充）/ 旋转体截面 few-shot。
+4. [第十四轮已完成] 含参不等式区域——原生 `inequality` + `inequalitySpec` + 例37 + 用例 87/88（见下）。
 5. [待办] polar 在真实 JSXGraph 上的采样密度 / NaN 断点渲染目视确认。
+
+## 不等式区域（inequality 原生命令，本轮新增 2026-11-19 第十四轮）
+
+> 落实连续多轮 TODO 交接项「含参不等式区域」，且已确认 `vendor/jsxgraphcore.js` 原生注册
+> `inequality` 元素（接受 `line` / `functiongraph` 作边界、`inverse` 控制填充侧、`fillColor`/`fillOpacity`
+> 控制观感）。此前画 y≥x²-4 可行域、线性规划阴影只能让 AI 手算大量采样点再逐点 `point` 拼 `polygon`
+> 近似：点数僵硬、边界锯齿、表达式一变就得重算、滑动条无法联动，对标大角几何「数学 DSL / 区域填充」
+> 明显吃亏。本轮新增原生 `inequality`：AI 只声明边界 + 填充侧，执行器（`inequalitySpec` 纯函数 +
+> `case 'inequality'`）编译边界 functiongraph 并调用原生元素填充。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 87 | 画抛物线 y=x²-4 上方阴影（y≥x²-4），验证边界在 x=0 处 y=-4 | `inequality` id:"reg1" expr:"x^2-4" side:"above" from:-5 to:5 color:"#C62828" fillOpacity:0.25 → `verify` kind:evaluate expr:"x^2-4" x:0 expect:-4 tol:0.001 | ✅ | **别手算采样点逐点 point + polygon**（僵硬/锯齿/无法联动）；expr 写函数右式（变量 x），也接受 `expr:"y>=x^2-4"` 自动剥离并推断侧；side 写"上/above"→inverse:true；from/to 写**数字**；自检用 `evaluate` 核边界函数值，别用 `measure distance` 量阴影本身；describe()/inspect 回读 `inequality:y>x^2-4 side=above fill=#C62828`；见 `ai/board-prompt.js` 例37 |
+| 88 | 直线边界线性规划 x+y≤3 阴影；滑动条 a 驱动 y≤x²+a 动态区域 | 变式 A：`point` P(0,3) + `point` Q(3,0) → `line` lx through:[P,Q] → `inequality` id:"lp" boundary:"lx" side:"below" color:"#1D4ED8" fillOpacity:0.2（方向与意图相反就改 side/inverse，先 remove 再重发）；变式 B：`slider` id:"a" min:-3 max:3 value:0 step:0.5 → `inequality` id:"dyn" expr:"x^2+a" side:"below" from:-5 to:5 → `animate` id:"a" | ✅ | boundary 引用的 line/函数 id 必须**先建好**（先创建后引用）；表达式引用滑动条 id（a 由引擎取实时值，拖动边界联动），但 from/to/坐标须写数字；显式 `inverse:true/false` 优先于 side；fillOpacity 0.05~0.9；inequality 可 style / remove / 进文档；回放/保存按命令重建 |
+
+> 状态 ✅：`tests/board2d_inequality_spec.mjs` 无头单测真实调用 `inequalitySpec`，覆盖边界二选一
+> （expr/boundary/都缺抛错、expr 优先）、"y<…"/"y>=…" 比较符前缀剥离与侧推断、side（中英文别名）
+> → inverse 映射、显式 inverse 优先（布尔/字符串）、from/to 数值化交换、fillColor/fillOpacity/strokeColor
+> 归一与钳制、summary/meta 回读、综合命令（函数边界可行域 / 线性规划 / 滑动条动态区域）；与
+> `tests/run-2d-specs.mjs` 聚合入口一起跑。真实 y=f(x) 编译与 JSXGraph inequality 填充由
+> `case 'inequality'` 在浏览器侧完成，沙箱无头环境不实例化 JSXGraph，**填充方向（inverse ↔ side）、
+> 边界 functiongraph 的可见性、fillColor/fillOpacity 观感**仍需带浏览器环境目视确认（见「已知限制」）。
+
+## TODO 交接更新（2026-11-19 第十四轮）
+1. [本轮已完成] 含参不等式区域协议与 few-shot——原生 `inequality` + `inequalitySpec` + 例37 + 用例 87/88。
+2. [待办] 自检状态条做成 AI 面板固定 DOM 徽标。
+3. [待办] 收敛判定引入「残差改善量」；收敛后把 probeVerify 结果回画成最终 ✔ 读数。
+4. [待办] 旋转体截面 few-shot。
+5. [待办] inequality 填充方向（inverse ↔ side）与边界可见性在真实 JSXGraph 上目视确认。
+
+## 已知限制（第十四轮追加）
+- 不等式区域（inequality，用例 87/88）：沙箱无头单测只验证了 `inequalitySpec` 的规格归一、侧→inverse
+  映射与命令序列对齐，**真实 JSXGraph 上填充方向（side/inverse 到底填边界哪一侧）、边界 functiongraph
+  的可见性、fillColor/fillOpacity 的观感**仍需带浏览器环境目视确认；若填充方向与意图相反，AI 应改
+  `side` 或显式 `inverse` 重发（同 id 先 `remove` 再 `inequality`）。`expr` 的 y=f(x) 由 `case 'inequality'`
+  用 JessieCode 编译、滑动条变量由引擎取实时值（同 function/polar），沙箱只验证规格不求值。
+- `boundary` 模式只接受 JSXGraph inequality 支持的 `line` / `functiongraph` 作为边界；用普通 `curve`
+  （conic / polar 的输出）作 boundary 时引擎可能不填充，AI 应改用 expr 或先建 line/function。描述摘要
+  `inequality:y>… side=… fill=…` 挂在元素 `__aiInequality` 供 describe()/inspect 回读，回放/保存按命令重建。

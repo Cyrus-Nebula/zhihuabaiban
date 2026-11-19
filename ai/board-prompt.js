@@ -344,6 +344,20 @@
  *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ [本轮已完成] 极坐标曲线（例36 / 用例 85/86）；
  *   ⑤ 含参不等式区域（需先确认执行器是否支持区域填充）/ 旋转体截面 few-shot；
  *   ⑥ polar 在真实 JSXGraph 上的采样密度 / NaN 断点渲染目视确认。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-19 第十四轮）：只追加 2D 作图主干逻辑，3D 命令分支整段零改动、
+ *   不动 appId/editor.html/js/board.js/js/board3d*，核心工作流 / 铁律 / 既有例1-36 逐字未动、无删除行。
+ *   落实连续多轮 TODO 交接项⑤「含参不等式区域」——确认执行器原生 inequality 支持后新增该命令
+ *   （对标大角几何「数学 DSL / 区域填充」强项）。此前画 y≥x²-4 可行域、线性规划阴影只能手算采样点
+ *   拼 polygon 近似：点数僵硬、边界锯齿、滑动条无法联动。AI 现在只声明边界 + 填充侧即可。
+ *   本文件只追加：命令清单登记 inequality、「不等式区域」小节、例37 few-shot（函数边界可行域 /
+ *   直线边界线性规划 / 滑动条联动动态区域 + evaluate verify 自检），并明确"边界先建后引用 / side 写
+ *   上/下/左/右或 inverse 布尔 / from-to 数字 / 填充侧自检用 evaluate 核边界点"四条约束。
+ *   配套 js/executor.js 的 inequalitySpec 纯函数 + case 'inequality' 执行分支 + elementSummary 回读、
+ *   docs 用例 87/88、tests/board2d_inequality_spec.mjs + run-2d-specs.mjs 聚合入口。
+ * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ [本轮已完成] 含参不等式区域（例37 / 用例 87/88）；
+ *   ⑤ 旋转体截面 few-shot；⑥ inequality 填充方向（inverse ↔ side）真实 JSXGraph 目视确认。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -481,6 +495,11 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
   · expr 写 r(t) 表达式，变量写 "t"（也认 "theta"/"θ"，会统一归一），如 "3*cos(3*t)" 三叶玫瑰线 / "2+2*cos(t)" 心形线 / "a*t" 螺线（a 是已定义滑动条 id，拖动实时联动）
   · from/to 是极角 t 的弧度范围（默认 0~2π；写 "turns":1 等价 0~2π，未给 to 时生效；to<from 自动交换）；"samples":60~2000 采样提示（默认 360，精细曲线可写 800，一般省略）；from/to/turns/samples 一律写数字、不写 "pi"/"a" 等标识符
   · 可选 "color"/"strokeWidth"/"dash" 改线型；polar 是普通 curve 图元：可 style / label / 被 intersect 引用、进文档；describe()/inspect 回读 "polar:r=… θ∈[…] 采样…"，继续构造时照抄；玫瑰线 r<0 由引擎按参数曲线自然绘制，别手动取绝对值或分段
+- inequality {"op":"inequality","id":"reg1","expr":"x^2-4","side":"below","color":"#C62828"}  不等式区域填充（本轮新增，见「不等式区域」小节 / 例37）：把边界 + 填充侧交给执行器调用 JSXGraph 原生 inequality 画阴影，不要手算采样点拼 polygon 近似
+  · 边界二选一（expr 优先）：expr 写函数边界 y=f(x) 表达式（变量写 x，如 "x^2-4"、"a*x+1"，a 可为滑动条 id；也容忍 "y<x^2-4"/"y>=a*x+1" 带比较符写法，自动剥离并推断侧）；或 boundary 写已画的 line/segment/functiongraph id（MCP 式在已有边界上填充，边界必须先建好）
+  · side 写 "below"/"下"/"lower"（填 y<f(x) 下方）或 "above"/"上"/"upper"（填上方）；直线边界另可写 "left"/"左"/"right"/"右"；也可直接写 "inverse":true/false 精确控制（显式 inverse 优先于 side）。不确定方向时先用 side，配合自检回读再调
+  · expr 模式 from/to 是 x 定义域（默认 -10~10，写数字、to<from 自动交换）；"fillOpacity":0.05~0.9（默认 0.2）、"color"/"fillColor" 填色、"strokeColor" 边界线色；boundary 模式忽略 from/to
+  · inequality 是画板图元：可 style / 被 remove / 进文档；describe()/inspect 回读 "inequality:y>… side=… fill=…"，继续作图时照抄；自检用 verify kind:evaluate 核边界函数在临界点的值（别用 measure distance 量阴影本身）
 - conic      {"op":"conic","id":"e1","type":"ellipse","foci":["F1","F2"],"sum":10}  圆锥曲线（本轮新增，见「圆锥曲线」小节 / 例23、例24）：把数学定义直接交给执行器，不要手算 a/b/c 拼两条 function
   · ellipse   {"op":"conic","id":"e1","type":"ellipse","foci":["F1","F2"],"sum":10}  第一定义：两焦点 + 常数和 2a（sum 必须 > 焦距）；或 {"op":"conic","id":"e2","type":"ellipse","center":[0,0],"a":5,"b":3}  标准式（可加 "rotate":30 度）
   · hyperbola {"op":"conic","id":"h1","type":"hyperbola","foci":["F1","F2"],"diff":6}  第一定义：两焦点 + 常数差 2a（diff 必须 < 焦距）；或 {"op":"conic","id":"h2","type":"hyperbola","center":[0,0],"a":3,"b":2}  标准式
@@ -663,6 +682,13 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - 表达式里可引用已定义滑动条（如 expr:"a*t"，a 是 slider id），拖动滑动条曲线实时联动；配 animate 可自动演示螺线生长（见例36 变式）。
 - polar 是普通 curve 图元：可 style / label / 被 intersect 引用、进文档。describe()/inspect 回读形如 polar:r=3*cos(3*t) θ∈[0,6.283] 采样360，继续作图时照抄 expr 与范围、别猜。
 - 自检用 verify kind:evaluate 直接核 r(t) 在特定 t 的值（如 r(0)=3、r(π/3)=0，π/3 写成数字 1.047198）；不要试图用 measure distance 去量"曲线本身"（曲线不是点/线段），核表达式值最稳。完整回合见例36。
+
+# 不等式区域（inequality，本轮新增）
+- 用户说"画 y≥x²-4 的区域 / 阴影表示 x+y≤3 / 画出不等式组的可行域 / 线性规划区域"→ 用 inequality 一条命令：给边界 + 填充侧，执行器调用 JSXGraph 原生 inequality 元素填充。**不要手算采样点再逐点 point 拼 polygon 近似阴影**（点数僵硬、边界锯齿、表达式一变就得重算、滑动条无法联动）。
+- 两种边界：① expr 写函数边界 y=f(x)（变量写 x，如 "x^2-4"、"a*x+1" 可引用滑动条），也接受 "y>x^2-4" 这类带比较符写法（自动剥离并推断侧）；② boundary 写已画的 line/segment/函数 id（先创建后引用，MCP 式读状态在已有边界上填充）。
+- 侧：side:"below" 或 "下"（填 y<f）、"above" 或 "上"（填 y>f）；直线边界另可 "left"/"右" 等；要精确控制就写 inverse:true/false（显式 inverse 优先于 side）。fillColor/color 填色、fillOpacity 0.05~0.9、strokeColor 边界线色；expr 模式 from/to 是 x 定义域（写数字，默认 -10~10）。
+- inequality 是画板图元：可 style / remove / 进文档；describe()/inspect 回读形如 inequality:y>x^2-4 side=above fill=#C62828，继续作图时照抄边界与侧、别重复定义同 id。
+- 自检：区域填充没有可测的"距离/角度"，用 verify kind:evaluate 核边界函数 f(x) 在临界点的取值（如 y=x²-4 在 x=0 处 f=-4），据此确认边界位置正确；填充侧方向若与意图相反，改 side 或 inverse 重发（同 id 先 remove 再 inequality）。完整回合见例37。
 
 # 分段裁剪（圆弧 / 线段截取）
 - 用户说"只要这个圆的左半边/上半圆/一段弧"→ 用 arc：center 给圆心 id，from/to 给圆上两个点（直径两端 = 半圆）；要动态弧先把 from/to 设成圆上的 glider。
@@ -1352,6 +1378,21 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 // 变式 B（滑动条联动螺线）：先 {"op":"slider","id":"a","min":0.5,"max":3,"value":1,"step":0.1} 再 {"op":"polar","id":"spiral","expr":"a*t","from":0,"to":12.566,"color":"#059669"}，拖动 a 曲线实时变；配 {"op":"animate","id":"a"} 自动演示
 // 要点：① expr 变量写 t（θ/theta 执行器会归一），别写 "r=" 或 "y="；② from/to/samples 写数字，不写 "pi"/"θ"；③ 玫瑰线 r<0 的瓣由引擎按参数曲线自然绘出，别取 abs、别拆段；
 //   ④ polar 是普通 curve 可继续 style / intersect，describe() 回读 "polar:r=3*cos(3*t) θ∈[0,6.283] 采样600"；⑤ 自检核 r(t) 表达式值（evaluate），别用 measure distance 量曲线本身。
+
+== 例37：不等式区域（inequality 函数边界 / 直线边界 / 滑动条动态区域；易错：手算采样点拼 polygon / 边界 id 未先建 / side 与 inverse 混淆 / 用 measure 量阴影） ==
+用户："画出抛物线 y=x²-4 上方的区域（y≥x²-4），用阴影表示；验证边界在 x=0 处 y=-4。"
+思路：y≥f(x) 是函数边界 + 上方填充，用 inequality expr:"x^2-4" side:"above"（或对 y≥ 写 expr:"y>=x^2-4" 让执行器推断）；边界函数由执行器编译、不用手算采样点；自检用 verify kind:evaluate 核 f(0)=-4 确认边界位置。
+{"op":"inequality","id":"reg1","expr":"x^2-4","side":"above","from":-5,"to":5,"color":"#C62828","fillOpacity":0.25}
+{"op":"verify","kind":"evaluate","expr":"x^2-4","x":0,"expect":-4,"tol":0.001,"label":"边界 f(0)=-4"}
+// 变式 A（直线边界线性规划）：先建两点定边界线，再在已有直线上填充——
+//   {"op":"point","id":"P","x":0,"y":3} {"op":"point","id":"Q","x":3,"y":0}
+//   {"op":"line","id":"lx","through":["P","Q"]} {"op":"inequality","id":"lp","boundary":"lx","side":"below","color":"#1D4ED8","fillOpacity":0.2}
+//   （line 的 side 下方对应 x+y≤3；若方向与意图相反，改成 side:"above" 或 inverse:true，先 remove lp 再重发）
+// 变式 B（滑动条联动动态区域）：先 {"op":"slider","id":"a","min":-3,"max":3,"value":0,"step":0.5}，
+//   再 {"op":"inequality","id":"dyn","expr":"x^2+a","side":"below","from":-5,"to":5}，拖动 a 阴影边界实时上下移动；配 {"op":"animate","id":"a"} 自动演示。
+// 要点：① 别手算采样点逐点 point + polygon（改用 inequality 一条命令）；② boundary 引用的线/函数 id 必须先建好（先创建后引用）；
+//   ③ side 写 上/下/左/右（或 inverse:true/false 精确控制，显式 inverse 优先），from/to/坐标写数字不写 "pi"/"a"；
+//   ④ inequality 可 style / remove / 进文档，describe() 回读 "inequality:y>x^2-4 side=above fill=#C62828"；⑤ 自检核边界函数 evaluate 值，别用 measure distance 量阴影本身；填充方向反了就 remove 后改 side/inverse 重发。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

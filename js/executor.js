@@ -325,6 +325,25 @@
  *     ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ [本轮已完成] 极坐标曲线（例36 / 用例 85/86）；
  *     ⑤ 含参不等式区域（需先确认执行器是否支持区域填充）/ 旋转体截面 few-shot；
  *     ⑥ polar 曲线在真实 JSXGraph 上的采样密度 / NaN 断点渲染目视确认。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-19 第十四轮）：落实 TODO 交接项⑤「含参不等式区域」——
+ *   确认 vendor/jsxgraphcore.js 原生注册 inequality 元素（接受 line / functiongraph 作边界）后，
+ *   新增原生 inequality 命令（对标大角几何「数学 DSL / 区域填充」强项）。此前画 y≥x²-4 的可行域、
+ *   线性规划阴影只能让 AI 手算大量采样点拼 polygon 近似：点数僵硬、边界锯齿、滑动条无法联动。
+ *   (1) 模块级纯函数 inequalitySpec()：expr（函数边界 y=f(x)，容忍 "y<…"/"y>=…" 前缀）或
+ *       boundary（已画直线/函数 id，MCP 式读状态）二选一；side（上/下/左/右 + 中英文别名）→ inverse
+ *       映射、显式 inverse 优先；from/to 数值化交换、fillColor/fillOpacity（0.05~0.9 钳制）、strokeColor；
+ *       非法参数抛错。纯归一不求值，供无头单测回归。
+ *   (2) case 'inequality'：expr 走 JessieCode 编译成边界 functiongraph（滑动条联动、NaN 断开），
+ *       boundary 走 resolve 引用已有图元；board.create('inequality',[boundaryEl],{inverse,fillColor,…})；
+ *       __aiInequality/__aiExpr 挂元素供状态快照回读。
+ *   (3) elementSummary() 在 curve 分支前加 __aiInequality 分支，回读 "inequality:y>… side=… fill=…"。
+ *   配套：ai/board-prompt.js 命令清单登记 + 「不等式区域」小节 + 例37 few-shot、docs 用例 87/88、
+ *   tests/board2d_inequality_spec.mjs 无头单测 + run-2d-specs.mjs 聚合入口。
+ *   本文件只追加 2D 主干逻辑，3D 命令分支 / editor.html / js/board.js / appId 零改动。
+ *   TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *     ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ [本轮已完成] 含参不等式区域（例37 / 用例 87/88）；
+ *     ⑤ 旋转体截面 few-shot；⑥ inequality 填充方向（inverse ↔ side）在真实 JSXGraph 上目视确认。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -739,6 +758,87 @@ export function polarSpec(cmd) {
     summary: 'r=' + expr + ' θ∈[' + fmt(from) + ',' + fmt(to) + '] 采样' + samples,
     meta: { definition: 'r(t)', expr, samples },
   };
+}
+
+/* ---------- 不等式区域（inequality）语义参数归一化（模块级纯函数，便于无头回归） ---------- */
+/**
+ * 对标大角几何「自研数学 DSL / 区域填充」：AI 只声明边界（函数 y=f(x) 或已画直线 id）与
+ * 填充侧，交给 JSXGraph 原生 inequality 元素填充满足不等式的一侧，不再让 AI 手算大量采样点
+ * 拼 polygon 近似阴影（点数僵硬、边界锯齿、滑动条无法联动）。
+ *
+ * 两种边界来源（二选一，expr 优先）：
+ *   expr      函数边界 y=f(x) 表达式（变量写 x），如 "x^2-4"、"a*x+1"（a 可为滑动条 id），
+ *             也容忍 "y<x^2-4"/"y>=a*x+1" 这类带比较符的写法（自动剥离前缀并推断侧）
+ *   boundary  已画的 line/segment/functiongraph 的 id（MCP 式「读画板状态 → 在已有边界上填充」）
+ * 侧与方向：
+ *   side      below/下/lower/下方 → 填曲线下方（y<f）；above/上/upper/上方 → 填上方（y>f）；
+ *             left/左/right/右 供直线边界用；显式 inverse:boolean 优先于 side
+ *   from/to   expr 模式的 x 定义域（默认 -10~10，to<from 自动交换）；boundary 模式忽略
+ * 样式：fillColor/fillOpacity（默认 #C62828 / 0.2，透明度钳制 0.05~0.9）、strokeColor（边界线色）
+ *
+ * 返回 { mode, expr, boundary, side, inverse, from, to, fillColor, fillOpacity, strokeColor,
+ *        summary, meta }。表达式不在本纯函数里求值（无 JessieCode 上下文），由 case 'inequality'
+ * 编译后注入边界 functiongraph。非法参数（expr/boundary 都缺、expr 空白）一律抛错。
+ */
+export function inequalitySpec(cmd) {
+  const c = cmd || {};
+  const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+  const hasExpr = c.expr != null && String(c.expr).trim() !== '';
+  const hasBoundary = !hasExpr && c.boundary != null && String(c.boundary).trim() !== '';
+  if (!hasExpr && !hasBoundary) {
+    throw new Error('inequality 需给 expr（边界函数 y=f(x)）或 boundary（已画的线/函数 id）');
+  }
+  const mode = hasExpr ? 'expr' : 'boundary';
+  let expr = hasExpr ? String(c.expr).trim() : '';
+  const boundary = hasBoundary ? String(c.boundary).trim() : '';
+
+  let from = num(c.from, -10), to = num(c.to, 10);
+  if (to < from) { const t = from; from = to; to = t; }
+
+  // 侧 → JSXGraph inverse 的映射约定（真实填充方向需在带浏览器环境目视确认，见 docs 已知限制）
+  const SIDE_MAP = {
+    below: ['below', false], lower: ['below', false], under: ['below', false], down: ['below', false], '下': ['below', false], '下方': ['below', false],
+    above: ['above', true], upper: ['above', true], over: ['above', true], up: ['above', true], '上': ['above', true], '上方': ['above', true],
+    left: ['left', true], '左': ['left', true], '左侧': ['left', true],
+    right: ['right', false], '右': ['right', false], '右侧': ['right', false],
+  };
+  const sideRaw = c.side != null ? String(c.side).trim().toLowerCase() : '';
+  const hit = SIDE_MAP[sideRaw] || ['below', false];
+  let side = hit[0];
+  let inverse = hit[1];
+
+  // 容忍 "y<expr" / "y>=expr" 前缀：剥离后按比较符推断侧（未显式给 side/inverse 时）
+  const ycmp = expr.match(/^y\s*(<=|>=|<|>)\s*(.*)$/i);
+  let strippedByCompare = false;
+  if (ycmp) {
+    expr = ycmp[2].trim();
+    strippedByCompare = true;
+    if (!sideRaw && c.inverse == null) {
+      side = (ycmp[1] === '>' || ycmp[1] === '>=') ? 'above' : 'below';
+      inverse = side === 'above';
+    }
+  }
+  if (!expr && mode === 'expr') throw new Error('inequality.expr 剥离比较符后不能为空');
+
+  if (typeof c.inverse === 'boolean') inverse = c.inverse;
+  else if (c.inverse != null) {
+    const iv = String(c.inverse).trim().toLowerCase();
+    if (iv === 'true' || iv === '1') inverse = true;
+    else if (iv === 'false' || iv === '0') inverse = false;
+  }
+
+  const fillColor = String(c.fillColor || c.color || '#C62828');
+  const strokeColor = String(c.strokeColor || fillColor);
+  let fillOpacity = num(c.fillOpacity, 0.2);
+  if (fillOpacity < 0.05) fillOpacity = 0.05;
+  if (fillOpacity > 0.9) fillOpacity = 0.9;
+
+  const fmt = (n) => String(Math.round(n * 1000) / 1000);
+  const summary = mode === 'expr'
+    ? ('inequality:y' + (inverse ? '>' : '<') + expr + ' x∈[' + fmt(from) + ',' + fmt(to) + ']')
+    : ('inequality:' + boundary + ' ' + side + ' fill=' + fillColor);
+  const meta = { mode, expr, boundary, side, inverse, from, to, fillColor, fillOpacity, strokeColor, strippedByCompare };
+  return { mode, expr, boundary, side, inverse, from, to, fillColor, fillOpacity, strokeColor, summary, meta };
 }
 
 /* ---------- 正多边形（regularPolygon）语义参数 → 顶点坐标（模块级纯函数，便于无头回归） ---------- */
@@ -1713,6 +1813,43 @@ export function createExecutor(board) {
         el.__aiPolar = spec.meta;
         return el;
       }
+      case 'inequality': {
+        // 不等式区域填充（本轮新增，对标大角几何区域填充 / 数学 DSL）：AI 只声明边界
+        // （函数 y=f(x) 或已画的直线 id）+ 填充侧，交给 JSXGraph 原生 inequality 元素填充
+        // 满足不等式的一侧，不再手算采样点拼 polygon 近似阴影（点数僵硬、边界锯齿、无法联动）。
+        const spec = inequalitySpec(cmd);
+        let boundaryEl;
+        if (spec.mode === 'boundary') {
+          // MCP 式：直接引用画板上已有的 line/segment/functiongraph 作边界（读状态 → 继续构造）
+          boundaryEl = resolve(cmd.boundary);
+        } else {
+          // expr 模式：把 y=f(x) 编译成边界 functiongraph（JessieCode 优先，滑动条联动），
+          // 非有限值记 NaN 自动断开；边界曲线保留可见，作为「函数图像 + 阴影」的一部分。
+          const compile = board.jc && typeof board.jc.snippet === 'function';
+          let fn = spec.expr;
+          if (compile) {
+            const snip = board.jc.snippet(spec.expr, true, 'x', false);
+            fn = (x) => { const v = snip(x); return Number.isFinite(v) ? v : NaN; };
+          }
+          boundaryEl = board.create('functiongraph', [fn, spec.from, spec.to], {
+            name: '', strokeColor: spec.strokeColor, strokeWidth: 2,
+            highlightStrokeColor: spec.strokeColor,
+          });
+        }
+        const el = board.create('inequality', [boundaryEl], {
+          fillColor: spec.fillColor,
+          fillOpacity: spec.fillOpacity,
+          strokeColor: 'none',
+          inverse: spec.inverse,
+          highlightFillColor: spec.fillColor,
+          highlightFillOpacity: Math.min(1, spec.fillOpacity + 0.15),
+        });
+        // 语义参数挂元素：describe()/inspect 的数值快照能回读边界与填充侧，
+        // AI 在已有区域上继续作图（换色 / 叠加 / 删改）时不必猜（MCP 式读状态）。
+        el.__aiInequality = spec.meta;
+        el.__aiExpr = spec.mode === 'expr' ? ('y' + (spec.inverse ? '>' : '<') + spec.expr) : ('边界' + spec.boundary);
+        return el;
+      }
       case 'text': {
         // bind：动态测量文本（内容为函数，拖拽时实时刷新）
         //   {kind:'distance', of:[A,B]} 两点距离
@@ -2089,6 +2226,12 @@ export function createExecutor(board) {
         desc = 'polar:' + (el.__aiExpr || ('r=' + m.expr))
           + (Array.isArray(el.__aiRange) ? ' θ∈[' + fmtNum(el.__aiRange[0]) + ',' + fmtNum(el.__aiRange[1]) + ']' : '')
           + (Number.isFinite(m.samples) ? ' 采样' + m.samples : '');
+      } else if (el.__aiInequality) {
+        // 不等式区域（本轮新增）：回读边界与填充侧，AI 在已有阴影上继续换色/叠加/删改时照抄，
+        // 不必猜边界表达式或侧（与 polar / conic 的数值快照同范式，MCP 式读状态）。
+        const m = el.__aiInequality;
+        desc = 'inequality:' + (m.mode === 'expr' ? (el.__aiExpr || ('y=' + m.expr)) : ('边界' + m.boundary))
+          + ' side=' + m.side + ' fill=' + m.fillColor;
       } else if (t === 'functiongraph' || t === 'curve') {
         desc = 'function' + (el.__aiExpr ? ':"' + el.__aiExpr + '"' : '')
           + (Array.isArray(el.__aiRange) ? '@[' + fmtNum(el.__aiRange[0]) + ',' + fmtNum(el.__aiRange[1]) + ']' : '')
