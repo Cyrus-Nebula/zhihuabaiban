@@ -503,3 +503,28 @@
 - `regularPolygon` 的 n 个顶点落成 `fixed:true` 的独立 `point`（用例 65~69）：沙箱无头环境只验证了顶点坐标的数学正确性与注册表/数值快照/删除联动，**真实画板上拖动滑动条 `radius` 或 `center` 点时函数坐标是否实时刷新、拖动交互是否被 `fixed` 正确禁用**仍需带浏览器环境目视确认。它按命令重建（回放/保存时重算顶点），与 `conic` / `transform` 的静态行为一致；派生顶点占 id，删除主图元时联动清理，勿把顶点 id 当成用户可长期持有的自由点。
 - `remove` 的级联依赖来自 JSXGraph 元素的 `parents` / `childElements`（用例 77/78）：沙箱无头单测只能用 mock 依赖图覆盖，真实引擎里这两种字段的形状因 JSXGraph 版本 / 图元类型而异；若引擎不提供，执行器会**降级为只删显式指定项**（不抛错、不误删），此时需按依赖倒序逐条 `remove`。真实画板上删点后依赖它的线段 / 圆是否如预期一并消失、同名 id 重发是否顺畅，仍需带浏览器环境目视确认；`expressions` 里按标识符引用滑动条的曲线（`expr:"a*x^2"`）是否随级联一并删除，也需在浏览器复验（前端删除工具已有 `exprMentions` 匹配，AI 的 `remove` 走执行器依赖图，二者语义可能不完全一致）。
 - 点型样式（本轮新增，用例 83/84）：沙箱无头单测只验证了 `stylePointSpec` 的属性归一/钳制/互斥逻辑与命令序列对齐，**真实 JSXGraph 上 `face` 各点型（尤其 `hollow` 透填充+描边的空心观感、`solid` 填充跟随描边色、方点/菱形/三角）的渲染效果**仍需带浏览器环境目视确认；`hollow` 不要与 `fill:true` 同写，否则半透明底色会糊住空心。点型摘要挂在元素 `__aiPointStyle` 供 describe()/inspect 回读，回放/保存时随命令重建。
+
+## 极坐标曲线（polar 原生命令，本轮新增 2026-11-19 第十三轮）
+
+> 落实连续多轮 TODO 交接项⑤「极坐标曲线」，且执行器支持已确认可达。此前画玫瑰线 / 心形线 / 阿基米德螺线
+> 只能让 AI 手算每个采样点的 (x,y) 再逐点 `point` 连 `polygon`：坐标难算、点数僵硬、无法参数化联动，
+> 对标大角几何「自研数学 DSL / 符号计算」明显吃亏。本轮新增原生 `polar`：AI 只给 r(t) 表达式与极角范围，
+> 执行器（`polarSpec` 纯函数 + `curve` 元素）按 x=r·cos t / y=r·sin t 换算成参数曲线。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 85 | 画三叶玫瑰线 r=3cos(3θ)，并验证 r(0)=3、r(π/3)=0 | `polar` id:"rose" expr:"3*cos(3*t)" from:0 to:6.283 samples:600 color:"#E11D48" strokeWidth:2.5 → `verify` kind:evaluate expr:"3*cos(3*t)" x:0 expect:3 tol:0.001 → `verify` x:1.047198 expect:0 tol:0.001 | ✅ | **别手算采样点逐点 point + polygon**（坐标抄错、点数僵硬）；变量写 `t`（θ/theta 执行器归一），from/to 写弧度**数字**不写 "pi"/"2π"；r<0 的瓣由引擎按参数曲线自然绘出，别取 abs 或拆段；自检用 `evaluate` 核 r(t) 表达式值，别用 `measure distance` 量曲线本身；describe()/inspect 回读 `polar:r=3*cos(3*t) θ∈[0,6.283] 采样600`；见 `ai/board-prompt.js` 例36 |
+| 86 | 画心形线 r=2+2cosθ；再用滑动条 a 驱动螺线 r=a·t 配 animate 自动演示 | 变式 A：`polar` id:"cardioid" expr:"2+2*cos(t)" from:0 to:6.283 color:"#1D4ED8"；变式 B：`slider` id:"a" min:0.5 max:3 value:1 step:0.1 → `polar` id:"spiral" expr:"a*t" from:0 to:12.566 color:"#059669" → `animate` id:"a" | ✅ | 表达式内可引用滑动条 id（a 由引擎取实时值，拖动曲线联动），但 from/to/turns/samples 仍须写**数字**；螺线多圈把 to 写大（12.566≈4π 两圈），turns 仅在未给 to 时生效；polar 是普通 curve 图元，可 style / label / 被 intersect 引用、进文档；回放/保存按命令重建 |
+
+> 状态 ✅：`tests/board2d_polar_spec.mjs` 无头单测真实调用 `polarSpec`，覆盖 expr 非空与变量归一
+> （t/theta/θ）、from/to 默认与交换、turns 圈数别名、samples 60~2000 钳制、非法参数抛错、
+> 占位 at/rAt 形状、summary/meta 回读、综合命令（玫瑰线 + 滑动条螺线）；与 `tests/run-2d-specs.mjs`
+> 聚合入口一起跑。真实极径 r(t) 由 `case 'polar'` 用 JessieCode 编译闭包注入，沙箱无头环境不实例化
+> JSXGraph，**真实画板上 r(t) 求值、滑动条联动、r<0 负半径瓣的绘制、采样密度与断点渲染**仍需带浏览器目视确认（见「已知限制」）。
+
+## TODO 交接更新（2026-11-19 第十三轮）
+1. [本轮已完成] 极坐标曲线协议与 few-shot——原生 `polar` + `polarSpec` + 例36 + 用例 85/86。
+2. [待办] 自检状态条做成 AI 面板固定 DOM 徽标。
+3. [待办] 收敛判定引入「残差改善量」；收敛后把 probeVerify 结果回画成最终 ✔ 读数。
+4. [待办] 含参不等式区域（需先确认执行器是否支持区域填充）/ 旋转体截面 few-shot。
+5. [待办] polar 在真实 JSXGraph 上的采样密度 / NaN 断点渲染目视确认。

@@ -29,6 +29,11 @@
  *             （from/to 整体定义域；ymin/ymax 值域裁剪；segments:[[a,b],…] 多段定义域白名单、
  *               exclude:[[a,b],…] 挖洞黑名单，端点一律数字，二者可叠加，见 parseFunctionSegments；
  *               区间外采样点记 NaN 自动断开，__aiSegments 供 describe()/inspect 回读分段）
+ *   polar     {id,expr,from?,to?,turns?,samples?,color?,strokeWidth?,dash?}  极坐标曲线 r=r(t)（本轮新增，对标大角几何数学 DSL）：
+ *             expr 是 r(t) 表达式（变量写 t，也认 theta/θ），如 "3*cos(3*t)" 玫瑰线 / "2+2*cos(t)" 心形线；
+ *             from/to 是极角弧度范围（默认 0~2π，也认 turns:圈数），samples 采样提示 60~2000（默认 360）；
+ *             执行器按 x=r·cos t / y=r·sin t 换算成参数曲线，r 为 NaN 时断开；见 polarSpec，
+ *             __aiExpr/__aiRange/__aiPolar 挂元素供 describe()/inspect 数值快照回读
  *   text      {id,x,y,text}                    自由文本
  *   text      {id,x,y,bind:{kind,of}}          动态测量文本（kind: distance/length/radius/angle/value）
  *   angle     {id,points:[A,B,C]}              角（B为顶点）
@@ -303,6 +308,23 @@
  * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
  *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 分段裁剪 + 空心/实心端点在真实 JSXGraph 上目视确认；
  *   ⑤ 更多易错图形 few-shot（旋转体截面 / 极坐标曲线 / 含参不等式区域，需先确认执行器支持）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-19 第十三轮）：落实 TODO⑤「极坐标曲线」——执行器支持确认可达，
+ *   新增原生 polar 命令（对标大角几何「自研数学 DSL / 符号计算」强项）。此前画玫瑰线/心形线/螺线只能让 AI
+ *   手算每个采样点的 (x,y) 再逐点 point 连 polygon，坐标难算、点数僵硬、变形无法参数化。
+ *   (1) 新增导出纯函数 polarSpec(cmd)：expr 归一（变量 t/theta/θ）、from/to 极角范围（默认 0~2π，
+ *       turns 圈数别名）、samples 采样数（默认 360，钳制 60~2000），端点数值化、非法参数抛错，
+ *       返回 at(t)->[x,y]、summary、meta，供无头单测与 describe()/inspect 回读（与 conicSpec 同范式）。
+ *   (2) case 'polar' 接入 board.create('curve', [fx,fy,from,to])（与 conic 同一引擎元素），
+ *       r(t) 走 JessieCode 编译闭包、滑动条联动照旧生效，NaN 断点自动断开；
+ *       __aiExpr/__aiRange/__aiPolar 挂元素供状态快照回读（MCP 式读状态）。
+ *   (3) elementSummary() 在 curve 分支前加 __aiPolar 分支，describe()/inspect 回读 "polar:r(t)@..."。
+ *   配套：ai/board-prompt.js 命令清单登记 + 「极坐标曲线」小节 + 例36 few-shot、docs 用例 85/86、
+ *   tests/board2d_polar_spec.mjs 无头单测 + run-2d-specs.mjs 聚合入口。
+ *   TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *     ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ [本轮已完成] 极坐标曲线（例36 / 用例 85/86）；
+ *     ⑤ 含参不等式区域（需先确认执行器是否支持区域填充）/ 旋转体截面 few-shot；
+ *     ⑥ polar 曲线在真实 JSXGraph 上的采样密度 / NaN 断点渲染目视确认。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -672,6 +694,51 @@ export function conicSpec(cmd, refs) {
       meta: { definition, vertex: V, p, axis: u } };
   }
   throw new Error('conic.type 只能是 ellipse / hyperbola / parabola');
+}
+
+/* ---------- 极坐标曲线（polar）r=r(t) 语义参数 → 参数曲线采样（模块级纯函数，便于无头回归） ---------- */
+/**
+ * 对标大角几何「自研数学 DSL / 符号计算」：AI 只声明 r(t) 表达式 + 极角范围，
+ * 由执行器用 x=r·cosθ / y=r·sinθ 换算成参数曲线，不再让 AI 手算每个采样点坐标。
+ *
+ * 参数：
+ *   expr      r(t) 表达式字符串（JSXGraph/JessieCode 语法，变量写 "t"，也认 "theta"/"θ"），
+ *             如 "3*cos(3*t)" 三叶玫瑰线 / "2+2*cos(t)" 心形线 / "a*theta"（a 可为滑动条 id）
+ *   from/to   极角 t 的范围（弧度），默认 0 ~ 2π；to<from 自动交换
+ *   turns     圈数别名：写了 turns:1 等价于 from:0,to:2π（未在 to 显式给定时生效）
+ *   samples   采样点个数提示，默认 360、钳制 60~2000（curve 是连续求值，samples 仅用于摘要回读，
+ *             真实采样密度由 JSXGraph 决定；给 AI 一个显式旋钮表达"粗糙示意/精细曲线"）
+ *
+ * 返回 { at(t)->[x,y], rAt(t)->number（原始极径）, tMin, tMax, expr, samples, summary, meta }。
+ * 表达式不在本纯函数里求值（没有 JessieCode 上下文），由 case 'polar' 编译后注入 rFn；
+ * 这里 at/rAt 默认用一个数值占位 r=0，执行分支会覆盖为真实编译器。非法参数一律抛错，不产生元素。
+ */
+export function polarSpec(cmd) {
+  const raw = cmd && cmd.expr != null ? String(cmd.expr).trim() : '';
+  if (!raw) throw new Error('polar.expr 不能为空（需给出 r(t) 表达式，如 "3*cos(3*t)"）');
+  // 变量名归一：theta / θ → t（JessieCode snippet 的变量名统一为 t，避免 AI 写法不一导致取不到值）
+  const expr = raw.replace(/\btheta\b/gi, 't').replace(/θ/g, 't');
+  const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+  let from = num(cmd.from, 0);
+  let to = cmd.to != null ? num(cmd.to, NaN) : NaN;
+  if (!Number.isFinite(to)) {
+    const turns = num(cmd.turns, NaN);
+    to = Number.isFinite(turns) && turns > 0 ? turns * 2 * Math.PI : 2 * Math.PI;
+  }
+  if (to < from) { const tmp = from; from = to; to = tmp; }
+  if (to - from < 1e-9) throw new Error('polar 的极角范围 from~to 不能为零');
+  let samples = Math.round(num(cmd.samples, 360));
+  if (samples < 60) samples = 60;
+  if (samples > 2000) samples = 2000;
+  const fmt = (n) => String(Math.round(n * 1000) / 1000);
+  // 默认占位：真实极径由执行分支注入。at(t) 统一走 rAt，覆盖后即为 x=r·cos t / y=r·sin t。
+  const rAt = () => 0;
+  const at = (t) => { const r = rAt(t); return [r * Math.cos(t), r * Math.sin(t)]; };
+  return {
+    at, rAt, tMin: from, tMax: to, expr, samples,
+    summary: 'r=' + expr + ' θ∈[' + fmt(from) + ',' + fmt(to) + '] 采样' + samples,
+    meta: { definition: 'r(t)', expr, samples },
+  };
 }
 
 /* ---------- 正多边形（regularPolygon）语义参数 → 顶点坐标（模块级纯函数，便于无头回归） ---------- */
@@ -1620,6 +1687,32 @@ export function createExecutor(board) {
         el.__aiConic = { type: spec.type, ...spec.meta };
         return el;
       }
+      case 'polar': {
+        // 极坐标曲线 r=r(t)（本轮新增，对标大角几何数学 DSL）：把 r(t) 表达式按
+        // x=r·cos t / y=r·sin t 换算成参数曲线，交给与 conic 相同的 curve 元素绘制；
+        // r 为 NaN / 非有限值时该采样点断开（玫瑰线负半径、螺线越界交给引擎自动处理）。
+        const spec = polarSpec(cmd);
+        const compile = board.jc && typeof board.jc.snippet === 'function';
+        const injected = compile
+          ? board.jc.snippet(spec.expr, true, 't', false)
+          : (t) => { try { return Function('t', 'return (' + spec.expr + ')')(t); } catch (_) { return NaN; } };
+        const rAt = (t) => { const v = injected(t); return Number.isFinite(v) ? v : NaN; };
+        const fx = (t) => { const r = rAt(t); return Number.isFinite(r) ? r * Math.cos(t) : NaN; };
+        const fy = (t) => { const r = rAt(t); return Number.isFinite(r) ? r * Math.sin(t) : NaN; };
+        const el = board.create('curve', [fx, fy, spec.tMin, spec.tMax], {
+          ...opt,
+          strokeColor: cmd.color || '#C62828',
+          highlightStrokeColor: cmd.color || '#C62828',
+          strokeWidth: cmd.strokeWidth != null ? num(cmd.strokeWidth, 2) : 2,
+          ...(cmd.dash != null ? { dash: num(cmd.dash, 0) } : {}),
+        });
+        // 方程 / 极角范围 / 采样提示挂元素：describe()/inspect 的数值快照能回读，
+        // AI 在已有极坐标曲线上继续作图或局部重画时不必猜表达式与范围（MCP 式读状态）。
+        el.__aiExpr = 'r=' + spec.expr;
+        el.__aiRange = [spec.tMin, spec.tMax];
+        el.__aiPolar = spec.meta;
+        return el;
+      }
       case 'text': {
         // bind：动态测量文本（内容为函数，拖拽时实时刷新）
         //   {kind:'distance', of:[A,B]} 两点距离
@@ -1989,6 +2082,13 @@ export function createExecutor(board) {
         desc = 'conic:' + m.type + '@' + m.definition + ',中心(' + fmtNum(c[0]) + ',' + fmtNum(c[1]) + ')'
           + (Number.isFinite(m.a) ? ',a=' + fmtNum(m.a) + ',b=' + fmtNum(m.b) : '')
           + (Number.isFinite(m.p) ? ',p=' + fmtNum(m.p) : '');
+      } else if (el.__aiPolar && t === 'curve') {
+        // 极坐标曲线（本轮新增）：回读 r(t) 表达式与极角范围，AI 在已有曲线上继续构造时照抄，
+        // 不必猜采样点坐标（与 conic / function 的数值快照同范式，MCP 式读状态）。
+        const m = el.__aiPolar;
+        desc = 'polar:' + (el.__aiExpr || ('r=' + m.expr))
+          + (Array.isArray(el.__aiRange) ? ' θ∈[' + fmtNum(el.__aiRange[0]) + ',' + fmtNum(el.__aiRange[1]) + ']' : '')
+          + (Number.isFinite(m.samples) ? ' 采样' + m.samples : '');
       } else if (t === 'functiongraph' || t === 'curve') {
         desc = 'function' + (el.__aiExpr ? ':"' + el.__aiExpr + '"' : '')
           + (Array.isArray(el.__aiRange) ? '@[' + fmtNum(el.__aiRange[0]) + ',' + fmtNum(el.__aiRange[1]) + ']' : '')
