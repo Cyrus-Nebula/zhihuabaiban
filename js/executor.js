@@ -33,8 +33,11 @@
  *   text      {id,x,y,bind:{kind,of}}          动态测量文本（kind: distance/length/radius/angle/value）
  *   angle     {id,points:[A,B,C]}              角（B为顶点）
  *   label     {target,text}                    设置/修改标签
- *   style     {target,color?,strokeColor?,fillColor?,strokeWidth?,dash?,fill?,opacity?,fillOpacity?,labelColor?,labelSize?,hidden?}  样式
+ *   style     {target,color?,strokeColor?,fillColor?,strokeWidth?,dash?,fill?,opacity?,fillOpacity?,labelColor?,labelSize?,hidden?,face?,size?,hollow?,solid?}  样式
  *             （细粒度：描边/填色可分设；opacity 0~1 整体透明，fillOpacity 单管填充；labelColor/labelSize 改标签文字）
+ *             点型样式（本轮新增，分段端点空心/实心标记）：face 点型（o/circle/圆、[]/square/方、diamond/菱形、^/^/三角、v、>、<、+/十字、-、|），
+ *               size 点大小(1~20 数字)；hollow:true 空心（face 默认 o、fillOpacity:0、strokeWidth 保底 1.5）、solid:true 实心（fillOpacity:1、填充跟随描边色）；
+ *               见导出纯函数 stylePointSpec。仅写了 face/size/hollow/solid 才生效，未写则零回归。
  *   measure   {kind:'distance',of:[A,B]} | {kind:'angle',of:[A,B,C]} | {kind:'evaluate',expr,x?}  测量/自检（回读数值；画板上生成临时读数文本，不持久化）
  *   verify    {kind,of|expr,expect?,tol?,rtol?,expectRange?:[lo,hi],label?}  声明式自检断言：在 measure 三种求值之上加机器判定
  *             （expect + tol(默认0.05) 或 rtol 相对容差；expectRange 区间），execute 回传 pass:true/false/null；pass:false 触发前端多轮收敛修正轮（最多 3 轮）
@@ -282,6 +285,24 @@
  * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
  *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 分段交界处的空心/实心端点标记（新 op 或 point+style 组合）；
  *   ⑤ 分段裁剪在真实 JSXGraph 上目视确认（NaN 断点是否如预期断开、线宽/颜色，沙箱无头只验证区间纯函数）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-19 第十二轮）：只改 2D 协议，3D 分支 / editor.html / appId / js/board.js 零改动。
+ *   落实连续多轮 TODO 交接项④——「分段交界处的空心 / 实心端点标记」：上一轮已做 function 分段裁剪（segments/exclude），
+ *   但数学上「x∈[-5,-1)」与「x∈[-5,-1]」的端点开闭无法表达：AI 之前只能在区间端点附近另放 point，
+ *   却因协议无点型样式而无法把端点画成空心圆 / 实心圆（默认 point 是 face:'o' 半透明填充，空心实心一个样）。
+ *   本轮给 2D style 命令补点型样式能力，不改 point 创建协议（沿用既有 id 引用）：
+ *   (1) 新增导出纯函数 stylePointSpec(cmd)：face（英文/中文别名归一到 JSXGraph 点型 o/[]/diamond/^/v/>/</+/-/|）、
+ *       size（点大小，数值化钳制 1~20）、hollow:true（空心：face 默认 o + fillOpacity:0 + strokeWidth 保底 1.5）、
+ *       solid:true（实心：fillOpacity:1 + 填充跟随描边色）、fillColor；未写这四类字段时 active=false，执行分支零回归；
+ *       非法/非数字值宽容丢弃，不整批失败。供无头单测直接 import（tests/board2d_style_point_spec.mjs）。
+ *   (2) case 'style' 在 el.setAttribute 之前并入 stylePointSpec 的属性；空心点用白底+描边实现"空心圆"观感，
+ *       实心点把 fillColor 跟到本次 strokeColor（或元素现有描边色），避免"蓝心红边"；标签颜色逻辑零改动。
+ *   配合分段裁剪的范式：function f1 segments → 端点处 point + style hollow/solid → verify 回读端点 id 存在。
+ *   配套：ai/board-prompt.js 命令清单登记 + 「分段端点开闭（空心/实心）」小节 + 例35 few-shot、docs 用例 83/84、
+ *   tests 无头单测 + run-2d-specs.mjs 聚合入口。
+ * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 分段裁剪 + 空心/实心端点在真实 JSXGraph 上目视确认；
+ *   ⑤ 更多易错图形 few-shot（旋转体截面 / 极坐标曲线 / 含参不等式区域，需先确认执行器支持）。
  */
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -996,6 +1017,67 @@ export function parseFunctionSegments(cmd, from, to) {
   return { active, segments, exclude, inRange, summary: parts.join(' ') };
 }
 
+/**
+ * 解析 style 命令里的「点型样式」子集（导出纯函数，供无头单测）。
+ * 用于把分段函数端点和区间内区间外画成空心/实心圆点，表达端点开闭（数学上 [-5,-1) 与 [-5,-1] 的区别）。
+ * 不写 face/size/hollow/solid 任一项时 active=false（走原有 style 路径，零回归）。
+ * @param {object} cmd style 命令
+ * @returns {{active:boolean, attrs:object, summary:string}}
+ *   attrs 是可直接并入 setAttribute 的属性（face/size/fillColor/fillOpacity/strokeWidth）；
+ *   summary 是给状态快照回读的简短文本。
+ */
+const POINT_FACE_MAP = Object.freeze({
+  o: 'o', circle: 'o', round: 'o', '圆': 'o', '圆点': 'o', '空心圆': 'o',
+  '[]': '[]', square: '[]', rect: '[]', '方': '[]', '方块': '[]',
+  diamond: 'diamond', '菱形': 'diamond',
+  '^': '^', triangle: '^', '三角': '^', up: '^',
+  v: 'v', down: 'v', '>': '>', right: '>', '<': '<', left: '<',
+  '+': '+', plus: '+', '十字': '+', '-': '-', minus: '-', '|': '|',
+});
+
+export function stylePointSpec(cmd) {
+  const c = cmd || {};
+  const hasFace = c.face != null && String(c.face).trim() !== '';
+  const hasSize = c.size != null && String(c.size).trim() !== '';
+  const hasHollow = c.hollow === true || c.hollow === 'true';
+  const hasSolid = c.solid === true || c.solid === 'true';
+  const hasFill = c.fillColor != null && String(c.fillColor).trim() !== '';
+  const active = hasFace || hasSize || hasHollow || hasSolid || hasFill;
+  const attrs = {};
+  const parts = [];
+
+  // face：英文/中文别名归一；未知值宽容丢弃（不整批失败）
+  if (hasFace) {
+    const key = String(c.face).trim().toLowerCase();
+    const face = POINT_FACE_MAP[key];
+    if (face) { attrs.face = face; parts.push('face:' + face); }
+  }
+  // size：点大小，数值化并钳制到 1~20；NaN/非数字丢弃
+  if (hasSize) {
+    const s = Number(c.size);
+    if (Number.isFinite(s)) {
+      const size = Math.max(1, Math.min(20, s));
+      attrs.size = size; parts.push('size:' + size);
+    }
+  }
+  // hollow：空心圆——face 缺省 o、填充透明、描边保底 1.5（否则看不见轮廓）
+  if (hasHollow) {
+    if (attrs.face == null) attrs.face = 'o';
+    attrs.fillOpacity = 0;
+    if (c.strokeWidth == null) attrs.strokeWidth = 1.5;
+    parts.push('hollow');
+  }
+  // solid：实心圆——填充不透明
+  if (hasSolid) {
+    attrs.fillOpacity = 1;
+    parts.push('solid');
+  }
+  // fillColor：自定义填充色（空心点可给白底，实心点给描边同色由执行分支补全）
+  if (hasFill) { attrs.fillColor = String(c.fillColor).trim(); parts.push('fill:' + attrs.fillColor); }
+
+  return { active, attrs, summary: parts.join(' ') };
+}
+
 export function createExecutor(board) {
   const registry = new Map();    // id -> JXG 元素
   const plainPoints = new Set(); // 可通过 moves 覆盖坐标的自由点
@@ -1589,6 +1671,21 @@ export function createExecutor(board) {
           if (o != null) a.fillOpacity = o;
         }
         if (cmd.hidden != null) a.visible = !cmd.hidden;
+        // 点型样式（本轮新增，见 stylePointSpec）：把端点画成空心/实心圆，表达分段区间端点开闭。
+        // Object.assign 放最后，使点型属性覆盖 color/fill 等通用设置；solid 且未指定填充色时填充跟随描边色，
+        // 避免"蓝心红边"；读不到描边色时保留 JSXGraph 默认填充。
+        const ps = stylePointSpec(cmd);
+        if (ps.active) {
+          Object.assign(a, ps.attrs);
+          if ((cmd.solid === true || cmd.solid === 'true') && cmd.fillColor == null && !cmd.color && a.fillColor == null) {
+            let stroke = a.strokeColor;
+            if (stroke == null && typeof el.getAttribute === 'function') stroke = el.getAttribute('strokeColor');
+            if (typeof stroke === 'function') stroke = stroke.call(el);
+            if (stroke) a.fillColor = stroke;
+          }
+          // 数值快照回读（MCP 式读状态）：把点型摘要挂到元素，describe() 据此回报端点开闭
+          if (el && ps.summary) el.__aiPointStyle = ps.summary;
+        }
         el.setAttribute(a);
         // JSXGraph 的标签是独立 text 对象，颜色/字号要单独设（不是图元自身的属性）
         if (el.label && typeof el.label.setAttribute === 'function' &&
@@ -1864,7 +1961,8 @@ export function createExecutor(board) {
         const v = numericOf(el);
         desc = '滑动条=' + (Number.isFinite(v) ? Math.round(v * 100) / 100 : '?');
       } else if (POINT_TYPES.has(t) && typeof el.X === 'function' && typeof el.Y === 'function') {
-        desc = t + '@' + fmtPoint([el.X(), el.Y()]);
+        desc = t + '@' + fmtPoint([el.X(), el.Y()])
+          + (el.__aiPointStyle ? ' 点型{' + el.__aiPointStyle + '}' : '');
       } else if (t === 'circle') {
         const g = circleGeom(el);
         if (g) desc = 'circle@O' + fmtPoint([g[0], g[1]]) + ',r=' + fmtNum(g[2]);

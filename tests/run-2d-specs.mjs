@@ -19,6 +19,7 @@ const SPECS = [
   'board2d_regularPolygon_spec.mjs',
   'board2d_remove_spec.mjs',
   'board2d_function_segments_spec.mjs',
+  'board2d_style_point_spec.mjs',
 ];
 
 let failed = 0;

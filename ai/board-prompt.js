@@ -314,6 +314,21 @@
  * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
  *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 分段交界处空心/实心端点标记（新 op 或 point+style 组合）；
  *   ⑤ 分段裁剪在真实 JSXGraph 上目视确认（NaN 断点渲染）；⑥ 更多易错图形 few-shot（旋转体截面 / 极坐标曲线，需先确认执行器支持）。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-19 第十二轮）：只追加 2D 作图主干逻辑，3D 命令分支整段零改动、
+ *   不动 appId/editor.html/js/board.js/js/board3d*，核心工作流 / 铁律 / 既有例1-34 逐字未动、无删除行。
+ *   落实连续多轮 TODO 交接项④——「分段交界处的空心 / 实心端点标记」：上一轮已支持 function 分段裁剪，
+ *   但数学上 x∈[-5,-1) 与 x∈[-5,-1] 的端点开闭此前无法表达（point 默认外观空心实心一个样）。
+ *   本轮给 2D style 命令补点型样式：face（点型，支持 o/圆、[]/方、diamond/菱形、^三角、v、>、<、+、−、| 及中文别名）、
+ *   size（点大小 1~20）、hollow:true（空心圆：白底透填充+描边）、solid:true（实心圆：填充跟随描边色）。
+ *   本文件只追加：命令清单 style 行登记点型字段、「分段端点开闭（空心/实心）」小节、例35 few-shot
+ *   （分段 function + 端点 point + style hollow/solid + verify 回读端点存在），并明确"空心配浅底、端点先 point 后 style、
+ *   端点坐标数值化、别用 fill:true 与 hollow 撞填色"四条约束。
+ *   配套 js/executor.js 的 stylePointSpec 纯函数 + case 'style' 并入点型属性 + describe() 点型回读、
+ *   docs 用例 83/84、tests/board2d_style_point_spec.mjs + run-2d-specs.mjs 聚合入口。
+ * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 分段裁剪 + 空心/实心端点在真实 JSXGraph 上目视确认；
+ *   ⑤ 更多易错图形 few-shot（旋转体截面 / 极坐标曲线 / 含参不等式区域，需先确认执行器支持）。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -471,6 +486,7 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - style      {"op":"style","target":"tri","color":"#3E44D9","strokeWidth":2,"dash":0,"fill":true,"hidden":false}  样式（dash:0 实线，1/2/3 虚线疏密递增；color 同时改描边与填充；fill:true 加半透明底色；hidden:true 隐藏元素）
   · 细粒度样式（本轮新增，见例8）："strokeColor"/"fillColor" 分开指定描边与填充色；"opacity":0~1 整体透明度（同时作用于描边与填充），"fillOpacity":0~1 单独调填充；"labelColor" 改标签文字颜色、"labelSize" 改标签字号（像素）、"labelOpacity" 改标签透明度。只改外观、不新建图元，可在作图末尾多次追加。
   · 例：{"op":"style","target":"tri","strokeColor":"#1D4ED8","fillColor":"#93C5FD","fillOpacity":0.15,"opacity":0.85}、{"op":"style","target":"A","labelColor":"#E11D48","labelSize":16}
+  · 点型样式（本轮新增，分段端点开闭用）："face" 点型——"o"/"circle"/"圆"(空心圆)、"[]"/"square"/"方"、"diamond"/"菱形"、"^"/"三角"、"v"、">"、"<"、"+"、"-"、"|"；"size":1~20 点大小；"hollow":true 空心（face 缺省 o、透填充+描边）、"solid":true 实心（填充跟随描边色）、"fillColor" 自定义填充。只对 point 生效，未写这些字段零回归。见「分段端点开闭」小节 / 例35。
 - transform  {"op":"transform","id":"tri2","of":"tri","type":"translate","by":[3,1]} | {"op":"transform","id":"tri3","of":"tri","type":"rotate","angle":90,"center":"O"} | {"op":"transform","id":"triS","of":"tri","type":"reflect","axis":"lBC"} | {"op":"transform","id":"triH","of":"tri","type":"scale","k":2,"center":"O"}  几何变换（把 of 指向的已有元素整份复制并按 type 平移/旋转/反射/位似：translate 用 by:[dx,dy]；rotate 用 angle(度) 与 center(点id或[x,y]，省缺原点)；reflect 用 axis(直线/线段id) 关于该线对称，或省略 axis 用 center 做中心对称；scale 用 k(位似比) 与 center(省缺原点) 做位似/相似变换，|k|>1 放大、0<|k|<1 缩小、k<0 反向）。支持 point/segment/line/ray/polygon/circle，新副本以 id 命名。
 - measure    {"op":"measure","kind":"distance","of":["A","B"]} | {"op":"measure","kind":"angle","of":["A","B","C"]} | {"op":"measure","kind":"evaluate","expr":"x^2","x":2}  测量/自检（回读数值，画板上给临时灰色读数，不污染画板）
 - verify     {"op":"verify","kind":"angle","of":["A","H","B"],"expect":90,"tol":0.5} | {"op":"verify","kind":"distance","of":["A","H"],"expectRange":[3,5]} | {"op":"verify","kind":"evaluate","expr":"3-(x-2)^2","x":2,"expect":3,"rtol":0.01}  带期望值的自检断言（本轮新增，优先于裸 measure）
@@ -613,6 +629,13 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
 - 与 ymin/ymax（值域裁剪）、滑动条表达式（如 "a/x"）、style、intersect 都兼容：分段曲线仍是**一个**图元、一个 id，样式只设一次，交点筛选直接引用它。这与「拆多条曲线」相比是最关键的区别。
 - 分段信息会写进「当前画板元素」数值快照（回读形如 function:"1/x"@[-5,5] 分段{segments=[-5,-0.2]∪[0.2,5]}）；在已有曲线上继续作图 / 局部重画时照抄这些区间，别猜。
 - 完整回合见例34。注意：分段只控制"画哪几段 x"，不控制"每段用不同表达式"；分段函数（x<0 画 -x、x≥0 画 x）仍需两条不同 expr 的 function 各自 from/to（见用例 11），或用 abs 写进一个表达式。
+
+# 分段端点开闭（空心 / 实心端点，本轮新增）
+- 数学上 x∈[-5,-1) 与 x∈[-5,-1] 的区别在端点：开端点画**空心圆**、闭端点画**实心圆**。协议没有单独的"端点样式"字段，范式是：先在端点处 point 一个带 id 的点，再用 style 给这个点设 face/size/hollow/solid。
+- point 的 id 要唯一且先创建后引用；坐标写**数值**（如 (−5,0) 端点就 {"op":"point","id":"E1","x":-5,"y":0}），不写表达式。端点在 x 轴上时 y 取函数在端点的取值，画在曲线上更准；只示意开闭时放 (端点x,0) 也可。
+- style 点型：{"op":"style","target":"E1","face":"o","size":6,"hollow":true} 画空心（face 缺省就是 o，可省）；{"op":"style","target":"E2","face":"o","size":6,"solid":true} 画实心（填充自动跟随描边色）。face 还支持 "[]" 方、"diamond" 菱形、"^"/"v"/">"/"<" 三角、"+"、"-"、"|" 及中文 "圆"/"方"/"菱形"/"三角"（画数轴开区间常用 "o"/"[]" 搭配）。
+- 四条约束：① 空心点用 hollow:true（透填充+描边），**别同时写 fill:true**（fill 会给半透明底色，把空心糊成实心）；② 一定先 point 建点、再 style 改这个点 id，别 style 一个还不存在的 id；③ size 写 1~20 的数字，端点标记常用 5~7；④ 端点点型会进「当前画板元素」快照（回读形如 point@(-5,0) 点型{face:o hollow}），在已有端点上改开闭时照抄、别重复 point 同名点（重复定义会失败，改外观用 style）。
+- 分段裁剪（segments/exclude）只管画哪几段 x，不管端点开闭；两者叠加才完整表达一个半开区间。完整回合见例35。
 
 # 分段裁剪（圆弧 / 线段截取）
 - 用户说"只要这个圆的左半边/上半圆/一段弧"→ 用 arc：center 给圆心 id，from/to 给圆上两个点（直径两端 = 半圆）；要动态弧先把 from/to 设成圆上的 glider。
@@ -1276,6 +1299,21 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ③ 段与段之间自动断开（NaN），不会在 x=0 处连一条竖线，这正是拆两条曲线难保证的；
 //   ④ 分段只决定"画哪几段 x"，不决定"每段换表达式"——分段函数仍要两条不同 expr 的 function（用例 11）；
 //   ⑤ verify 的 expr 写待求值的表达式本身（与 measure kind:evaluate 一致），别把 id 写进 expr。
+
+== 例35：半开区间的端点开闭标记（分段 function + 端点 point + style 空心/实心；易错：默认点无法区分开闭 / 用 fill 把空心糊成实心 / style 引用未建的点） ==
+用户："画 y=x+1 在 x∈[-4,2) 上的图像，左端点 -4 要实心、右端点 2 要空心，并在 x=0 处验证取值。"
+思路：分段裁剪用 function segments 画 [-4,2] 这一段（端点开闭由点标记表达，function 只管画哪段 x）→ 在两个端点各 point 一个点 → style 把左端点设 solid、右端点设 hollow → verify 回读 x=0 的取值。铁律：先 point 建点再 style；端点坐标数值化；空心用 hollow 不要配 fill。
+{"op":"function","id":"f1","expr":"x+1","from":-4,"to":2,"segments":[[-4,2]]}
+{"op":"style","target":"f1","color":"#1D4ED8","strokeWidth":2}
+{"op":"point","id":"L","x":-4,"y":-3}                                  // 左端点 (-4, -4+1=-3)，实心
+{"op":"style","target":"L","face":"o","size":6,"solid":true}
+{"op":"point","id":"R","x":2,"y":3}                                    // 右端点 (2, 2+1=3)，空心
+{"op":"style","target":"R","face":"o","size":6,"hollow":true}
+{"op":"verify","kind":"evaluate","expr":"x+1","x":0,"expect":1,"tol":0.001,"label":"f(0)=1"}
+// 变式 A（数轴开区间 (0,3]）：point E0(0,0) + style hollow；point E3(3,0) + style solid；用 "[]" 方点表示闭端点亦可：{"op":"style","target":"E3","face":"[]","size":6,"solid":true}
+// 变式 B（改已有端点开闭）：别重新 point 同名 id（重复定义失败），只重发 style：{"op":"style","target":"R","hollow":false,"solid":true}
+// 要点：① face 支持 o/圆、[]/方、diamond/菱形、三角等，画端点默认 "o" 即可；② hollow 给透填充+描边（face 缺省 o），solid 填充跟随描边色，二者二选一；
+//   ③ hollow 别和 fill:true 同时写（fill 会加半透明底色，空心被糊住）；④ 端点已进数值快照（如 point@(2,0) 点型{face:o hollow}），改外观只发 style、不重复 point。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

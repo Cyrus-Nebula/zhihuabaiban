@@ -471,18 +471,23 @@
 |---|------|-----------|------|------|
 | 81 | 画 y=1/x，只保留 x∈[-5,-1] 和 x∈[1,5] 两段，标出 x=2 处取值 | `function` f1 expr:"1/x" from:-5 to:5 **segments:[[-5,-1],[1,5]]** → `style` f1 color/strokeWidth（一条命令一个 id）→ `verify` kind:evaluate expr:"1/x" x:2 expect:0.5 tol:0.001 | ✅ | **别拆成两条 function**（多 id / 样式重复 / intersect 不知引用哪条）；端点写数字不写 `-pi/2`/`a`/`x<0`（非法段被静默丢弃可能整段消失）；segments 是白名单、区间外采样点记 NaN 自动断开，段间**不连线**；分段只决定画哪几段 x、不决定每段换表达式（分段函数仍需两条不同 expr，见用例 11）；见 `ai/board-prompt.js` 例34 |
 | 82 | y=1/x 去掉中间间断；tan(x) 在渐近线处断开；叠加值域裁剪 | 变式 A：`function` f1 expr:"1/x" from:-5 to:5 **exclude:[[-1,1]]**（挖洞黑名单）；变式 B：`function` g expr:"tan(x)" from:-5 to:5 **exclude:[[1.5,1.7]]**；变式 C：在 81 命令后加 `ymin`:-4,`ymax`:4 去掉趋近 ±∞ 的尾部 | ✅ | exclude 是黑名单、闭区间端点也不画；segments 与 exclude 可叠加（先并集后相减）；与 ymin/ymax、滑动条表达式、style、intersect 全兼容（仍是**一个**图元、一个 id）；倒序 / 重叠 / 相邻段自动归一、超出 from~to 自动钳制、最多 12 段、非法项静默丢弃不整批失败；describe()/inspect 回读带「分段{…}」 |
+| 83 | 画 y=x+1 在 x∈[-4,2) 上，左端点实心、右端点空心，并验证 f(0)=1 | `function` f1 expr:"x+1" from:-4 to:2 segments:[[-4,2]] → `style` f1 color/strokeWidth → `point` L(-4,-3) + `style` L face:"o" size:6 **solid:true** → `point` R(2,3) + `style` R face:"o" size:6 **hollow:true** → `verify` kind:evaluate expr:"x+1" x:0 expect:1 tol:0.001 | ✅ | **先 point 建点、再 style 改点 id**，别 style 不存在的 id；端点坐标数值化（y=f(端点x)）；空心用 hollow、实心用 solid，二者二选一；见 `ai/board-prompt.js` 例35 |
+| 84 | 数轴开区间 (0,3] 端点标记；把已有空心端点改成实心 | 变式 A（开区间）：`point` E0(0,0) + `style` E0 face:"o" hollow:true（空心）+ `point` E3(3,0) + `style` E3 face:"[]" solid:true（方点表闭）；变式 B（改开闭）：只重发 `style` R hollow:false solid:true，**别重新 point 同名 id**（重复定义失败） | ✅ | hollow 别与 fill:true 同写（fill 加半透明底色会糊住空心）；size 写 1~20 数字、端点常用 5~7；face 支持 o/圆、[]/方、菱形、三角等中文别名；点型进数值快照回读形如 point@(0,0) 点型{face:o hollow}，改外观只发 style |
 
 > 状态 ✅：`tests/board2d_function_segments_spec.mjs` 无头单测真实调用 `parseFunctionSegments`，
 > 覆盖未写分段零回归、多段并集、挖洞、叠加、区间归一/钳制/上限、闭区间边界（随聚合入口一起跑）。
 > 未写 segments/exclude 时 `active=false`，走原有整段出图路径，`ymin/ymax` 旧行为不变。
-> 真实 JSXGraph 上 NaN 断点是否如预期断开、线宽/颜色渲染仍需带浏览器环境目视确认（见「已知限制」）。
+> 状态 ✅：`tests/board2d_style_point_spec.mjs`（本轮新增）无头单测真实调用 `stylePointSpec`，
+> 覆盖未写点型字段零回归、face 中英文别名归一、未知值宽容、size 数值化与 1~20 钳制、
+> hollow（face 缺省 o / 透填充 / 描边保底 1.5）、solid（fillOpacity:1）、二者互斥、fillColor、summary 回读（50 项断言）。
+> 真实 JSXGraph 上 NaN 断点是否如预期断开、空心/实心端点渲染与线宽/颜色仍需带浏览器环境目视确认（见「已知限制」）。
 
 ## TODO 交接（下一步）
 1. 自检状态条做成 AI 面板固定 DOM 徽标（现为逐轮日志行）。
 2. 收敛判定引入「残差改善量」而不只数失败项。
 3. 收敛后把 `probeVerify` 结果回画成最终 ✔ 读数。
 4. [本轮已完成] 其它易错图形（弓形面积阴影、旋转相似）few-shot——见例32/例33、用例 79/80。
-5. 分段交界处的空心 / 实心端点标记（新 op 或 `point`+`style` 组合）；分段裁剪在真实 JSXGraph 上目视确认 NaN 断点渲染。
+5. [本轮已完成] 分段交界处的空心 / 实心端点标记——给 2D `style` 补点型样式 `face`/`size`/`hollow`/`solid`，见例35、用例 83/84、`stylePointSpec` 单测；仅剩分段裁剪 + 空心/实心端点在真实 JSXGraph 上目视确认。
 6. 更多易错图形 few-shot（如旋转体截面、极坐标曲线、含参不等式区域，需先确认执行器是否支持对应协议）。
 7. `remove` 的级联在真实 JSXGraph 上目视确认（见「已知限制」）；`expressions` 里按标识符引用滑动条的曲线是否随级联一并删除也需浏览器复验。
 
@@ -497,3 +502,4 @@
 - `conic` 用 JSXGraph 的 `curve` 元素（参数曲线函数 `[fx,fy,0,1]`）绘制：沙箱无头环境只验证了参数换算与采样点的数学正确性，**曲线在真实画板上的渲染、NaN 断点是否如预期断开、线宽/颜色**仍需带浏览器环境目视确认（用例 59~61）。`focus`+`directrix` 形态依赖注册表里准线元素的端点坐标；已画出的 `conic` 是静态参数曲线（不随焦点/准线被 `move` 拖动实时重算，回放/保存时按命令重建），与 `transform` 的静态副本行为一致。
 - `regularPolygon` 的 n 个顶点落成 `fixed:true` 的独立 `point`（用例 65~69）：沙箱无头环境只验证了顶点坐标的数学正确性与注册表/数值快照/删除联动，**真实画板上拖动滑动条 `radius` 或 `center` 点时函数坐标是否实时刷新、拖动交互是否被 `fixed` 正确禁用**仍需带浏览器环境目视确认。它按命令重建（回放/保存时重算顶点），与 `conic` / `transform` 的静态行为一致；派生顶点占 id，删除主图元时联动清理，勿把顶点 id 当成用户可长期持有的自由点。
 - `remove` 的级联依赖来自 JSXGraph 元素的 `parents` / `childElements`（用例 77/78）：沙箱无头单测只能用 mock 依赖图覆盖，真实引擎里这两种字段的形状因 JSXGraph 版本 / 图元类型而异；若引擎不提供，执行器会**降级为只删显式指定项**（不抛错、不误删），此时需按依赖倒序逐条 `remove`。真实画板上删点后依赖它的线段 / 圆是否如预期一并消失、同名 id 重发是否顺畅，仍需带浏览器环境目视确认；`expressions` 里按标识符引用滑动条的曲线（`expr:"a*x^2"`）是否随级联一并删除，也需在浏览器复验（前端删除工具已有 `exprMentions` 匹配，AI 的 `remove` 走执行器依赖图，二者语义可能不完全一致）。
+- 点型样式（本轮新增，用例 83/84）：沙箱无头单测只验证了 `stylePointSpec` 的属性归一/钳制/互斥逻辑与命令序列对齐，**真实 JSXGraph 上 `face` 各点型（尤其 `hollow` 透填充+描边的空心观感、`solid` 填充跟随描边色、方点/菱形/三角）的渲染效果**仍需带浏览器环境目视确认；`hollow` 不要与 `fill:true` 同写，否则半透明底色会糊住空心。点型摘要挂在元素 `__aiPointStyle` 供 describe()/inspect 回读，回放/保存时随命令重建。
