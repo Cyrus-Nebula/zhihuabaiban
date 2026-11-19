@@ -567,3 +567,39 @@
 - `boundary` 模式只接受 JSXGraph inequality 支持的 `line` / `functiongraph` 作为边界；用普通 `curve`
   （conic / polar 的输出）作 boundary 时引擎可能不填充，AI 应改用 expr 或先建 line/function。描述摘要
   `inequality:y>… side=… fill=…` 挂在元素 `__aiInequality` 供 describe()/inspect 回读，回放/保存按命令重建。
+
+
+## 三角形四心符号计算（inspect kind:center，本轮新增 2026-11-19 第十五轮）
+
+> 落实连续多轮 TODO 交接项「符号计算」强项，与 `inspect kind:vertex`（二次函数配方）姊妹篇。
+> 此前画三角形的重心 / 外心 / 垂心 / 内心只能让 AI 心算坐标：重心还简单，外接圆（两边中垂线交点）、
+> 垂心（欧拉线）、内心（边长加权 a·A+b·B+c·C）极易抄错，对标大角几何「自研数学 DSL / 符号计算」
+> 明显吃亏。本轮给 `inspect` 派生量新增 `kind:"center"`：AI 先建三点（或直接用状态快照里已有 id，
+> MCP 式），一条命令回读四心精确坐标，再把数字落进 point / circle 并用 verify 自检。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 89 | 画直角三角形 A(0,0) B(6,0) C(0,8)，标出重心/外心/垂心/内心并画外接圆与内切圆 | `point` A(0,0) B(6,0) C(0,8) + `polygon` tri → `inspect` kind:"center" of:[A,B,C]（收到【查询读数】回「重心G(2,2.667); 内心I(2,2) r=2; 外心O(3,4) R=5; 垂心H(0,0); 面积=24」）→ 第二轮 `point` G(2,2.667) O(3,4) H(0,0) I(2,2) + `circle` circ center:"O" radius:5 + circle inc center:"I" radius:2 → `verify` kind:oncircle of:[A,"circ"] expect:0 tol:0.05 / oncircle [B,circ] / perpendicular [A,"H",B,C] expect:0 tol:0.5 / collinear [O,G,H] expect:0 tol:0.05 | ✅ | **别心算四心坐标**（斜边中点/欧拉线/内心加权最易抄错），一律用 center 回读；两阶段回读第二轮别再发 inspect；point 坐标写数字不写 "(A+B+C)/3"；外接圆 radius=R、内切圆 radius=r 都写数字；自检用 oncircle/perpendicular/collinear 关系断言，**别用 measure distance 量半径**（R/r 已在读数里）；center 是 inspect 专用 kind，measure/verify 不认。见 `ai/board-prompt.js` 例38 |
+| 90 | 三点还没画时直接给坐标算四心；三点共线的退化说明 | 变式 A（无需先画点）：`inspect` kind:"center" points:[[0,0],[6,0],[0,8]] → 回同样四心；变式 B（共线退化）：`point` P(0,0) Q(1,1) R(2,2) → `inspect` kind:"center" of:[P,Q,R] → 回「重心G(1,1); 内心I…; 面积≈0 三点共线，外心/垂心无意义」；AI 如实说明只报重心/内心、**不画外接圆** | ✅ | points 直接给坐标须写**数字数组** [[x,y],…]，of 引用三点须先建好（先创建后引用）；可与其它派生量在 `derive` 里批量混查；共线时外心/垂心记 null（无穷远），读数提示「无意义」，不要硬套公式画圆或报坐标；三点重合 / 非法坐标不静默猜值，center 会降级回错误提示。 |
+
+> 状态 ✅：`tests/board2d_center_spec.mjs` 无头单测真实调用 `triangleCentersFromPts`，覆盖直角三角形
+> （外心=斜边中点、垂心=直角顶点、内心=(r,r)、外接/内切半径、面积、欧拉线共线）、等腰三角形
+> （四心都在对称轴上）、一般不等边三角形（外心到三顶点等距、内心到三边等距= r、欧拉线 HG=2·GO）、
+> 钝角三角形、共线退化（外心/垂心记 null、重心内心仍给）、6 类非法参数抛错；与 `tests/run-2d-specs.mjs`
+> 聚合入口一起跑。真实画板上四心坐标落点、外接圆/内切圆的渲染仍需带浏览器目视确认（见「已知限制」）。
+
+## TODO 交接更新（2026-11-19 第十五轮）
+1. [本轮已完成] 三角形四心符号计算——`inspect kind:center` + `triangleCentersFromPts` + 例38 + 用例 89/90。
+2. [待办] 自检状态条做成 AI 面板固定 DOM 徽标。
+3. [待办] 收敛判定引入「残差改善量」；收敛后把 probeVerify 结果回画成最终 ✔ 读数。
+4. [待办] 旋转体截面 few-shot。
+5. [待办] center 四心在真实 JSXGraph 上的落点 / 外接圆内切圆渲染目视确认。
+
+## 已知限制（第十五轮追加）
+- 三角形四心（inspect kind:center，用例 89/90）：沙箱无头单测只验证了 `triangleCentersFromPts` 的闭式解数学正确性与
+  命令序列对齐，**真实画板上把回读坐标落成 point / circle 的渲染效果**仍需带浏览器目视确认。四心走两阶段回读链路
+  （首轮 inspect →【查询读数】→ 第二轮构造），与 vertex 同：只读一轮、不画图元、不进 `doc.commands`，第二轮禁止再发 inspect。
+- `center` 是 inspect 专用派生量，`measure` / `verify` 不认这个 kind（与 vertex 一致）：它回的是四心坐标文本，
+  用来落点 / 画圆；核构造结果请用 verify 关系断言（oncircle / perpendicular / collinear / distance），别用 measure 去量半径。
+- 三点共线（退化）时外心 / 垂心 / 外接半径记 null，读数提示「无意义」；AI 应如实说明、只报重心与内心，
+  不要硬套公式画外接圆。三点重合、坐标非数值等非法输入会降级回错误提示，不静默猜值。

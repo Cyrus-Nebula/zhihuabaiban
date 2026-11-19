@@ -344,8 +344,24 @@
  *   TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
  *     ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ [本轮已完成] 含参不等式区域（例37 / 用例 87/88）；
  *     ⑤ 旋转体截面 few-shot；⑥ inequality 填充方向（inverse ↔ side）在真实 JSXGraph 上目视确认。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-19 第十五轮）：只改 2D 主干，3D 命令分支 / editor.html /
+ *   appId / js/board.js 零改动。落实连续多轮 TODO「符号计算」强项——给 inspect 派生量新增 kind:"center"
+ *   （与 kind:"vertex" 配方姊妹篇）：AI 画三角形四心（重心 / 外心 / 垂心 / 内心）此前只能心算坐标，
+ *   外接圆/欧拉线/角平分线交点极易抄错，对标大角几何自研 DSL / 符号计算明显吃亏。
+ *   (1) 新增模块级导出纯函数 triangleCentersFromPts(pts)：给三个顶点坐标，闭式解出重心（三顶点均值）、
+ *       外心（两边中垂线线性方程组）、垂心（欧拉线 H=P1+P2+P3−2O）、内心（边长加权 a·A+b·B+c·C / 周长）
+ *       及外接半径 R / 内切半径 r / 面积；共线退化时外心/垂心记 null 不抛错，非法参数抛错；供无头单测回归。
+ *   (2) centerReading(d)：of:[A,B,C] 从 registry 读三点坐标（或 points:[[x,y],…] 直接给），复用纯函数，
+ *       回一条文本读数，走既有 reading.text →【查询读数】两阶段回读链路，js/board.js 零改动。
+ *   (3) deriveName / deriveReading 各加 center 分支；既有 8 种 kind 与 vertex 行为逐字节不变。
+ *   配套：ai/board-prompt.js 命令清单登记 + 「符号计算 · 三角形四心」小节 + 例38、docs 用例 89/90、
+ *   tests/board2d_center_spec.mjs 无头单测 + run-2d-specs.mjs 聚合入口。
+ *   TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *     ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 旋转体截面 few-shot；
+ *     ⑤ [本轮已完成] 三角形四心符号计算（例38 / 用例 89/90）；
+ *     ⑥ center 的四心在真实 JSXGraph 上目视确认（坐标落点 / 共线退化）。
  */
-
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
 
 /** 取元素的数值（滑动条/角等有 Value() 的元素），取不到返回 NaN */
@@ -1243,6 +1259,54 @@ export function stylePointSpec(cmd) {
   if (hasFill) { attrs.fillColor = String(c.fillColor).trim(); parts.push('fill:' + attrs.fillColor); }
 
   return { active, attrs, summary: parts.join(' ') };
+}
+
+/**
+ * 三角形四心闭式解（模块级纯函数，不依赖 JSXGraph / DOM；供 inspect 派生量与无头单测共用）。
+ * 给三个顶点坐标 pts=[[x,y],[x,y],[x,y]]，一次算出：
+ *   centroid    重心 = (P1+P2+P3)/3
+ *   circumcenter外心 = 两边中垂线交点（线性方程组，分母 D=2·有向叉积）
+ *   orthocenter 垂心 = P1+P2+P3−2·O（欧拉线 O、G、H 共线且 HG=2·GO）
+ *   incenter    内心 = (a·P1+b·P2+c·P3)/(a+b+c)，a=|P2P3|、b=|P1P3|、c=|P1P2|
+ *   R / r / area 外接圆半径 / 内切圆半径 / 面积；sides=[a,b,c]
+ * 三点共线（D≈0）为退化：外心/垂心记 null（无穷远）、R=null，重心/内心仍给、area=0；不抛错。
+ * 非法参数（非三点 / 坐标非有限数）抛错，绝不静默猜值。
+ */
+export function triangleCentersFromPts(pts) {
+  if (!Array.isArray(pts) || pts.length !== 3) throw new Error('三角形四心需三个顶点 [[x,y],[x,y],[x,y]]');
+  const P = pts.map((p) => {
+    if (!Array.isArray(p) || p.length < 2) throw new Error('每个顶点须为 [x,y] 坐标');
+    const x = Number(p[0]), y = Number(p[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('顶点坐标须为有限数');
+    return [x, y];
+  });
+  const [p1, p2, p3] = P;
+  const [x1, y1] = p1, [x2, y2] = p2, [x3, y3] = p3;
+  const D = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)); // = 4·面积（带符号）
+  const centroid = [(x1 + x2 + x3) / 3, (y1 + y2 + y3) / 3];
+  const a = Math.hypot(x2 - x3, y2 - y3); // 对 P1
+  const b = Math.hypot(x1 - x3, y1 - y3); // 对 P2
+  const c = Math.hypot(x1 - x2, y1 - y2); // 对 P3
+  const per = a + b + c;
+  const area = Math.abs(D) / 4;
+  const r = per > 0 ? (2 * area) / per : 0;
+  const incenter = per > 0
+    ? [(a * x1 + b * x2 + c * x3) / per, (a * y1 + b * y2 + c * y3) / per]
+    : [centroid[0], centroid[1]];
+  const sides = [a, b, c];
+  const degenerate = Math.abs(D) < 1e-9 * Math.max(1, a * a + b * b + c * c);
+  if (degenerate) {
+    return { ok: true, degenerate: true, centroid, incenter, circumcenter: null,
+             orthocenter: null, R: null, r, area: 0, sides };
+  }
+  const s1 = x1 * x1 + y1 * y1, s2 = x2 * x2 + y2 * y2, s3 = x3 * x3 + y3 * y3;
+  const Ux = (s1 * (y2 - y3) + s2 * (y3 - y1) + s3 * (y1 - y2)) / D;
+  const Uy = (s1 * (x3 - x2) + s2 * (x1 - x3) + s3 * (x2 - x1)) / D;
+  const circumcenter = [Ux, Uy];
+  const R = Math.hypot(Ux - x1, Uy - y1);
+  const orthocenter = [x1 + x2 + x3 - 2 * Ux, y1 + y2 + y3 - 2 * Uy];
+  return { ok: true, degenerate: false, centroid, incenter, circumcenter,
+           orthocenter, R, r, area, sides };
 }
 
 export function createExecutor(board) {
@@ -2284,6 +2348,7 @@ export function createExecutor(board) {
     if (kind === 'angle') return '∠' + (Array.isArray(d.of) ? d.of.join('') : '?');
     if (kind === 'evaluate') return 'evaluate(' + String(d.expr) + ',x=' + String(d.x) + ')';
     if (kind === 'vertex') return 'vertex(' + String((d && (d.id || d.expr || (Array.isArray(d.of) ? d.of[0] : null))) || '?') + ')';
+    if (kind === 'center') return 'center(' + (Array.isArray(d.of) ? d.of.join(',') : '?') + ')';
     return kind + '(' + (Array.isArray(d.of) ? d.of.join(',') : '') + ')';
   }
 
@@ -2357,9 +2422,42 @@ export function createExecutor(board) {
       + '; ' + extremum + '; a=' + A;
   }
 
+  /**
+   * 单条 center 读数（inspect 派生量 kind:"center"，本轮新增）：of:[A,B,C] 从 registry 读三点坐标
+   * （或 points:[[x,y],…] 直接给坐标），复用模块级纯函数 triangleCentersFromPts 闭式解四心。
+   * 把重心 / 外心+半径 / 垂心 / 内心+内切半径 / 面积一次回读，AI 直接落点、写进 verify 期望值，
+   * 不再心算（对标大角几何符号计算）。只读、不画图元、不进注册表；共线退化如实标注。
+   */
+  function centerReading(d) {
+    const usePts = Array.isArray(d && d.points);
+    const refs = Array.isArray(d && d.of) ? d.of : null;
+    let pts;
+    if (usePts) pts = d.points;
+    else if (refs) {
+      pts = refs.map((id) => {
+        const el = registry.get(String(id));
+        if (!el || typeof el.X !== 'function') return null;
+        return [el.X(), el.Y()];
+      });
+    } else return deriveName(d) + '=?需 of:[A,B,C] 或 points:[[x,y],…]';
+    let r;
+    try { r = triangleCentersFromPts(pts); }
+    catch (e) { return deriveName(d) + '=?' + (e && e.message ? e.message : '非法顶点'); }
+    const f = (p) => '(' + qfmt(p[0]) + ',' + qfmt(p[1]) + ')';
+    const src = usePts ? 'points' : refs.join(',');
+    let txt = 'center(' + src + '): 重心G' + f(r.centroid)
+      + '; 内心I' + f(r.incenter) + ' r=' + qfmt(r.r);
+    if (r.degenerate) txt += '; 面积≈0 三点共线，外心/垂心无意义';
+    else txt += '; 外心O' + f(r.circumcenter) + ' R=' + qfmt(r.R)
+        + '; 垂心H' + f(r.orthocenter) + '; 面积=' + qfmt(r.area);
+    return txt;
+  }
+
   /** 单条派生量求值 → "名字=数值+单位"；复用 measureValue（纯计算，不画读数、不进注册表）。 */
   function deriveReading(d) {
-    if (String((d && d.kind) || '').toLowerCase() === 'vertex') return vertexReading(d);
+    const kd = String((d && d.kind) || '').toLowerCase();
+    if (kd === 'vertex') return vertexReading(d);
+    if (kd === 'center') return centerReading(d);
     const m = measureValue(d);
     const v = Number.isFinite(m.value) ? m.value.toFixed(m.kind === 'angle' ? 1 : 3) : '?';
     return deriveName(d) + '=' + v + (m.unit || '');
@@ -2378,7 +2476,9 @@ export function createExecutor(board) {
     //   {"op":"inspect","kind":"distance","of":["A","H"]}                   顶层单条（简写）
     //   {"op":"inspect","derive":[{"kind":"angle","of":["A","H","B"]}, …]}   批量
     //   {"op":"inspect","id":"f1","x":2} / {"...","xs":[-1,0,2]}             查已注册函数在 x 处的值
-    //   {"op":"inspect","kind":"vertex","id":"f1"} / {"...","expr":"x^2-4x+1"}  二次函数符号化简（本轮新增，见 vertexReading）
+    //   {"op":"inspect","kind":"vertex","id":"f1"} / {"...","expr":"x^2-4x+1"}  二次函数符号化简（见 vertexReading）
+    //   {"op":"inspect","kind":"center","of":["A","B","C"]}  三角形四心符号计算（本轮新增，见 centerReading）：
+    //       一次回读重心/外心/垂心/内心坐标 + R/r/面积；也可 points:[[0,0],[3,0],[0,3]] 直接给三点
     // 单条失败只回 "xxx(?)"，绝不整批失败；旧命令（无 kind/derive/x/xs）行为逐字节不变。
     const derives = [];
     if (cmd.kind != null) derives.push(cmd);

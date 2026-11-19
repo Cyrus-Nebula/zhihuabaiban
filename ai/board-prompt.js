@@ -358,8 +358,20 @@
  * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
  *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ [本轮已完成] 含参不等式区域（例37 / 用例 87/88）；
  *   ⑤ 旋转体截面 few-shot；⑥ inequality 填充方向（inverse ↔ side）真实 JSXGraph 目视确认。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-19 第十五轮）：只追加 2D 作图主干逻辑，3D 命令分支整段零改动、
+ *   不动 appId/editor.html/js/board.js/js/board3d*，核心工作流 / 铁律 / 既有例1-37 逐字未动、无删除行。
+ *   落实连续多轮 TODO「符号计算」强项——给 inspect 派生量新增 kind:"center"（与 vertex 配方姊妹篇）：
+ *   AI 画三角形四心（重心/外心/垂心/内心）此前只能心算坐标，外接圆/欧拉线/角平分线交点极易抄错，
+ *   对标大角几何自研 DSL / 符号计算明显吃亏。本轮只追加：命令清单 inspect 段登记 center、「符号计算·
+ *   三角形四心」小节、例38 few-shot（直角三角形四心闭式解 + verify 自检），并明确"先建三点/先用
+ *   points 给坐标 / 共线退化不画外心 / 自检用 verify 核关系"四条约束。
+ *   配套 js/executor.js 的 triangleCentersFromPts 纯函数 + centerReading + derive 分支、docs 用例 89/90、
+ *   tests/board2d_center_spec.mjs 无头单测 + run-2d-specs.mjs 聚合入口。
+ * TODO(下一步): ① 自检状态条做成 AI 面板固定 DOM 徽标；② 收敛判定引入「残差改善量」；
+ *   ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 旋转体截面 few-shot；
+ *   ⑤ [本轮已完成] 三角形四心符号计算（例38 / 用例 89/90）；⑥ center 四心落点在真实 JSXGraph 上目视确认。
  */
-
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
 
 # 输出格式（硬性要求）
@@ -559,6 +571,13 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
     {"op":"inspect","derive":[{"kind":"vertex","of":["f1"]},{"kind":"distance","of":["A","B"]}]}  与数值派生量批量混查
   · vertex 是 inspect 专用派生量（measure / verify 不认这个 kind）：它回的是配方文本与顶点坐标，
     用来把顶点 / 对称轴 / 最值落成数字；核构造结果请照常用 verify kind:evaluate 写 expect（见例21）。
+  · 三角形四心 · 符号计算（本轮新增，见「符号计算 · 三角形四心」小节 / 例38）：
+    {"op":"inspect","kind":"center","of":["A","B","C"]}  读已画三点的四心 → 回「重心G(…); 内心I(…) r=…; 外心O(…) R=…; 垂心H(…); 面积=…」
+    {"op":"inspect","kind":"center","points":[[0,0],[6,0],[0,8]]}  直接给三点坐标算四心（还没画点也能查）
+    {"op":"inspect","derive":[{"kind":"center","of":["A","B","C"]},{"kind":"distance","of":["O","A"]}]}  与数值派生量批量混查
+  · center 是 inspect 专用派生量（measure / verify 不认这个 kind）：回的是四心坐标文本，用来把各心
+    精确落成 point 数字 / 外接圆用 circle 画；三点共线时外心/垂心记「无意义」，不要硬画；核构造结果
+    照常用 verify 关系断言（oncircle / perpendicular / collinear）写 expect（见例38）。
 - 画板自带坐标轴：引用 x 轴用 id "xaxis"、y 轴用 "yaxis"（如求函数与 x 轴靠左的交点：{"op":"intersect","id":"P1","of":["f1","xaxis"],"select":"left"}），不要自己画坐标轴。
 - 提醒：两圆相交、直线与圆相交、函数与直线相交往往有 2 个交点，只写一条 intersect 只画得出一个点，需要两个点就写两条并给出不同 select。
 
@@ -1393,6 +1412,44 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 // 要点：① 别手算采样点逐点 point + polygon（改用 inequality 一条命令）；② boundary 引用的线/函数 id 必须先建好（先创建后引用）；
 //   ③ side 写 上/下/左/右（或 inverse:true/false 精确控制，显式 inverse 优先），from/to/坐标写数字不写 "pi"/"a"；
 //   ④ inequality 可 style / remove / 进文档，describe() 回读 "inequality:y>x^2-4 side=above fill=#C62828"；⑤ 自检核边界函数 evaluate 值，别用 measure distance 量阴影本身；填充方向反了就 remove 后改 side/inverse 重发。
+
+# 符号计算 · 三角形四心（inspect kind:center，本轮新增）
+- 画三角形的重心 / 外心 / 垂心 / 内心，坐标都可由三个顶点解析算出（闭式解），不要自己心算或猜点：
+  重心 G=(A+B+C)/3；外心 O=两边中垂线交点（也是外接圆圆心，R=到任一顶点距离）；
+  垂心 H=A+B+C−2O（欧拉线 O、G、H 共线）；内心 I=(a·A+b·B+c·C)/(a+b+c)（a=|BC| 等对边边长，内切半径 r=2·面积/周长）。
+- 做法：先用 point 建好 A/B/C（或直接用状态快照里已有的三点 id）→ 发一条
+  {"op":"inspect","kind":"center","of":["A","B","C"]} → 收到【查询读数】后，把回读的四心精确坐标
+  直接写进 point / circle 命令，再用 verify 自检。两阶段回读的规矩照旧：第二轮别再发 inspect。
+- 铁律：① 三点用 of 引用时必须先建好（先创建后引用），也可 points:[[x,y],…] 直接给坐标数值；
+  ② 坐标一律数值化，别在 point 里写 "(A+B+C)/3" 这类表达式；③ 三点共线时外心/垂心「无意义」，
+  如实说明不画，别硬套公式；④ 自检核「关系」用 verify（oncircle 核外心到三顶点等距、perpendicular
+  核垂心与对边垂直、collinear 核欧拉线共线），别用 measure distance 去量不存在的目标。
+
+== 例38：三角形四心（重心/外心/垂心/内心，inspect kind:center 符号计算；易错：心算外接圆/欧拉线/角平分线交点抄错坐标） ==
+用户："画直角三角形 A(0,0) B(6,0) C(0,8)，标出重心、外心、垂心、内心，并画外接圆和内切圆。"
+第一轮：先建三点，发一条 center 查询（只读、不画图）：
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":6,"y":0}
+{"op":"point","id":"C","x":0,"y":8}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"inspect","kind":"center","of":["A","B","C"]}
+系统回【查询读数】：「center(A,B,C): 重心G(2,2.667); 内心I(2,2) r=2; 外心O(3,4) R=5; 垂心H(0,0); 面积=24」。
+第二轮：把精确读数落成图元 + verify 自检（直角三角形：外心=斜边中点、垂心=直角顶点、内心=(r,r)）：
+{"op":"point","id":"G","x":2,"y":2.667}                         // 重心（读数取三位小数）
+{"op":"point","id":"O","x":3,"y":4}                             // 外心=斜边 BC 中点
+{"op":"circle","id":"circ","center":"O","radius":5}            // 外接圆 R=5（读数）
+{"op":"point","id":"H","x":0,"y":0}                             // 垂心=直角顶点 A
+{"op":"point","id":"I","x":2,"y":2}                             // 内心 (r,r)，r=2
+{"op":"circle","id":"inc","center":"I","radius":2}             // 内切圆 r=2
+{"op":"verify","kind":"oncircle","of":["A","circ"],"expect":0,"tol":0.05,"label":"A 在外接圆上"}
+{"op":"verify","kind":"oncircle","of":["B","circ"],"expect":0,"tol":0.05,"label":"B 在外接圆上"}
+{"op":"verify","kind":"perpendicular","of":["A","H","B","C"],"expect":0,"tol":0.5,"label":"垂心在高上"}
+{"op":"verify","kind":"collinear","of":["O","G","H"],"expect":0,"tol":0.05,"label":"欧拉线共线"}
+// 变式：三点还没画也能算——{"op":"inspect","kind":"center","points":[[0,0],[6,0],[0,8]]}
+// 要点：① 四心坐标全部来自回读，不心算（直角三角形斜边中点/欧拉线/内心加权最易抄错）；
+//   ② 外接圆用 circle center=O radius=R，内切圆 radius=r，都写数字；③ 自检用 oncircle/perpendicular/
+//   collinear 关系断言，别用 measure distance 量半径（半径 R/r 已在读数里）；④ 三点共线时读数会提示
+//   「外心/垂心无意义」，此时只报重心与内心、不要画外接圆；⑤ center 是 inspect 专用，measure/verify 不认。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
