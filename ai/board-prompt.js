@@ -1892,3 +1892,40 @@ export const BOARD3D_REVOLVE_PROMPT = `
 - 与既有命令的区别：radial3d 是把**已有对象**绕轴复制成离散几份（对象不变形）；revolve3d 是把**一条母线**连续旋转成回转面（新生成线框）；polyhedron3d 是五种正多面体（直线棱 + 离散顶点，非回转）；add3d cylinder/cone/sphere 是内置封闭实体、参数固定。
 - 铁律：revolve3d 是 3D 命令；2D 的旋转 / 阵列 / 圆弧命令在本分支依旧不认识，不要输出。`;
 
+
+
+/* ============================================================ *
+ * 2026-11-19 D20 追加段：torus3d 圆环面 / 轮胎面（独立自主 3D 画板任务）
+ * 协作铁律：仅在本文件最末尾追加，上方 2D 主干 BOARD_SYSTEM_PROMPT 与全部
+ * 既有 3D 追加段（量测 / 回注标注 / transform / 批量 / duplicate / radial /
+ * mirror / grid / align 单轴 / helix / bezier / arc / polyhedron / align 多轴 /
+ * revolve）逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。本段新增 op 'torus3d'，
+ * 与 js/board3d-executor.js 的 D20 分支一致。拼在最末尾为短上下文裁剪保留尾部。
+ * ============================================================ */
+
+/** torus3d 圆环面提示词段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_TORUS_PROMPT_OPS = Object.freeze(['torus3d']);
+
+export const BOARD3D_TORUS_PROMPT = `
+
+# 补充：torus3d 圆环面 / 轮胎面（2026-11-19 追加）
+- 作用：给主圆半径 R 与管半径 r，生成标准**圆环面线框**（甜甜圈 / 轮胎 / 手镯），由经线圆（管截面圆）+ 纬线圈（绕轴的圆）构成。补齐内置图元（box/sphere/cylinder/cone/pyramid/prism/tetra/circle/polygon）没有圆环面的缺口。
+- 几何：R = 环心到管截面圆心的距离（主圆半径），r = 管截面圆半径；要求 R>0、r>0；环面落在垂直于 axis 的平面内，对称轴为 axis。
+- 格式：{"op":"torus3d","id":"ring","axis":"y","center":[0,0,0],"R":1.6,"r":0.6}
+  · axis 可选 'x'/'y'/'z'（默认 'y'，环面水平放置、对称轴竖直）；
+  · center 可选，环心整体平移 [x,y,z]（默认 [0,0,0]）；
+  · R 可选，主圆半径，正数（默认 1.6）；
+  · r 可选，管半径，正数（默认 0.6）；要更粗的环把 r 调大，要更细把 r 调小；
+  · majorSegments 可选，主角分段数（经线圆个数），整数 3~48（默认 24）；
+  · minorSegments 可选，管截面圆分段数（纬线圈个数），整数 3~24（默认 12）；
+  · asMeridians 可选，是否画经线圆（每个主角处的管截面圆，默认 true）；
+  · asRings 可选，是否画纬线圈（每个管角处绕轴的圆，默认 true）；
+  · asPoints 可选，是否在采样网格点放小球标记（默认 false）；
+  · color / opacity 可选，整条圆环面的样式。
+- 示例：
+  · 标准甜甜圈：{"op":"torus3d","R":2,"r":0.6}
+  · 竖立的环（像车轮）：{"op":"torus3d","axis":"x","R":1.8,"r":0.4,"center":[0,2,0]}
+  · 细线框 + 采样点：{"op":"torus3d","R":1.5,"r":0.5,"majorSegments":18,"minorSegments":8,"asPoints":true}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数；R 或 r ≤0 / 越界、分段数非整数或越界、段数总和超 4096、三种线/点开关全关、center 非法、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：revolve3d 是**任意母线**绕轴旋转的通用回转面（画圆环要手写一圈 [r,h] 采样点）；torus3d 是**标准圆环面**专用命令，只给 R/r 两个半径即可，是高层封装；radial3d 是把已有对象绕轴复制成离散几份（不生成连续曲面）；add3d 没有 torus 图元。
+- 铁律：torus3d 是 3D 命令；2D 的圆环 / 旋转命令在本分支依旧不认识，不要输出。`;

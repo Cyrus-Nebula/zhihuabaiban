@@ -200,6 +200,18 @@ async function send() {
         const sweep = m.closed ? '' : `、扫角 ${m.sweep}°`;
         appendLog('ai', `已生成旋转体（绕 ${axis} 轴，母线 ${m.profileCount || '?'} 点）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}${sweep}。`);
       }
+      // 2026-11-19 D20：torus3d 展示环心 / 对称轴 / 主圆半径 R / 管半径 r / 经线圆纬线圈与采样点（数值以画板返回为准）。
+      for (const tr of results) {
+        if (!tr.ok || tr.op !== 'torus3d') continue;
+        const m = tr.meta || {};
+        const axis = m.axis || '?';
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.meridianCount) parts.push(`${m.meridianCount} 经线圆`);
+        if (m.ringCount) parts.push(`${m.ringCount} 纬线圈`);
+        if (m.pointCount) parts.push(`${m.pointCount} 标记点`);
+        appendLog('ai', `已生成圆环面（绕 ${axis} 轴，主圆 R=${m.R != null ? m.R : '?'}、管半径 r=${m.r != null ? m.r : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
