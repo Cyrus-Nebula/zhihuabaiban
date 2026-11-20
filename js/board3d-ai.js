@@ -224,6 +224,18 @@ async function send() {
         if (m.pointCount) parts.push(`${m.pointCount} 标记点`);
         appendLog('ai', `已生成椭球（${axis} 轴，半轴 a=${m.a != null ? m.a : '?'}、b=${m.b != null ? m.b : '?'}、c=${m.c != null ? m.c : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-21 D22：capsule3d 展示对称轴 / 半径 / 两球心距 / 经线纬线圈与采样点（数值以画板返回为准）。
+      for (const cp of results) {
+        if (!cp.ok || cp.op !== 'capsule3d') continue;
+        const m = cp.meta || {};
+        const axis = m.axis || '?';
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.meridianCount) parts.push(`${m.meridianCount} 经线`);
+        if (m.ringCount) parts.push(`${m.ringCount} 纬线圈`);
+        if (m.pointCount) parts.push(`${m.pointCount} 标记点`);
+        appendLog('ai', `已生成胶囊体（${axis} 轴，半径 r=${m.radius != null ? m.radius : '?'}、两球心距 h=${m.length != null ? m.length : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

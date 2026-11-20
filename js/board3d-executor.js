@@ -27,6 +27,7 @@ import { resolvePolyhedron3D } from './board3d-polyhedron.js';
 import { resolveRevolve3D } from './board3d-revolve.js';
 import { resolveTorus3D } from './board3d-torus.js';
 import { resolveEllipsoid3D } from './board3d-ellipsoid.js';
+import { resolveCapsule3D } from './board3d-capsule.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -222,6 +223,22 @@ export const BOARD3D_ELLIPSOID_OPS = Object.freeze(['ellipsoid3d']);
 /** 含全部扩展命令的完整集（21 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE12_OPS = Object.freeze([
   ...BOARD3D_COMPLETE11_OPS, ...BOARD3D_ELLIPSOID_OPS,
+]);
+
+/**
+ * 2026-11-21 D22 增量：3D 胶囊体命令 capsule3d（语义在 js/board3d-capsule.js）。
+ * 半径 radius + 两球心距 length 生成胶囊面线框（经线 + 纬线圈 + 可选采样点），
+ * 补齐内置图元无胶囊体的缺口，与 ellipsoid3d（三轴椭球无直筒段）/ revolve3d
+ * （任意母线需手写）/ torus3d（有洞圆环面）互补。
+ * 单独成组、不并入任何历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 /
+ * COMPLETE2 11 / COMPLETE3 12 / COMPLETE4 13 / COMPLETE5 14 / COMPLETE6 15 /
+ * COMPLETE7 16 / COMPLETE8 17 / COMPLETE9 18 / COMPLETE10 19 / COMPLETE11 20 /
+ * COMPLETE12 21 条），按协作铁律保持逐字不变。
+ */
+export const BOARD3D_CAPSULE_OPS = Object.freeze(['capsule3d']);
+/** 含全部扩展命令的完整集（22 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE13_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE12_OPS, ...BOARD3D_CAPSULE_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -885,6 +902,35 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           let elState = {};
           try { elState = (a.getState ? a.getState() : {}) || {}; } catch (_) { elState = {}; }
           const r = resolveEllipsoid3D(cmd, elState);
+          if (!r.ok) {
+            results.push({ op, ok: false, error: r.error });
+            break;
+          }
+          const created = [];
+          const failed = [];
+          for (const item of r.items) {
+            if (known.has(item.id)) { failed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { failed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            created.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: failed.length === 0 && created.length > 0,
+            count: r.items.length, created, meta: r.meta,
+            ...(failed.length ? { failed } : {}),
+          });
+          break;
+        }
+        case 'capsule3d': {
+          // 2026-11-21 D22：3D 胶囊体，按 radius（半径）+ length（两球心距）参数方程采样生成
+          // 经线（纵向轮廓）+ 纬线圈（横截面圆）线框（可选采样点）。不需要源对象；从「当前」
+          // getState 读状态仅用于生成 id 时避让已有对象，getState 缺失 / 抛错降级为空场景，整批不中断；
+          // id 冲突分项失败、如实回报。
+          let cpState = {};
+          try { cpState = (a.getState ? a.getState() : {}) || {}; } catch (_) { cpState = {}; }
+          const r = resolveCapsule3D(cmd, cpState);
           if (!r.ok) {
             results.push({ op, ok: false, error: r.error });
             break;

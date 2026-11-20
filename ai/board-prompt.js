@@ -2141,3 +2141,39 @@ export const BOARD3D_ELLIPSOID_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数；a/b/c ≤0 或越界、分段数非整数或越界、段数总和超 4096、三种线/点开关全关、center 非法、id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：add3d sphere 只能画等半径球；revolve3d 需手写椭圆母线和只能表达两轴相等的旋转椭球；torus3d 是有洞的圆环面；ellipsoid3d 专用于三轴椭球，只给 a/b/c 即可，是标准二次曲面的高层封装。
 - 铁律：ellipsoid3d 是 3D 命令；2D 的椭圆 / 圆命令在本分支依旧不认识，不要输出。`;
+
+/* ============================================================
+ * 2026-11-21 D22 追加段：capsule3d 胶囊体（独立自主 3D 画板任务）
+ * 共享文件，按协作铁律仅在最末尾追加：上方 ellipsoid3d 段及此前一切内容
+ * 逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。本段新增 op 'capsule3d'，
+ * 与 js/board3d-executor.js 的 D22 分支一致。拼在最末尾为短上下文裁剪保留尾部。
+ * ============================================================ */
+
+/** capsule3d 胶囊体提示词段（仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾） */
+export const BOARD3D_CAPSULE_PROMPT_OPS = Object.freeze(['capsule3d']);
+
+export const BOARD3D_CAPSULE_PROMPT = `
+
+# 补充：capsule3d 胶囊体 / 药丸体（2026-11-21 追加）
+- 作用：给半径 radius 与两球心距 length，生成**胶囊面线框**（由纵向经线 + 横截面纬线圈构成），补齐内置图元（box/sphere/cylinder/cone/pyramid/prism/tetra 等）**没有胶囊体**的缺口。胶囊 = 一条长 length 的线段 ⊕ 半径 radius 的球，即「两端各接一个半球的圆柱」；length=0 时退化为半径 radius 的标准球。
+- 几何：对称轴为 axis 指定的坐标轴，radius>0、length≥0。
+- 格式：{"op":"capsule3d","id":"cap","axis":"y","center":[0,0,0],"radius":0.5,"length":2}
+  · axis 可选 'x'/'y'/'z'（默认 'y'，竖直胶囊）；
+  · center 可选，胶囊中心（两球心中点）整体平移 [x,y,z]（默认 [0,0,0]）；
+  · radius 可选，胶囊半径，正数（默认 0.5）；
+  · length 可选，两球心距（即直筒段长度），≥0（默认 2；0 时是球）；
+  · meridians 可选，经线（纵向轮廓）条数，整数 3~48（默认 12）；
+  · rings 可选，纬线圈（横截面圆）条数，整数 2~32（默认 8，不含两极）；
+  · segments 可选，每条线的分段数，整数 3~64（默认 24）；
+  · asMeridians 可选，是否画经线（默认 true）；
+  · asRings 可选，是否画纬线圈（默认 true）；
+  · asPoints 可选，是否在采样点（含两极）放小球标记（默认 false）；
+  · color / opacity 可选，整条胶囊的样式。
+- 示例：
+  · 标准药丸（竖直）：{"op":"capsule3d","radius":0.5,"length":2}
+  · 横躺胶囊（轴 x）+ 平移：{"op":"capsule3d","axis":"x","radius":0.6,"length":3,"center":[0,2,0]}
+  · 细线框 + 采样点：{"op":"capsule3d","radius":0.4,"length":1.5,"meridians":8,"rings":5,"asPoints":true}
+  · 球（length=0）：{"op":"capsule3d","radius":1.5,"length":0}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数；radius≤0 或越界、length<0 或越界、分段数非整数或越界、段数总和超 4096、三种线/点开关全关、center 非法、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：revolve3d 画胶囊需手写「矩形 + 两端 1/4 圆弧」的一整圈母线；ellipsoid3d 是三轴椭球、没有直筒段；torus3d 是有洞圆环面；capsule3d 只需 radius/length 两参数即可生成胶囊面线框，是标准回转体「线段 ⊕ 球」的高层封装。
+- 铁律：capsule3d 是 3D 命令；2D 的胶囊 / 圆角矩形命令在本分支依旧不认识，不要输出。`;
