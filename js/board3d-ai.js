@@ -260,6 +260,21 @@ async function send() {
         if (m.labelCount) parts.push(`${m.labelCount} 顶点标注`);
         appendLog('ai', `已生成棱柱（${m.vertexCount != null ? m.vertexCount : '?'} 边形底面，拉伸向量 [${m.vector && m.vector.length ? m.vector.join(',') : '?'}、高度 ${m.height != null ? m.height : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-22 D25：pyramid3d 展示底面顶点数 / 顶点与抬升方式 / 底面侧棱与顶点标注（数值以画板返回为准）。
+      for (const py of results) {
+        if (!py.ok || py.op !== 'pyramid3d') continue;
+        const m = py.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.baseEdgeCount) parts.push(`${m.baseEdgeCount} 底边`);
+        if (m.sideEdgeCount) parts.push(`${m.sideEdgeCount} 侧棱`);
+        if (m.pointCount) parts.push(`${m.pointCount} 顶点球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 顶点标注`);
+        const apexDesc = m.apexMode === 'explicit'
+          ? `显式顶点 [${m.apex && m.apex.length ? m.apex.join(',') : '?'}]`
+          : `质心沿 ${m.axis || '?'} 抬升 ${m.height != null ? m.height : '?'}`;
+        appendLog('ai', `已生成棱锥（${m.vertexCount != null ? m.vertexCount : '?'} 边形底面，${apexDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

@@ -30,6 +30,7 @@ import { resolveEllipsoid3D } from './board3d-ellipsoid.js';
 import { resolveCapsule3D } from './board3d-capsule.js';
 import { resolveTube3D } from './board3d-tube.js';
 import { resolvePrism3D } from './board3d-prism.js';
+import { resolvePyramid3D } from './board3d-pyramid.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -272,6 +273,18 @@ export const BOARD3D_PRISM_OPS = Object.freeze(['prism3d']);
 /** 含全部扩展命令的完整集（24 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE15_OPS = Object.freeze([
   ...BOARD3D_COMPLETE14_OPS, ...BOARD3D_PRISM_OPS,
+]);
+
+// 2026-11-22 D25：pyramid3d 通用棱锥 / 斜棱锥，给底面顶点 base + 顶点 apex（或 axis+height）
+// 生成底面 + 侧棱线框（可选顶点球与顶点标注）。单独成组、不并入任何历史契约常量
+// （BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 / COMPLETE2 11 / COMPLETE3 12 /
+// COMPLETE4 13 / COMPLETE5 14 / COMPLETE6 15 / COMPLETE7 16 / COMPLETE8 17 /
+// COMPLETE9 18 / COMPLETE10 19 / COMPLETE11 20 / COMPLETE12 21 / COMPLETE13 22 /
+// COMPLETE14 23 / COMPLETE15 24 条），按协作铁律逐字不变。
+export const BOARD3D_PYRAMID_OPS = Object.freeze(['pyramid3d']);
+/** 含全部扩展命令的完整集（25 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE16_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE15_OPS, ...BOARD3D_PYRAMID_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1022,6 +1035,35 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           let prState = {};
           try { prState = (a.getState ? a.getState() : {}) || {}; } catch (_) { prState = {}; }
           const r = resolvePrism3D(cmd, prState);
+          if (!r.ok) {
+            results.push({ op, ok: false, error: r.error });
+            break;
+          }
+          const created = [];
+          const failed = [];
+          for (const item of r.items) {
+            if (known.has(item.id)) { failed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { failed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            created.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: failed.length === 0 && created.length > 0,
+            count: r.items.length, created, meta: r.meta,
+            ...(failed.length ? { failed } : {}),
+          });
+          break;
+        }
+        case 'pyramid3d': {
+          // 2026-11-22 D25：3D 通用棱锥，给底面顶点 base + 顶点 apex（或 axis+height），
+          // 生成底面 + 侧棱线框（可选顶点球与顶点标注）。不需要源对象；从「当前」
+          // getState 读状态仅用于生成 id 时避让已有对象，getState 缺失 / 抛错降级为空场景，
+          // 整批不中断；id 冲突分项失败、如实回报。
+          let pyState = {};
+          try { pyState = (a.getState ? a.getState() : {}) || {}; } catch (_) { pyState = {}; }
+          const r = resolvePyramid3D(cmd, pyState);
           if (!r.ok) {
             results.push({ op, ok: false, error: r.error });
             break;

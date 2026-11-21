@@ -2273,3 +2273,29 @@ export const BOARD3D_PRISM_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数；base 点数不在 3~32 或含非法点、vector/height/axis/id 非法、vertexSize 越界、五个输出开关全关 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：add3d 内置 prism 是正多边形直棱柱（无任意底面、无斜拉）；polyhedron3d 是五种柏拉图立体；revolve3d/torus3d/ellipsoid3d/capsule3d/tube3d 都是回转 / 曲面体。prism3d 专用于「任意底面 + 直/斜拉伸」的柱体。
 - 铁律：prism3d 是 3D 命令；2D 的棱柱 / 多边形命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-22 D25 追加段：pyramid3d 通用棱锥 / 斜棱锥（独立自主 3D 画板任务）
+ * 上方 PRISM 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'pyramid3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** pyramid3d 通用棱锥提示词段 */
+export const BOARD3D_PYRAMID_PROMPT_OPS = Object.freeze(['pyramid3d']);
+export const BOARD3D_PYRAMID_PROMPT = `
+# 补充：pyramid3d 通用棱锥 / 斜棱锥（2026-11-22 追加）
+- 用途：给任意底面多边形 + 顶点画棱锥 / 三棱锥 / 四棱锥 / 五棱锥 / 斜棱锥并标注顶点。内置 pyramid 只能画「正四棱锥」（s+h、底面顶点自动均布、顶点恒在底面中心正上方沿 y 轴），无法画给定底面顶点、无法画三棱锥/五棱锥、也无法画顶点偏离中心的斜棱锥；pyramid3d 补齐这一缺口，与 prism3d（棱柱）互补。
+- 命令格式：{"op":"pyramid3d","id":"pyr","base":[[-1,-1,0],[1,-1,0],[1,1,0],[-1,1,0]],"apex":[0,0,3],"asBase":true,"asSides":true,"asVertices":false,"labelVertices":true,"vertexSize":0.1}
+  · base：底面顶点 [[x,y,z],...]，3~32 个（默认 z=0 平面边长 2 的正方形）。顶点按给定顺序首尾相连成闭合多边形，应给简单（不自交）多边形。
+  · apex：顶点 [x,y,z]，给它则忽略 axis/height；顶点不在底面质心正上方即斜棱锥。
+  · axis / height：不给 apex 时，顶点 = 底面质心沿 axis 抬升 height（axis 默认 'z' 可 x/y/z，height 默认 3，0~10000），即正棱锥。
+  · asBase / asSides：是否画底面闭合线 / 侧棱（均默认 true，侧棱 = 每个底点连 apex）。
+  · asVertices：是否在 n+1 个顶点（含 apex）放小球标记（默认 false）。labelVertices：是否在 n+1 个顶点放标注（默认 false），底面 A/B/C…，顶点 S（棱锥 S-ABCD 惯例），正服务「标注顶点」用例。
+  · vertexSize：顶点球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。四个输出开关至少开一个。
+- 示例：
+  · 正四棱锥 + 标顶点：{"op":"pyramid3d","id":"pyr","labelVertices":true}
+  · 三棱锥 S-ABC（底面质心沿 z 抬升 3）：{"op":"pyramid3d","base":[[0,0,0],[2,0,0],[1,1.732,0]],"height":3}
+  · 斜四棱锥（顶点偏离底面中心）：{"op":"pyramid3d","base":[[0,0,0],[2,0,0],[2,2,0],[0,2,0]],"apex":[3,1,4]}
+  · 只要侧棱线框 + 顶点球：{"op":"pyramid3d","base":[[0,0,0],[1,0,0],[1,1,0]],"apex":[0,0,2],"asBase":false,"asVertices":true}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数；base 点数不在 3~32 或含非法点、apex/height/axis/id 非法、vertexSize 越界、四个输出开关全关 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：add3d 内置 pyramid 是正四棱锥（无任意底面、无斜顶点）；prism3d 是底面 + 拉伸向量的柱体（顶面全等）；polyhedron3d 是五种柏拉图立体；revolve3d/torus3d/ellipsoid3d/capsule3d/tube3d 是回转 / 曲面体。pyramid3d 专用于「任意底面 + 单顶点」的锥体。
+- 铁律：pyramid3d 是 3D 命令；2D 的棱锥 / 多边形命令在本分支依旧不认识，不要输出。`;
