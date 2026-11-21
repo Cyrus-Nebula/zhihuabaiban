@@ -1,11 +1,11 @@
 /**
- * 路线B · 免费 AI 后端核心（Pages Function / 本地 Node 代理共用）
+ * 路线B · 普惠 AI 后端核心（Pages Function / 本地 Node 代理共用）
  *
  * 与 ai/ai-backend.js（路线A的 SSE 翻译层）相互独立，互不影响。
  *
  * 流程：
  *   1. 接收画板页发来的 {message, context, history, model?, image?}
- *   2. 调用任意免费 LLM（默认智谱 GLM-4.7-Flash，OpenAI 兼容协议）
+ *   2. 调用任意当前 LLM（默认智谱 GLM-4.7-Flash，OpenAI 兼容协议）
  *   3. 从回复中提取 {"message": "...", "commands": [...]}（多层容错：围栏/裸JSON/
  *      多候选/截断修复/命令级打捞，模型输出不完整也尽量救回已完成部分）
  *   4. 返回 {ok, message, commands}
@@ -16,7 +16,7 @@
  *
  * 环境变量：
  *   LLM_BASE_URL  默认 https://open.bigmodel.cn/api/paas/v4
- *   LLM_API_KEY   免费 LLM 的 Key（只放服务端）
+ *   LLM_API_KEY   当前 LLM 的 Key（只放服务端）
  *   LLM_MODEL     默认 glm-4.7-flash
  */
 
@@ -38,7 +38,7 @@ const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
 const MAX_IMAGE_CHARS = 7 * 1024 * 1024;
 
 /* ---------- 短上下文模型输入预算 ---------- */
-// 少数免费模型（GLM-4V-Flash 16K）会被 2D 系统提示词撑爆，上游报
+// 少数可用模型（GLM-4V-Flash 16K）会被 2D 系统提示词撑爆，上游报
 // "inputs tokens + max_new_tokens must be <= 16384"。按中文约 1.9 字符/token 估算，
 // 留 2048 tokens 给输出与余量；超限时保留系统提示词头尾（输出格式/命令协议在头部，
 // 图片规则/对话式修改在尾部），省略中间示例与细则。
@@ -272,7 +272,7 @@ export async function handleBoardAi(request, env) {
   };
 
   if (!cfg.apiKey) {
-    return json({ ok: false, error: 'LLM_API_KEY 未配置：请在部署环境变量中填入免费 LLM 的 Key（智谱/GLM、Gemini 等）' }, 500);
+    return json({ ok: false, error: 'LLM_API_KEY 未配置：请在部署环境变量中填入当前 LLM 的 Key（智谱/GLM、Gemini 等）' }, 500);
   }
 
   const message = String(payload.message || '').trim();
@@ -378,10 +378,10 @@ export async function handleBoardAi(request, env) {
 
   const raw = await upstream.text().catch(() => '');
   if (!upstream.ok) {
-    // 429 是免费档的常见限流（并发 1），给用户可操作的提示而不是原始 JSON
+    // 429 是当前档位的常见限流（并发 1），给用户可操作的提示而不是原始 JSON
     if (upstream.status === 429) {
       console.error('LLM 429 限流：', raw.slice(0, 200));
-      return json({ ok: false, error: 'AI 当前访问量过大（免费档限流），请稍等十几秒重试，或在面板上方切换其他模型' }, 200);
+      return json({ ok: false, error: 'AI 当前访问量过大（当前档位限流），请稍等十几秒重试，或在面板上方切换其他模型' }, 200);
     }
     return json({ ok: false, error: `LLM ${upstream.status}: ${raw.slice(0, 300)}` }, 200);
   }

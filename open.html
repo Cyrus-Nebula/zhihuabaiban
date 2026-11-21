@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="ui-v2 ui-v3">
 <head>
+  <link rel="stylesheet" href="/css/app.css?v=v4a" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>开放平台 · 智绘几何（开源与自部署）</title>
@@ -8,7 +9,8 @@
   <meta name="theme-color" content="#6549d5" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=n1" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/manrope@5/index.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/manrope@5/index.min.css" media="print" onload="this.media='all'" />
+  <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/manrope@5/index.min.css" /></noscript>
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/unslop.css" />
   <link rel="stylesheet" href="css/site-improve.css" />
@@ -80,5 +82,6 @@
   </footer>
 
   <!-- 纯静态说明页：无登录 / 新建 / 帮助等交互，故不引入任何脚本 -->
+<script src="/js/page-shell.js" defer></script>
 </body>
 </html>

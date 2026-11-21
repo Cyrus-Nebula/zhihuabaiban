@@ -1,5 +1,5 @@
 /**
- * 免费「生成模型」后端核心（Pages Function / 本地 Node 代理共用）
+ * 普惠「生成模型」后端核心（Pages Function / 本地 Node 代理共用）
  *
  * 与 ai/ai-backend.js（路线A SSE）、ai/board-backend.js（路线B JSON）并列，
  * 互不依赖，不改动作图链路的任何一行。
@@ -15,7 +15,7 @@
  *   { action:'query',  model, taskId }         -> 查询异步结果
  *
  * 环境变量：
- *   LLM_API_KEY          必填，与对话链路共用的智谱免费 Key
+ *   LLM_API_KEY          必填，与对话链路共用的智谱当前 Key
  *   GENERATION_BASE_URL  可选，覆盖生成端点前缀
  *
  * 注意：生成链路**不复用 LLM_BASE_URL**。对话链路可能被配成 Gemini 兼容端点或
@@ -41,7 +41,7 @@ function json(obj, status = 200) {
 
 /** 上游错误转成人话，不把原始 JSON 丢给前端 */
 function friendlyError(status, raw) {
-  if (status === 429) return 'AI 当前访问量过大（免费档限流），请稍等十几秒再试';
+  if (status === 429) return 'AI 当前访问量过大，请稍后再试，或切换其他模型';
   if (status === 401 || status === 403) return 'API Key 无效或没有该模型权限，请检查部署环境变量';
   let msg = '';
   try {
@@ -137,7 +137,7 @@ export async function handleGenerate(request, env) {
   if (!apiKey) {
     return json({
       ok: false,
-      error: 'LLM_API_KEY 未配置：请在部署环境变量中填入智谱免费 Key（生成模型与作图模型共用同一个 Key）',
+      error: 'LLM_API_KEY 未配置：请在部署环境变量中填入智谱当前 Key（生成模型与作图模型共用同一个 Key）',
     }, 500);
   }
 

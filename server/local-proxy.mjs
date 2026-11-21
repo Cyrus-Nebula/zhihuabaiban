@@ -1,14 +1,14 @@
 /**
- * 本地 AI 代理（零依赖，Node.js 18+）——免费 LLM 版
+ * 本地 AI 代理（零依赖，Node.js 18+）——当前 LLM 版
  *
  * 运行：
  *   LLM_API_KEY=你的key node server/local-proxy.mjs
  * 可选：LLM_BASE_URL / GENERATION_BASE_URL / LLM_MODEL / PORT（默认 8787）
  *
- * 免费 LLM 示例：
- *   智谱 GLM-4.7-Flash（默认，免费，200K 上下文）:
+ * 当前 LLM 示例：
+ *   智谱 GLM-4.7-Flash（默认，普惠，200K 上下文）:
  *     LLM_API_KEY=xxx node server/local-proxy.mjs
- *   Google Gemini（免费档）:
+ *   Google Gemini（当前档位）:
  *     LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/ \
  *     LLM_MODEL=gemini-2.5-flash LLM_API_KEY=xxx node server/local-proxy.mjs
  *   生成模型（CogView / CogVideoX）另配前缀：
@@ -18,7 +18,7 @@
  * 对话模型 7 款：glm-4.7-flash / glm-4.5-flash / glm-4-flash-250414 /
  * glm-4-flash / glm-4.6v-flash / glm-4.1v-thinking-flash / glm-4v-flash，
  * 其中带 V 的 3 款支持图片输入；生成模型 2 款：cogview-3-flash / cogvideox-flash。
- * 全部智谱普惠免费档，一个 Key 通用。
+ * 全部智谱普惠当前档位，一个 Key 通用。
  *
  * 静态页另起一个端口：
  *   python3 -m http.server 8000
@@ -99,7 +99,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[local-proxy] 免费 AI 代理已启动: http://localhost:${PORT}`);
+  console.log(`[local-proxy] 普惠 AI 代理已启动: http://localhost:${PORT}`);
   console.log(`[local-proxy] 路线A(SDK编辑器): POST /api/ai/run`);
   console.log(`[local-proxy] 路线B(自建画板):  POST /api/ai/board`);
   console.log(`[local-proxy] 生成模型(文生图/视频): POST /api/ai/generate`);

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="ui-v2 ui-v3">
 <head>
+  <link rel="stylesheet" href="/css/app.css?v=v4a" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>立体画板 · 智绘几何</title>
@@ -58,8 +59,26 @@
       .b3d-view-presets button { padding: 6px 8px; font-size: 11px; }
     }
   </style>
+  <style>
+    /* v4：图元分组与移动端抽屉 */
+    .b3d-palette-group-title {
+      margin: 10px 0 4px; padding-top: 8px; border-top: 1px solid #e9e3f7;
+      font-size: 11px; color: #8b849c; letter-spacing: .04em;
+    }
+    .b3d-palette-toggle { display: none; }
+    @media (max-width: 860px) {
+      .b3d-palette-toggle { display: inline-flex; }
+      .board3d-main .b3d-palette {
+        position: absolute; z-index: 30; left: 8px; top: 50px; bottom: 8px;
+        width: 190px; transform: translateX(-110%); transition: transform .2s ease;
+        box-shadow: 0 12px 36px rgba(24,26,52,.18);
+      }
+      .board3d-main.palette-open .b3d-palette { transform: translateX(0); }
+    }
+  </style>
 </head>
 <body class="board3d-page">
+  <h1 class="sr-only">智绘几何 · 立体几何画板</h1>
   <!-- 登录墙：未登录时覆盖整个画板页，登录后自动消失（见页脚网关脚本） -->
   <div class="login-wall" id="loginWall">
     <div class="login-wall-card">
@@ -101,6 +120,7 @@
         <div class="settings-note">设置自动保存在本机浏览器</div>
       </div>
     </div>
+    <button id="btn-palette-toggle" class="btn b3d-palette-toggle" type="button" aria-expanded="false" title="展开图元面板">▦ 图元</button>
     <button id="btn-ai3d" class="btn" type="button" title="用自然语言生成立体几何（AI 3D 命令集）">✦ AI 生成</button>
     <button id="btn-reset-view" class="btn" type="button" title="重置视角">⟳ 视角</button>
     <button id="btn-export" class="btn" type="button" title="导出工程文件（.json）">导出</button>
@@ -125,6 +145,14 @@
       <button class="b3d-shape" data-shape="circle" type="button">圆面</button>
       <button class="b3d-shape" data-shape="polygon" type="button">多边形</button>
       <button class="b3d-shape" data-shape="label" type="button">标注</button>
+      <div class="b3d-palette-group-title">进阶图元</div>
+      <button class="b3d-shape" data-cmd="torus" type="button" title="插入标准圆环面示例命令">圆环面</button>
+      <button class="b3d-shape" data-cmd="capsule" type="button" title="插入胶囊体示例命令">胶囊体</button>
+      <button class="b3d-shape" data-cmd="ellipsoid" type="button" title="插入三轴椭球示例命令">椭球</button>
+      <button class="b3d-shape" data-cmd="polyhedron" type="button" title="插入正多面体示例命令">正多面体</button>
+      <button class="b3d-shape" data-cmd="revolve" type="button" title="插入旋转体示例命令">旋转体</button>
+      <button class="b3d-shape" data-cmd="helix" type="button" title="插入空间螺旋线示例命令">螺旋线</button>
+      <button class="b3d-shape" data-cmd="arc" type="button" title="插入空间圆弧示例命令">圆弧</button>
       <div class="b3d-palette-tip">点击添加 · 拖拽旋转 · 滚轮缩放</div>
     </aside>
 
@@ -226,6 +254,8 @@
   <script type="module" src="js/board3d.js"></script>
   <!-- 3D AI 面板逻辑：import 同一个 board3d.js 模块实例，共享 board3dApi，不重复初始化 -->
   <script type="module" src="js/board3d-ai.js"></script>
-  <script src="js/site-improve.js"></script>
+  <script type="module" src="js/board3d-v4.js"></script>
+  <script src="js/site-improve.js" defer></script>
+  <script src="/js/page-shell.js" defer></script>
 </body>
 </html>

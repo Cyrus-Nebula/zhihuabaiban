@@ -1,6 +1,8 @@
 :root{
-  --brand:#3E44D9; --primary:#1677FF; --ink:#151A24; --muted:#6B7280;
-  --line:#E6EAF1; --bg:#F7F9FC; --card:#FFFFFF; --radius:14px;
+  --brand:var(--app-brand,#6549d5); --primary:var(--app-primary,#6549d5);
+  --ink:var(--app-ink,#1b1730); --muted:var(--app-muted,#6b6480);
+  --line:var(--app-line,#e9e3f7); --bg:var(--app-bg,#faf8ff);
+  --card:var(--app-surface,#ffffff); --radius:var(--app-radius,16px);
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}

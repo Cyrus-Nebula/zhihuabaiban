@@ -32,9 +32,9 @@
 
 | 位置 | 原措辞 | 真实依据 | 校正后 |
 |---|---|---|---|
-| 首屏 note | 不用注册 | `js/landing.js` 的 `Auth.requireLogin(heroAiGenerate)`；`board.html` / `board3d.html` 全屏 `.login-wall` | 免费账号登录 |
-| 深蓝本机区 | 没有账号也能画 / 不上传到服务器 | 登录墙；`js/site-improve.js` 的「保存并同步」闸门：本地自动保存，云端只在点击后上传 | 登录免费账号后即可作图；同步由你决定 |
-| 对比表 ① | 可以，直接画 | 新建 / 打开画板 / 模板均经 `Auth.requireLogin`（`js/workbench.js`、`js/landing.js`） | 也要登录：免费账号，画板页有登录墙 |
+| 首屏 note | 不用注册 | `js/landing.js` 的 `Auth.requireLogin(heroAiGenerate)`；`board.html` / `board3d.html` 全屏 `.login-wall` | 账号登录 |
+| 深蓝本机区 | 没有账号也能画 / 不上传到服务器 | 登录墙；`js/site-improve.js` 的「保存并同步」闸门：本地自动保存，云端只在点击后上传 | 登录账号后即可作图；同步由你决定 |
+| 对比表 ① | 可以，直接画 | 新建 / 打开画板 / 模板均经 `Auth.requireLogin`（`js/workbench.js`、`js/landing.js`） | 也要登录：账号，画板页有登录墙 |
 | 对比表 ② | 每个点、线都是对象 | `js/board.js`：`doc = {name, commands, moves}` 存 localStorage；导出 / 导入 JSON 重放命令；PNG / SVG 为定稿图片 | 工程可继续编辑，导出 JSON 可再导入 |
 | 对比表 ③ | 黑白试题图，一步导出 | `board.html` 的 `btn-export-bw-png` / `btn-export-bw-svg`，只导出图形、不含题文 | 黑白试题图 PNG / SVG 一键导出，题文另排 |
 | 对比表 ④ | 本机浏览器，可选同步 | localStorage + 登录后 `Auth.syncBoard`（`site-improve.js` 手动触发） | 本机 localStorage，登录后可手动同步 |
@@ -172,9 +172,9 @@
 4. 汉堡菜单开合、Esc 关闭、滚动高亮正常
 5. `prefers-reduced-motion` 下内容直接可见
 
-## 决策记录 · 免费模型全接入（2026-11-14）
+## 决策记录 · 可用模型全接入（2026-11-14）
 
-- **目标**：智谱普惠免费档全部 8 款模型在站点内可调用；原有的 `glm-4-flash` 继续保留兼容，合计 9 款。
+- **目标**：智谱普惠档位全部 8 款模型在站点内可调用；原有的 `glm-4-flash` 继续保留兼容，合计 9 款。
 - **分类是硬约束，不是偏好**：`glm-4.7-flash` / `glm-4.5-flash` / `glm-4-flash-250414` / `glm-4-flash` / `glm-4.6v-flash` / `glm-4.1v-thinking-flash` / `glm-4v-flash` 走 `/chat/completions`；`cogview-3-flash` 走 `/images/generations`，`cogvideox-flash` 走 `/videos/generations` 且必须经 `/async-result/{id}` 轮询。**生成模型不进作图下拉框**——端点与返回结构都不同，混用必然报错。
 - **单一事实源**：`ai/models.js` 导出 `FREE_MODELS`（对话）+ `GENERATION_MODELS`（生成）与两类 `resolve*()`；`js/models.js` 只做前端镜像，并另挂 `window.DAJIAO_GENERATION_MODELS`。后端三条链路 `/api/ai/run`、`/api/ai/board`、`/api/ai/generate` 都从同一份白名单校验，非法 id 不静默生效。
 - **新增链路不改旧链路**：`ai/generate-backend.js` 与既有 `ai-backend.js` / `board-backend.js` 并列、零 import 交叉；`ai/board-backend.js` 与 `board.html` 仅把写死单一视觉模型名的两句提示改为「名称里带视觉」，其余逻辑逐字不动。
@@ -182,4 +182,4 @@
 - **密钥与错误**：`LLM_API_KEY` 只在服务端环境变量或本地代理使用，与作图链路共用；`GENERATION_BASE_URL` 可单独覆盖生成端点前缀。429 / 401 / 403 转成中文可操作提示，上游原始 JSON 不返回浏览器（错误里的 `upstreamPath` 只含路径用于排障）。
 - **生成前缀独立**：首轮真实上游调用发现生成端点返回 405，根因是复用了 `LLM_BASE_URL`（线上该值可能是中转前缀，只放行 `/chat/completions`）。改为固定 `https://open.bigmodel.cn/api/paas/v4`，**不受 `LLM_BASE_URL` 影响**；沙箱直连验证 `/images/generations`、`/videos/generations` 均为已注册路径（401 鉴权错误而非 405）。
 - **短上下文模型**：真实调用 `glm-4v-flash` 报 `inputs tokens + max_new_tokens <= 16384`（2D 系统提示词 32413 字符）。在 `ai/models.js` 标 `maxInputTokens: 16384`，`ai/board-backend.js` 按中文约 1.9 字符/token 估算预算，只对该模型裁剪系统提示词头尾、把 context 压到 800 字符、显式 `max_tokens: 1024`；其余 6 款零改动。
-- **并发**：免费档并发 1，视频采用 5 秒间隔轮询、最多 60 次，前端用递增序号隔离旧轮询，切换模型或重新生成不会串结果。
+- **并发**：当前档位并发 1，视频采用 5 秒间隔轮询、最多 60 次，前端用递增序号隔离旧轮询，切换模型或重新生成不会串结果。

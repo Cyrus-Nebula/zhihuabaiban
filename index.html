@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="ui-v2 ui-v3">
 <head>
+  <link rel="stylesheet" href="/css/app.css?v=v4a" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>智绘几何 · 让数学可视化变得简单</title>
@@ -14,7 +15,8 @@
   <meta property="og:url" content="https://geora.de5.net/" />
   <meta name="twitter:card" content="summary" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/manrope@5/index.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/manrope@5/index.min.css" media="print" onload="this.media='all'" />
+  <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/manrope@5/index.min.css" /></noscript>
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/unslop.css" />
   <link rel="stylesheet" href="css/site-improve.css" />
@@ -61,7 +63,7 @@
       <span class="deco deco-dot"></span>
     </div>
     <div class="hero-copy">
-      <h1 class="hero-title">Geora<br><span class="hl">智绘几何</span></h1>
+      <h1 class="hero-title"><span class="sr-only">智绘几何 · 在线几何画板与出卷工具</span><span aria-hidden="true">Geora<br><span class="hl">智绘几何</span></span></h1>
       <p class="hero-sub">说一句话让 AI 画，或用 16 种工具自己作。拖动顶点，边长和角度实时变；画完直接导出试卷图、TikZ 或离线课件。</p>
 
       <div class="hero-cta">
@@ -157,7 +159,7 @@
       <div class="v3-stat"><b>16</b><span>种作图工具</span></div>
       <div class="v3-stat"><b>8</b><span>种导出格式</span></div>
       <div class="v3-stat"><b>6</b><span>个课堂模板</span></div>
-      <div class="v3-stat"><b>0</b><span>个文件上传</span></div>
+      <div class="v3-stat"><b>0</b><span>个文件上传<em>默认不上传，登录后才同步</em></span></div>
     </div>
   </section>
 
@@ -197,6 +199,22 @@
           <div class="foot"><a href="#about">看导出格式 →</a></div>
           <div class="fig" aria-hidden="true"><svg viewBox="0 0 150 110" fill="none" stroke="#002B66" stroke-width="1.4"><path d="M16 84C40 84 46 30 72 30s34 54 62 54"/><path d="M16 84h134M16 20v64" stroke-opacity=".35"/></svg></div>
         </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- v4：新能力入口 -->
+  <section class="v4-newbar" aria-label="新能力">
+    <div class="v4-newbar-in">
+      <div>
+        <h2>最近新增的能力</h2>
+        <p>AI 查询、3D 图元面板、导出预设已经上线，不用再靠猜命令。</p>
+      </div>
+      <div class="v4-newbar-links">
+        <a href="/board.html">AI 作图 / 查询 →</a>
+        <a href="/board3d.html">3D 图元面板 →</a>
+        <a href="/quickstart.html">AI 能做什么 →</a>
+        <a href="/about.html#updates">更新记录 →</a>
       </div>
     </div>
   </section>
@@ -296,6 +314,7 @@
   <script src="js/auth.js"></script>
   <script src="js/workbench.js"></script>
   <script src="js/landing.js"></script>
-  <script src="js/site-improve.js"></script>
+  <script src="js/site-improve.js" defer></script>
+  <script src="js/page-shell.js" defer></script>
 </body>
 </html>

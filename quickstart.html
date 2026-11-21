@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <link rel="stylesheet" href="/css/app.css?v=v4a" />
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>快速入门 · 智绘几何</title>
@@ -25,10 +26,20 @@
   <h1>快速入门</h1>
   <p class="sub">四步开始用智绘几何上课、出卷。</p>
   <div class="steps">
-    <div class="step"><span class="step-no">1</span><h3>描述需求，AI 作图</h3><p>在首页或画板右侧用自然语言描述，AI 直接生成可拖拽的动态图形。</p></div>
-    <div class="step"><span class="step-no">2</span><h3>工具手动作图</h3><p>点、线段、直线、圆、多边形、函数曲线一应俱全，几何关系自动保持。</p></div>
-    <div class="step"><span class="step-no">3</span><h3>拖拽探索</h3><p>拖动顶点观察图形变化，在动态演示中验证定理与猜想。</p></div>
-    <div class="step"><span class="step-no">4</span><h3>保存与导出</h3><p>文件只存在本机浏览器，可导出 .json 工程备份或 PNG 图片。</p></div>
+    <div class="step"><span class="step-no">1</span><h3>作图</h3><p>在首页或画板右侧用自然语言描述，AI 直接生成可拖拽的动态图形；也可切换 16 种工具手动作图。</p></div>
+    <div class="step"><span class="step-no">2</span><h3>查询</h3><p>把 AI 面板切到「查询」，问「AB 有多长」「∠A 多少度」。查询只读，不会改动当前画板，结果还能用于下一步构造。</p></div>
+    <div class="step"><span class="step-no">3</span><h3>演示</h3><p>拖动顶点观察图形变化，用滑动条动画做课堂动态演示；记录面板支持逐步回放与导出步骤文本。</p></div>
+    <div class="step"><span class="step-no">4</span><h3>导出</h3><p>支持 PNG、JPG、SVG、黑白试题 PNG、黑白试题 SVG、离线 HTML、JSON 与 LaTeX / TikZ，共 8 种格式。</p></div>
+  </div>
+
+  <h2 style="font-size:20px;margin:34px 0 12px">AI 能做什么</h2>
+  <div class="card">
+    <ul style="margin:0;padding-left:20px;line-height:1.9;color:var(--muted)">
+      <li><b>作图</b>：一句话生成点、线、圆、函数、变换、不等式区域与 3D 图元。</li>
+      <li><b>查询</b>：读取当前画板，求长度、角度、坐标、交点与三角形四心。</li>
+      <li><b>批量修改</b>：按名称或条件改色、隐藏、删除、平移、旋转、缩放已有对象。</li>
+      <li><b>按图复原</b>：切到名称里带「视觉」的模型，上传题目图片还原几何图形。</li>
+    </ul>
   </div>
   <div class="actions">
     <a class="btn btn-primary" href="/board.html">新建画板</a>
@@ -36,5 +47,11 @@
   </div>
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/supabase-config.js"></script>
+<script src="/js/config.js"></script>
+<script src="/js/store.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/page-shell.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
-# 智绘几何 · 开源免费的在线几何画板
+# 智绘几何 · 开源的在线几何画板
 
-强大直观的几何图形创建与编辑工具，让数学可视化变得简单。**完全免费、代码开源**；核心功能须登录后使用（登录即开通账号，邮箱 + 密码；账号体系由 Supabase 托管，零自建后端）。
+强大直观的几何图形创建与编辑工具，让数学可视化变得简单。**代码开源**；核心功能须登录后使用（登录即开通账号，邮箱 + 密码；账号体系由 Supabase 托管，零自建后端）。
 
 - **在线体验**：https://geora.de5.net
 - **源代码**：https://github.com/Cyrus-Nebula/zhihuabaiban （欢迎 Star / Fork / 提 Issue）
@@ -33,10 +33,10 @@
 | 入口 | `board.html`（平面画板） | `editor.html`（立体/3D 画板） |
 | 画板引擎 | **JSXGraph**（LGPL 开源，`vendor/` 本地加载，不依赖外网） | 大角几何开放 SDK（iframe 嵌入） |
 | 依赖 | 无（不需要 appId、不需要对方服务器） | 需要 appId + 域名白名单 |
-| AI | 免费 LLM（默认智谱 GLM-4.7-Flash，面板可切换） | 免费 LLM（同一套 Key） |
-| 费用 | **托管免费 + LLM 免费额度** | 基础功能免费，对方平台高级能力计费 |
+| AI | 当前 LLM（默认智谱 GLM-4.7-Flash，面板可切换） | 当前 LLM（同一套 Key） |
+| 费用 | **托管服务 + LLM 可用额度** | 基础功能开放，对方平台高级能力计费 |
 
-两条路线的 AI 共用同一个免费 LLM Key，分别对应两个端点（`/api/ai/board` 和 `/api/ai/run`）。
+两条路线的 AI 共用同一个当前 LLM Key，分别对应两个端点（`/api/ai/board` 和 `/api/ai/run`）。
 
 ## 文件结构
 
@@ -48,7 +48,7 @@
 ├── editor.html / js/editor.js                   路线A：SDK 编辑器页
 ├── vendor/jsxgraphcore.js / jsxgraph.css        JSXGraph 引擎（本地化）
 ├── ai/
-│   ├── models.js        免费模型总清单（对话 + 生成，后端唯一来源）
+│   ├── models.js        可用模型总清单（对话 + 生成，后端唯一来源）
 │   ├── board-prompt.js   路线B的 AI 系统提示词（命令协议）
 │   ├── board-backend.js  路线B的 AI 后端核心（LLM→JSON 命令）
 │   ├── system-prompt.js  路线A的 AI 系统提示词
@@ -66,7 +66,7 @@
 
 ## 快速开始（本地，5 分钟）
 
-**1. 拿一个免费 LLM Key**（智谱，以下模型全部免费）
+**1. 拿一个当前 LLM Key**（智谱，以下模型全部可用）
 
 打开 [bigmodel.cn](https://bigmodel.cn) 注册 → 控制台 → 「API 密钥」→ 新建，复制那串 `xxx.xxx`。**一个 Key 通用下面全部 9 款模型**。
 
@@ -75,7 +75,7 @@
 | 模型 | 类型 | 特点 |
 |---|---|---|
 | `glm-4.7-flash` | 文本 | 200K 上下文，最新最强，**默认** |
-| `glm-4.5-flash` | 文本 | 免费档通用文本模型 |
+| `glm-4.5-flash` | 文本 | 普惠档位通用文本模型 |
 | `glm-4-flash-250414` | 文本 | 旧版，留着兼容 |
 | `glm-4-flash` | 文本 | 更早的旧版，留着兼容 |
 | `glm-4.6v-flash` | 视觉 | 128K，可上传图片按图复原图形 |
@@ -108,7 +108,7 @@ LLM_API_KEY=你的key node server/local-proxy.mjs
 
 > 本地模式下，把 `js/config.js` 里 `boardAiEndpoint` 的注释行切过去（指向 `http://localhost:8787/api/ai/board`）。
 
-## 部署（Cloudflare Pages，免费）
+## 部署（Cloudflare Pages，普惠）
 
 仓库连着 GitHub，推代码即自动部署：
 
@@ -181,7 +181,7 @@ LLM_API_KEY=你的key node server/local-proxy.mjs
 
 ### 找回密码（Supabase Recovery 流程）
 
-走 Supabase 标准密码重置，邮件由 Supabase 发出（免费额度有限，生产建议配置自定义 SMTP）：
+走 Supabase 标准密码重置，邮件由 Supabase 发出（普惠额度有限，生产建议配置自定义 SMTP）：
 
 1. 登录框点「忘记密码」→ 前端调用 `supabase.auth.resetPasswordForEmail(email)` → Supabase 向该邮箱发送带 `token_hash` 的重置链接（指向本站 `reset.html`）。
 2. 用户打开邮件链接进入 `reset.html`，页面用 URL 里的 `token_hash` + `type=recovery` 兑换临时会话（`verifyOtp`）→ 校验通过后可设新密码（`updateUser({ password })`）。
@@ -284,7 +284,7 @@ curl -X POST https://geora.de5.net/api/ai/generate \
 # -> {"ok":true,"kind":"video","status":"done","url":"https://..."}
 ```
 
-免费档限流（并发 1）会返回可操作的中文提示；401/403 提示检查 Key；上游原始错误 JSON 不会透给浏览器（错误响应里的 `upstreamPath` 只含路径，不含密钥，用于排障）。
+当前档位限流（并发 1）会返回可操作的中文提示；401/403 提示检查 Key；上游原始错误 JSON 不会透给浏览器（错误响应里的 `upstreamPath` 只含路径，不含密钥，用于排障）。
 
 > **生成链路不复用 `LLM_BASE_URL`**：对话链路可以被改成 Gemini 兼容端点或自建中转，把生成请求拼到那个前缀上会落到未知路径并返回 405。生成端点固定指向 `https://open.bigmodel.cn/api/paas/v4`，确实要改才设 `GENERATION_BASE_URL`。
 
@@ -292,7 +292,7 @@ curl -X POST https://geora.de5.net/api/ai/generate \
 
 - **AI 面板报错「LLM_API_KEY 未配置」**：环境变量没配或没重试部署。
 - **AI 回复了但不作图**：看浏览器 Console；后端对模型输出做了多层容错提取（代码围栏 / 裸 JSON / 多候选 / 截断修复 / 命令级打捞），输出不完整也会尽量救回已完成的部分；极端情况会提示重试，换一种描述即可。
-- **想换模型**：AI 面板顶部的下拉框直接切（7 款对话模型全部免费，选择会记住）；也可以环境变量设 `LLM_MODEL` 改默认。文生图 / 文生视频的 2 款生成模型不在这个下拉框里，去 `/generate` 用。
+- **想换模型**：AI 面板顶部的下拉框直接切（7 款对话模型全部可用，选择会记住）；也可以环境变量设 `LLM_MODEL` 改默认。文生图 / 文生视频的 2 款生成模型不在这个下拉框里，去 `/generate` 用。
 - **上传图片按图复原**：下拉框切到名称里带「视觉」的模型（3 款均可）→ 点「📷 图片」选图（≤5MB）→ 可附加文字说明 → 生成。首页上传图片时会自动切到第一个视觉模型。
 - **生成模型点了没反应**：确认 `LLM_API_KEY` 已配置并重试部署；video 是异步任务，页面会自动轮询最多 5 分钟。
 - **3D 画板打不开**：appId 未配或域名没加白名单（3D 是路线A，需要对方平台）。

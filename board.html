@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="ui-v2 ui-v3">
 <head>
+  <link rel="stylesheet" href="/css/app.css?v=v4a" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>画板 · 智绘几何</title>
@@ -12,6 +13,7 @@
   <link rel="stylesheet" href="/css/board-ui.css?v=bui1" />
 </head>
 <body class="board-page">
+  <h1 class="sr-only">智绘几何 · 在线几何画板</h1>
   <!-- 登录墙：未登录时覆盖整个画板页，登录后自动消失（见页脚网关脚本） -->
   <div class="login-wall" id="loginWall">
     <div class="login-wall-card">
@@ -93,6 +95,15 @@
         <div class="export-menu-title">试卷打印</div>
         <button id="btn-export-bw-png" class="export-menu-item" type="button" title="导出黑白试题图（PNG）：纯黑线条 + 白底，适合打印试卷">黑白试题（PNG）</button>
         <button id="btn-export-bw-svg" class="export-menu-item" type="button" title="导出黑白试题图（SVG 矢量）：纯黑线条 + 白底、可无限缩放，适合印刷试卷">黑白试题（SVG 矢量）</button>
+        <div class="export-menu-title">导出预设</div>
+        <div class="export-preset">
+          <label>试卷头<input id="expTitle" type="text" placeholder="如：第 3 章 单元测试" /></label>
+          <label>页边距<select id="expMargin"><option value="16">窄</option><option value="28" selected>标准</option><option value="44">宽</option></select></label>
+          <label>比例<select id="expScale"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select></label>
+          <label class="exp-check"><input id="expBw" type="checkbox" checked /> 黑白</label>
+          <button id="btn-export-preset" class="export-menu-item" type="button">按预设导出 SVG</button>
+          <button id="btn-save-preset" class="export-menu-item" type="button">保存为默认预设</button>
+        </div>
         <div class="export-menu-title">文件</div>
         <button id="btn-export-html" class="export-menu-item" type="button" title="导出单个 HTML 文件：内嵌画板引擎与当前图形，双击即可离线打开">离线 HTML</button>
         <button id="btn-export-json" class="export-menu-item" type="button" title="导出画板数据文件，可再导入恢复">导出 JSON</button>
@@ -202,6 +213,7 @@
           <button class="ai-tab" type="button" data-view="record">记录<span id="rec-count" class="obj-count">0</span></button>
         </div>
         <select id="ai-model" class="ai-model" title="选择 AI 模型"></select>
+        <span id="aiModelStatus" class="ai-model-status" title="模型状态">可用</span>
         <button id="ai-close" class="ai-close" type="button" title="收起面板" aria-label="收起面板">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
@@ -215,6 +227,14 @@
 
       <div id="view-chat" class="ai-view">
         <div id="ai-log" class="ai-log"></div>
+        <div id="aiRetry" class="ai-retry hidden" role="alert">
+          <div class="ai-retry-text" id="aiRetryText">当前模型暂时无法使用。</div>
+          <div class="ai-retry-actions">
+            <button class="btn small" id="aiRetryBtn" type="button">10 秒后重试</button>
+            <button class="btn small ghost" id="aiSwitchModelBtn" type="button">换模型</button>
+            <button class="btn small ghost" id="aiManualBtn" type="button">先手动画</button>
+          </div>
+        </div>
         <div id="ai-img-preview" class="ai-img-preview hidden">
           <img id="ai-img-thumb" alt="待复原的图片" />
           <span id="ai-img-name" class="ai-img-name"></span>
@@ -242,6 +262,11 @@
         <div id="obj-props" class="obj-props hidden">
           <div class="obj-props-title">选中：<b id="obj-props-name"></b></div>
           <div class="obj-props-row"><span class="obj-props-label">构造</span><span id="obj-props-cmd" class="obj-props-cmd"></span></div>
+          <div class="obj-props-row" id="obj-derived-row">
+            <span class="obj-props-label">派生量</span>
+            <span id="obj-derived" class="obj-derived">—</span>
+            <button id="obj-copy-derived" class="btn small ghost" type="button" title="复制派生量数值">复制</button>
+          </div>
           <div class="obj-props-row">
             <span class="obj-props-label">颜色</span>
             <div id="obj-colors" class="obj-colors"></div>
@@ -298,6 +323,7 @@
             <option value="110">4×</option>
           </select>
           <span class="rec-step" id="rec-step">0 / 0</span>
+          <button id="rec-export-text" class="btn small ghost" type="button" title="把全部作图步骤导出为文本">导出步骤</button>
         </div>
         <div class="rec-hint">作图过程记录：每一步对应一条构造命令。点「进入回放」开始逐步重演；点击任一步骤可跳转，退出后恢复完整图形。</div>
         <div id="rec-list" class="rec-list"></div>
@@ -362,6 +388,7 @@
     })();
   </script>
   <script type="module" src="js/board.js"></script>
-  <script src="js/site-improve.js"></script>
+  <script src="js/site-improve.js" defer></script>
+  <script src="/js/page-shell.js" defer></script>
 </body>
 </html>

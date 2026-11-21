@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <link rel="stylesheet" href="/css/app.css?v=v4a" />
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>关于 · 智绘几何</title>
@@ -24,15 +25,33 @@
 <main>
   <h1>关于</h1>
   <div class="card about">
-    <p>智绘几何是一个<strong>开源</strong>的在线动态几何画板：平面画板由开源引擎 <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a> 驱动（本地加载，不依赖外网）；AI 作图经智谱 GLM 驱动，Key 只放在服务端；立体画板由 <a href="https://dajiaoai.com" target="_blank" rel="noopener">大角几何</a> 开放 SDK 提供。</p>
-    <p>所有文件仅保存在你自己的浏览器 localStorage 中，不上传任何服务器；换浏览器或清理缓存会丢失，重要画板请及时「导出 JSON」。</p>
+    <p>智绘几何是一个<strong>开源</strong>的在线动态几何画板：平面画板由本地加载的 <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a> 驱动；立体画板是本站自研的 Three.js 引擎，不依赖外部 SDK；AI 作图经智谱 GLM 驱动，密钥只放在服务端。</p>
+    <p>所有文件仅保存在你自己的浏览器 localStorage 中，不上传任何服务器；登录后才启用云端同步。换浏览器或清理缓存会丢失，重要画板请及时「导出 JSON」。</p>
+    <p id="privacy"><b>隐私说明</b>：本站不收集个人数据，不投放广告，不做行为追踪。云端同步只保存你主动保存的画板内容。</p>
     <div class="links">
       <a class="btn" href="/open.html">开放平台 ↗</a>
       <a class="btn" href="/generate.html?v=n1">图片与视频生成 ↗</a>
       <a class="btn" href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码 ↗</a>
+      <a class="btn" href="https://github.com/Cyrus-Nebula/zhihuabaiban/commit/d230aab8ff11275a62ce58d47a86e8e15889c965" target="_blank" rel="noopener">当前版本 commit ↗</a>
     </div>
+  </div>
+
+  <h2 id="updates" style="font-size:20px;margin:34px 0 12px">最近更新</h2>
+  <div class="card">
+    <ul style="margin:0;padding-left:20px;line-height:1.9;color:var(--muted)">
+      <li>v4 Phase 0：修复已登录仍被 3D 登录墙挡住、Supabase CDN 失败、元信息过时。</li>
+      <li>v4 Phase 1：统一页面壳层与令牌，补齐子页页脚/登录态，首页空态收起。</li>
+      <li>AI 面板新增作图/查询切换、限流重试出口、模型状态常显。</li>
+      <li>3D 画板新增图元面板与视角预设；导出新增预设。</li>
+    </ul>
   </div>
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/js/supabase-config.js"></script>
+<script src="/js/config.js"></script>
+<script src="/js/store.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/page-shell.js"></script>
 </body>
 </html>

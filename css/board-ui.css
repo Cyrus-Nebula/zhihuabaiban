@@ -155,3 +155,32 @@ html.ui-v3 body.board-page .v3-statusbar{border-top:1px solid var(--bu-line);bac
   }
   html.ui-v3 body.board-page .board-main.rail-layout > .ai-panel{border-left:0!important;border-top:1px solid var(--bu-line)!important}
 }
+
+/* ---------- v4：AI 状态 / 限流出口 / 派生量 / 导出预设 ---------- */
+html.ui-v3 body.board-page .ai-model-status{
+  font-size:11px;color:#2f8f5b;background:#e9f8ef;border-radius:999px;
+  padding:3px 8px;white-space:nowrap;flex:none;
+}
+html.ui-v3 body.board-page .ai-model-status.busy{color:#9a6b12;background:#fff4d8}
+html.ui-v3 body.board-page .ai-model-status.limited{color:#b23b2e;background:#fdecea}
+html.ui-v3 body.board-page .ai-retry{
+  margin:10px 12px;padding:12px;border-radius:12px;
+  background:#fff6f4;border:1px solid #ffd7d0;color:#8c2f24;font-size:12px;line-height:1.6;
+}
+html.ui-v3 body.board-page .ai-retry-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+html.ui-v3 body.board-page .obj-derived{
+  flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:12px;color:var(--bu-ink,#2b2440);word-break:break-all;
+}
+html.ui-v3 body.board-page .export-preset{padding:8px 12px;border-bottom:1px solid var(--bu-line)}
+html.ui-v3 body.board-page .export-preset label{
+  display:flex;align-items:center;gap:8px;font-size:12px;color:#6b6480;margin:6px 0;
+}
+html.ui-v3 body.board-page .export-preset input[type=text],
+html.ui-v3 body.board-page .export-preset select{
+  flex:1;min-width:0;height:30px;border-radius:8px;border:1px solid var(--bu-line);
+  padding:0 8px;font:inherit;font-size:12px;background:#fff;color:#2b2440;
+}
+html.ui-v3 body.board-page .export-preset .exp-check input{flex:none}
+html.ui-v3 body.board-page .export-preset .export-menu-item{width:100%;text-align:left;margin-top:5px}
+html.ui-v3 body.board-page .ai-head{flex-wrap:wrap!important;row-gap:4px;padding:8px 12px}

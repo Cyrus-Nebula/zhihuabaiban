@@ -1,13 +1,13 @@
 /**
- * 免费 AI 后端核心（三个入口共用：Pages Function / Cloudflare Worker / 本地 Node 代理）
+ * 普惠 AI 后端核心（三个入口共用：Pages Function / Cloudflare Worker / 本地 Node 代理）
  *
  * 流程：
  *   1. 接收编辑器 AI 面板发来的 payload（OpenAI Responses 风格）
- *   2. 转成 OpenAI Chat Completions 请求，调用任意"免费 LLM"（默认 GLM-4-Flash）
+ *   2. 转成 OpenAI Chat Completions 请求，调用任意"当前 LLM"（默认 GLM-4-Flash）
  *   3. 把 LLM 流式输出翻译成编辑器认识的"原始事件流"（raw SSE events）
  *
  * 关键设计——"文本暂存 + 万能命令提取"：
- *   部分免费模型（如 GLM-4-Flash）不触发原生函数调用，会把作图命令写成正文文本：
+ *   部分可用模型（如 GLM-4-Flash）不触发原生函数调用，会把作图命令写成正文文本：
  *   ```python def algeo_repl(commands=[...]) ``` 伪代码、{"commands": [...]} JSON、
  *   甚至裸命令清单。翻译层对流式文本做暂存判定：一旦出现"命令特征"就停止把文本
  *   显示为聊天内容，收尾时用万能提取器从中抽出命令、转成标准 function_call 事件；
@@ -17,7 +17,7 @@
  *   LLM_BASE_URL  默认 https://open.bigmodel.cn/api/paas/v4 （智谱，OpenAI 兼容）
  *                 备选 Gemini: https://generativelanguage.googleapis.com/v1beta/openai/
  *   LLM_API_KEY   你的 LLM API Key（只放在服务端，不要进前端）
- *   LLM_MODEL     默认 glm-4.7-flash （免费）；Gemini 用 gemini-2.5-flash
+ *   LLM_MODEL     默认 glm-4.7-flash （普惠）；Gemini 用 gemini-2.5-flash
  *
  * 前端可在 payload 里带 model 覆盖（白名单见 ai/models.js）：
  *   editor 顶栏下拉框选择，非法值回退环境变量/默认模型。
@@ -459,7 +459,7 @@ export async function handleAiRun(request, env) {
 
   if (!cfg.apiKey) {
     return new Response(
-      JSON.stringify({ error: 'LLM_API_KEY 未配置：请在部署环境变量中填入免费 LLM 的 Key（智谱/GLM、Gemini 等）' }),
+      JSON.stringify({ error: 'LLM_API_KEY 未配置：请在部署环境变量中填入当前 LLM 的 Key（智谱/GLM、Gemini 等）' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }

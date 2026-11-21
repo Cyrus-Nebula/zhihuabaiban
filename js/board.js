@@ -578,6 +578,33 @@ function switchView(name) {
 tabBtns.forEach((b) => b.addEventListener('click', (ev) => { ev.currentTarget.blur(); switchView(b.dataset.view); }));
 $('obj-refresh').addEventListener('click', () => refreshObjects());
 
+/* ---- v4：AI 作图 / 查询模式 ---- */
+let aiMode = 'draw';
+let lastRequest = null;
+const aiModeBox = $('aiMode');
+if (aiModeBox) {
+  aiModeBox.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-mode]');
+    if (!b) return;
+    aiMode = b.dataset.mode || 'draw';
+    aiModeBox.querySelectorAll('button[data-mode]').forEach((x) => {
+      const on = x === b;
+      x.classList.toggle('on', on);
+      x.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    $('ai-input').placeholder = aiMode === 'query'
+      ? '问一问当前画板，如：AB 有多长？∠A 多少度？（只读，不会改图）'
+      : '用自然语言描述要画的内容，如：画一个等腰直角三角形，标注三个顶点';
+    $('ai-send').textContent = aiMode === 'query' ? '查询' : '生成';
+  });
+}
+function setModelStatus(text, cls) {
+  const el = $('aiModelStatus');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'ai-model-status' + (cls ? ' ' + cls : '');
+}
+
 /* ---- 对象列表 ---- */
 function refreshObjects() {
   const entries = [...executor.registry.entries()];
@@ -617,6 +644,27 @@ function refreshObjects() {
   refreshProps();
 }
 
+/* ---- 派生量读数（长度 / 角度 / 坐标，供对象面板直接查看与复制）---- */
+function derivedText(el, id) {
+  try {
+    const fmt = (n) => (Number.isFinite(n) ? n.toFixed(2) : '—');
+    if (el.elType === 'point' || el.elType === 'glider' || el.elType === 'midpoint' || el.elType === 'intersection') {
+      return `x=${fmt(el.X())} y=${fmt(el.Y())}`;
+    }
+    if ((el.elType === 'line' || el.elType === 'segment' || el.elType === 'ray') && el.point1 && el.point2) {
+      const a = [el.point1.X(), el.point1.Y()], b = [el.point2.X(), el.point2.Y()];
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
+      return `长度 ${fmt(len)} · 方向角 ${fmt(ang)}°`;
+    }
+    if (el.elType === 'circle') {
+      return `圆心 (${fmt(el.center().X())}, ${fmt(el.center().Y())}) · 半径 ${fmt(el.Radius())}`;
+    }
+    if (el.elType === 'angle') return `角度 ${fmt(el.angle ? el.angle() : NaN)}°`;
+    return `x=${fmt(el.X())} y=${fmt(el.Y())}`;
+  } catch (_) { return '—'; }
+}
+
 /* ---- 对象属性区 ---- */
 function refreshProps() {
   const props = $('obj-props');
@@ -627,6 +675,8 @@ function refreshProps() {
   $('obj-props-name').textContent = `${id}（${TYPE_NAME[el.elType] || el.elType}）`;
   // 构造信息：该对象由哪条命令产生（与记录页共用 describeCmd）
   $('obj-props-cmd').textContent = describeCmd(findCmd(id));
+  const derivedEl = $('obj-derived');
+  if (derivedEl) derivedEl.textContent = derivedText(el, id);
   // 颜色
   const colors = $('obj-colors');
   colors.innerHTML = '';
@@ -857,6 +907,18 @@ $('obj-rename-ok').addEventListener('click', () => {
 });
 $('obj-toggle').addEventListener('click', () => { if (selectedId) toggleVisible(selectedId); });
 $('obj-measure').addEventListener('click', () => { if (selectedId) measureObject(selectedId); });
+$('obj-copy-derived') && $('obj-copy-derived').addEventListener('click', () => {
+  const text = $('obj-derived') ? $('obj-derived').textContent : '';
+  if (!text || text === '—') { toast('当前对象没有可复制的读数'); return; }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
+    else {
+      const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); ta.remove();
+    }
+    toast('派生量已复制');
+  } catch (_) { toast('复制失败，请手动选择'); }
+});
 $('obj-delete').addEventListener('click', () => {
   if (!selectedId) return;
   deleteObject(selectedId);
@@ -1080,6 +1142,14 @@ function refreshRecord() {
 
 $('rec-play').addEventListener('click', (ev) => { ev.currentTarget.blur(); playToggle(); });
 $('rec-enter').addEventListener('click', (ev) => { ev.currentTarget.blur(); enterStep(); });
+$('rec-export-text') && $('rec-export-text').addEventListener('click', () => {
+  if (!doc.commands.length) { toast('还没有作图记录可导出'); return; }
+  const text = ['智绘几何 · 作图步骤', '画板：' + (nameInput.value.trim() || '未命名画板'), '导出时间：' + new Date().toLocaleString('zh-CN', { hour12: false }), '']
+    .concat(doc.commands.map((c, i) => (i + 1) + '. ' + describeCmd(c)))
+    .join('\n');
+  download((nameInput.value.trim() || '画板') + '_作图步骤.txt', text, 'text/plain;charset=utf-8');
+  toast('作图步骤已导出为文本');
+});
 $('rec-prev').addEventListener('click', (ev) => { ev.currentTarget.blur(); playPause(); stepPrev(); });
 $('rec-next').addEventListener('click', (ev) => { ev.currentTarget.blur(); playPause(); stepNext(); });
 $('rec-stop').addEventListener('click', (ev) => { ev.currentTarget.blur(); exitStep(); });
@@ -1287,6 +1357,63 @@ function download(filename, content, mime) {
 $('btn-export-json').addEventListener('click', () => {
   saveNow();
   download((nameInput.value.trim() || '画板') + '.json', JSON.stringify({ app: 'dajiao-b', version: 1, ...doc }, null, 2), 'application/json');
+});
+
+/* ---- v4：导出预设（试卷头 / 页边距 / 黑白 / 比例，保存到本机）---- */
+const EXPORT_PRESET_KEY = 'geora-export-preset';
+function escXml(s) {
+  return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
+}
+function currentPreset() {
+  return {
+    title: ($('expTitle') || {}).value || '',
+    margin: Number(($('expMargin') || {}).value || 28),
+    scale: Number(($('expScale') || {}).value || 2),
+    bw: !!($('expBw') && $('expBw').checked),
+  };
+}
+function applyPreset(p) {
+  if (!p) return;
+  if ($('expTitle')) $('expTitle').value = p.title || '';
+  if ($('expMargin')) $('expMargin').value = String(p.margin || 28);
+  if ($('expScale')) $('expScale').value = String(p.scale || 2);
+  if ($('expBw')) $('expBw').checked = p.bw !== false;
+}
+try {
+  const savedPreset = JSON.parse(localStorage.getItem(EXPORT_PRESET_KEY) || 'null');
+  if (savedPreset) applyPreset(savedPreset);
+} catch (_) {}
+$('btn-save-preset') && $('btn-save-preset').addEventListener('click', () => {
+  try { localStorage.setItem(EXPORT_PRESET_KEY, JSON.stringify(currentPreset())); toast('导出预设已保存'); }
+  catch (_) { toast('预设保存失败'); }
+});
+$('btn-export-preset') && $('btn-export-preset').addEventListener('click', () => {
+  if (blockIfReplaying()) return;
+  try {
+    const p = currentPreset();
+    const svg = board.renderer.svgRoot;
+    const rect = svg.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width || 800));
+    const h = Math.max(1, Math.round(rect.height || 600));
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('width', String(w));
+    clone.setAttribute('height', String(h));
+    if (p.bw) clone.setAttribute('style', 'filter:grayscale(1) contrast(1.4)');
+    const inner = new XMLSerializer().serializeToString(clone);
+    const m = p.margin;
+    const headH = p.title ? 34 : 0;
+    const W = Math.round((w + m * 2) * p.scale);
+    const H = Math.round((h + m * 2 + headH) * p.scale);
+    const head = p.title
+      ? `<text x="${m}" y="${m + 20}" font-family="sans-serif" font-size="18" font-weight="600" fill="#111">${escXml(p.title)}</text>`
+      : '';
+    const wrapped = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${w + m * 2} ${h + m * 2 + headH}">`
+      + `<rect width="100%" height="100%" fill="#fff"/>${head}`
+      + `<svg x="${m}" y="${m + headH}" width="${w}" height="${h}">${inner}</svg></svg>`;
+    download((nameInput.value.trim() || '画板') + '_预设试题.svg', wrapped, 'image/svg+xml');
+    toast('已按预设导出 SVG');
+  } catch (e) { toast('预设导出失败：' + e.message); }
 });
 
 $('btn-export-png').addEventListener('click', () => {
@@ -2358,6 +2485,7 @@ if (savedModel && MODELS.some((m) => m.id === savedModel)) modelSel.value = save
 modelSel.addEventListener('change', () => {
   localStorage.setItem('dajiao-board-model', modelSel.value);
   updateImgBtn();
+  setModelStatus('已切换', '');
 });
 
 function isVisionModel() {
@@ -2409,6 +2537,109 @@ function appendLog(role, text) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/* ---- v4：只读查询（只执行 inspect / measure，不写入 doc.commands）---- */
+function cleanError(msg) {
+  return String(msg || '请求失败')
+    .replace(/\u514d\u8d39\u6863/g, '当前档位')
+    .replace(/\u514d\u8d39/g, '当前')
+    .replace(/十几秒/g, '片刻');
+}
+function isLimitError(msg) {
+  return /限流|429|访问量过大|繁忙|稍后再试|too many|rate limit/i.test(String(msg || ''));
+}
+function showRetry(err, req) {
+  const box = $('aiRetry');
+  if (!box) return;
+  const msg = cleanError(err && err.message ? err.message : err);
+  $('aiRetryText').textContent = msg + '（可重试、换模型，或先手动画）';
+  box.classList.remove('hidden');
+  setModelStatus(isLimitError(msg) ? '繁忙' : '异常', isLimitError(msg) ? 'limited' : 'busy');
+  lastRequest = req || lastRequest;
+  let left = 10;
+  const btn = $('aiRetryBtn');
+  btn.textContent = '10 秒后重试';
+  clearInterval(showRetry._timer);
+  showRetry._timer = setInterval(() => {
+    left -= 1;
+    if (left <= 0) {
+      clearInterval(showRetry._timer);
+      btn.textContent = '立即重试';
+    } else {
+      btn.textContent = left + ' 秒后重试';
+    }
+  }, 1000);
+}
+function hideRetry() {
+  const box = $('aiRetry');
+  if (box) box.classList.add('hidden');
+  clearInterval(showRetry._timer);
+}
+$('aiRetryBtn') && $('aiRetryBtn').addEventListener('click', () => {
+  if (!lastRequest) return;
+  hideRetry();
+  aiInput.value = lastRequest.text;
+  pendingImage = lastRequest.image ? { dataUrl: lastRequest.image, name: '重试图片' } : null;
+  aiMode = lastRequest.mode || 'draw';
+  aiSend();
+});
+$('aiSwitchModelBtn') && $('aiSwitchModelBtn').addEventListener('click', () => {
+  hideRetry();
+  modelSel.focus();
+  toast('请在上方下拉框换一个模型后重试');
+});
+$('aiManualBtn') && $('aiManualBtn').addEventListener('click', () => {
+  hideRetry();
+  $('aiPanel').classList.remove('open');
+  const pointTool = document.querySelector('.tool[data-tool="point"]');
+  if (pointTool) pointTool.click();
+  toast('已切回手动作图：点工具已选中');
+});
+
+async function runAiQuery(text, model, image) {
+  setModelStatus('查询中…', 'busy');
+  const payload = {
+    message: '【只读查询】只回答当前画板的派生量，不要改动图形。'
+      + '优先用 inspect 查询长度/角度/坐标/交点/圆心/四心，必要时附 measure。'
+      + '不要输出 clear、move、构造类命令。用户问题：' + text,
+    model,
+    image,
+    context: executor.describe(),
+    history: chatHistory.slice(-10),
+  };
+  const res = await fetch(CFG.boardAiEndpoint || '/api/ai/board', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.error || 'HTTP ' + res.status);
+  const cmds = (Array.isArray(data.commands) ? data.commands : [])
+    .filter((c) => c && typeof c === 'object' && ['inspect', 'measure'].includes(c.op));
+  const lines = [];
+  for (const c of cmds) {
+    const r = executor.execute([c])[0];
+    if (r && r.ok && r.reading && r.reading.text) lines.push(r.reading.text);
+    else if (r && r.ok && Number.isFinite(r.value)) lines.push(String(c.label || c.kind || '读数') + ' = ' + Number(r.value).toFixed(3));
+  }
+  const answer = lines.length
+    ? lines.join('；') + '\n（读取当前画板，未改动任何对象）'
+    : (data.message || '这次没有查到可读数值，可以换个问法再试。') + '\n（读取当前画板，未改动任何对象）';
+  appendLog('ai', answer);
+  chatHistory.push({ role: 'assistant', content: answer });
+  setModelStatus('可用', '');
+  // 查询面板提供“用于下一步构造”入口：把读数写回输入框并切回作图模式
+  const btn = document.createElement('button');
+  btn.className = 'btn small ghost';
+  btn.type = 'button';
+  btn.textContent = '用于下一步构造';
+  btn.addEventListener('click', () => {
+    const drawBtn = document.querySelector('#aiMode button[data-mode="draw"]');
+    if (drawBtn) drawBtn.click();
+    aiInput.value = '基于刚才查到的数值：' + (lines.join('；') || text) + '，继续构造';
+    aiInput.focus();
+  });
+  aiLog.appendChild(btn);
+  aiLog.scrollTop = aiLog.scrollHeight;
+}
+
 async function aiSend() {
   if (blockIfReplaying()) return;
   const text = aiInput.value.trim();
@@ -2419,8 +2650,24 @@ async function aiSend() {
   aiInput.value = '';
   const image = pendingImage ? pendingImage.dataUrl : undefined;
   const model = modelSel.value;
+  const reqSnapshot = { text, model, image, mode: aiMode };
+  lastRequest = reqSnapshot;
+  hideRetry();
   clearImage();
   $('ai-send').disabled = true;
+  if (aiMode === 'query') {
+    $('ai-send').textContent = '查询中…';
+    try {
+      await runAiQuery(text, model, image);
+    } catch (e) {
+      appendLog('ai', '⚠️ 查询失败：' + cleanError(e.message));
+      showRetry(e, reqSnapshot);
+    } finally {
+      $('ai-send').disabled = false;
+      $('ai-send').textContent = '查询';
+    }
+    return;
+  }
   $('ai-send').textContent = '生成中…';
   try {
     const res = await fetch(CFG.boardAiEndpoint || '/api/ai/board', {
@@ -2647,10 +2894,13 @@ async function aiSend() {
       chatHistory.push({ role: 'assistant', content: data.message });
     }
   } catch (e) {
-    appendLog('ai', '⚠️ ' + e.message);
+    const msg = cleanError(e.message);
+    appendLog('ai', '⚠️ ' + msg);
+    showRetry(e, lastRequest);
   } finally {
     $('ai-send').disabled = false;
-    $('ai-send').textContent = '生成';
+    $('ai-send').textContent = aiMode === 'query' ? '查询' : '生成';
+    if ($('aiRetry').classList.contains('hidden')) setModelStatus('可用', '');
   }
 }
 $('ai-send').addEventListener('click', aiSend);
