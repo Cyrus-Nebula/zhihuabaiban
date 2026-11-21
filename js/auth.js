@@ -12,6 +12,51 @@
  * （仅云端相关功能不可用，并给出友好提示），绝不阻断本地作图。
  */
 window.Auth = (function () {
+  // CDN 失败兜底：supabase-js 未加载时，页面照常浏览，登录相关操作给出明确提示，
+  // 不再因为解构 window.supabase 而抛错、让整个登录按钮静默失效。
+  if (!window.supabase) {
+    const msg = '登录组件加载失败，请检查网络后刷新页面。';
+    const noop = function () {};
+    window.Auth = {
+      user: null, ready: true,
+      onChange: function (cb) { try { cb(null); } catch (e) {} },
+      me: async function () { return { authenticated: false }; },
+      login: async function () { throw new Error(msg); },
+      register: async function () { throw new Error(msg); },
+      logout: async function () {},
+      openLogin: function () { alert(msg); },
+      openSignup: function () { alert(msg); },
+      requireLogin: function () { alert(msg); },
+      openForgot: function () { alert(msg); },
+      openMembership: function () { alert(msg); },
+      redeemCode: async function () { throw new Error(msg); },
+      membershipMe: async function () { return null; },
+      getProviders: async function () { return {}; },
+      listBoards: async function () { return []; },
+      deleteBoard: async function () {},
+      syncBoard: async function () {},
+      openCloudBoard: noop,
+      syncAllLocal: async function () {},
+      changePassword: async function () { throw new Error(msg); },
+      deleteAccount: async function () { throw new Error(msg); },
+      openChangePw: noop, openDelete: noop,
+      adminListCodes: async function () { return []; },
+      adminCreateCodes: async function () { return []; },
+      adminDisableCode: async function () {},
+      adminListUsers: async function () { return []; },
+      adminSetMembership: async function () {}
+    };
+    document.addEventListener('DOMContentLoaded', function () {
+      const b = document.getElementById('authBtn');
+      if (b) { b.textContent = '登录不可用'; b.title = msg; b.disabled = true; }
+      const wl = document.getElementById('wallLogin');
+      if (wl) wl.addEventListener('click', function () { alert(msg); });
+      const hint = document.querySelector('#loginWall .login-wall-sub');
+      if (hint) hint.textContent = '登录组件加载失败，请检查网络后刷新页面。';
+    });
+    return window.Auth;
+  }
+
   // ---- Supabase 客户端（CDN 版本 >=2，已在 HTML 中引入）----
   const { createClient } = window.supabase;
   const supabase = createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);

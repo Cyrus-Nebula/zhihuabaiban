@@ -190,6 +190,13 @@
 
   <div id="toast" class="toast hidden"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/models.js"></script>
+  <script src="js/auth.js"></script>
+
   <!-- 登录墙网关：订阅 Auth 状态，未登录时显示全屏遮罩，登录后自动消失 -->
   <script>
     (function () {
@@ -206,13 +213,6 @@
       sync();
     })();
   </script>
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/supabase-config.js"></script>
-  <script src="js/config.js"></script>
-  <script src="js/store.js"></script>
-  <script src="js/models.js"></script>
-  <script src="js/auth.js"></script>
 
   <!-- Three.js 已本地 vendor 至 libs/three/（r160）：断网或 CDN 不可用时 3D 画板仍可加载 -->
   <script type="importmap">
