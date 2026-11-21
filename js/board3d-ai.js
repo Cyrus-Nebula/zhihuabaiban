@@ -236,6 +236,17 @@ async function send() {
         if (m.pointCount) parts.push(`${m.pointCount} 标记点`);
         appendLog('ai', `已生成胶囊体（${axis} 轴，半径 r=${m.radius != null ? m.radius : '?'}、两球心距 h=${m.length != null ? m.length : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-22 D23：tube3d 展示路径控制点数 / 采样点数 / 管半径 / 截面圆环与母线（数值以画板返回为准）。
+      for (const tb of results) {
+        if (!tb.ok || tb.op !== 'tube3d') continue;
+        const m = tb.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.ringCount) parts.push(`${m.ringCount} 截面圆环`);
+        if (m.meridianCount) parts.push(`${m.meridianCount} 母线`);
+        if (m.pointCount) parts.push(`${m.pointCount} 标记点`);
+        appendLog('ai', `已生成管道（${m.path && m.path.length ? m.path.length : '?'} 个路径控制点 → ${m.sampleCount != null ? m.sampleCount : '?'} 个采样截面，管半径 r=${m.radius != null ? m.radius : '?'}，每段细分 ${m.steps != null ? m.steps : '?'}，截面 ${m.radialSegments != null ? m.radialSegments : '?'} 段）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

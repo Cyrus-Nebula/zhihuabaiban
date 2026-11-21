@@ -2222,3 +2222,28 @@ export const BOARD3D_CAPSULE_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数；radius≤0 或越界、length<0 或越界、分段数非整数或越界、段数总和超 4096、三种线/点开关全关、center 非法、id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：revolve3d 画胶囊需手写「矩形 + 两端 1/4 圆弧」的一整圈母线；ellipsoid3d 是三轴椭球、没有直筒段；torus3d 是有洞圆环面；capsule3d 只需 radius/length 两参数即可生成胶囊面线框，是标准回转体「线段 ⊕ 球」的高层封装。
 - 铁律：capsule3d 是 3D 命令；2D 的胶囊 / 圆角矩形命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-22 D23 追加段：tube3d 管道（独立自主 3D 画板任务）
+ * 上方 CAPSULE 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'tube3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** tube3d 管道提示词段 */
+export const BOARD3D_TUBE_PROMPT_OPS = Object.freeze(['tube3d']);
+export const BOARD3D_TUBE_PROMPT = `
+# 补充：tube3d 管道 / 扫掠圆截面（2026-11-22 追加）
+- 用途：沿一条 3D 中心路径画弯管 / 管道 / S 形管 / 空间折管，或给弹簧线加管半径做成弹簧外壳。内置图元只能画直管；helix3d / arc3d / bezier3d 只画中心线（没有截面），tube3d 是「中心线 + 恒定管半径」的高层封装。
+- 命令格式：{"op":"tube3d","id":"tube","path":[[0,0,0],[1,1,0],[2,0,0]],"radius":0.4,"steps":4,"radialSegments":12,"center":[0,0,0],"asRings":true,"asMeridians":true,"asPoints":false}
+  · path：中心路径控制点列，2~32 个 [x,y,z]（默认 [[0,0,0],[0,2,0]] 即竖直直管）；相邻控制点间线性细分。
+  · radius：管半径（>0，默认 0.5）。steps：每段路径细分数（整数 1~16，默认 4），采样点数 =（控制点数-1）×steps+1。
+  · radialSegments：横截面圆环分段数（整数 3~64，默认 12）。center：整体平移 [x,y,z]（默认 [0,0,0]）。
+  · asRings：画横截面圆环（默认 true）；asMeridians：画沿路径母线（默认 true）；asPoints：在截面采样点放小球标记（默认 false）。三开关至少开一个。
+  · color / opacity：整条管道样式。截面圆恒垂直于路径切向（平行移动标架），任一点到其截面中心的距离恒为 radius。
+- 示例：
+  · 直管（默认竖直）：{"op":"tube3d","path":[[0,0,0],[0,2,0]],"radius":0.5}
+  · 弯管 / S 形管：{"op":"tube3d","path":[[-2,0,0],[-1,1,0],[0,0,0],[1,-1,0],[2,0,0]],"radius":0.3,"steps":5}
+  · 弹簧外壳（沿螺旋中心线扫掠）：path 必须传实际数值点列（如把螺旋线采样成十几个 [x,y,z] 点写进数组），不要写 r*cos(t) 之类的表达式；再给 radius 即可生成管状外壳。
+  · 细线框 + 采样点：{"op":"tube3d","path":[[0,0,0],[0,3,0]],"radius":0.4,"radialSegments":8,"steps":2,"asRings":true,"asMeridians":false,"asPoints":true}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数；radius≤0 或越界、path 点数不在 2~32 或含非法点、steps/radialSegments 非整数或越界、段数总和超 4096、采样点超 257、三开关全关、center/id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：revolve3d 是母线绕固定轴回转（只能画回转对称体）；tube3d 是截面沿任意路径扫掠（路径可弯可折）。helix3d/arc3d/bezier3d 生成的是零粗度中心线；tube3d 给中心线加管半径生成真正的管状线框。
+- 铁律：tube3d 是 3D 命令；2D 的管道 / 路径命令在本分支依旧不认识，不要输出。`;
