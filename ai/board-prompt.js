@@ -2247,3 +2247,29 @@ export const BOARD3D_TUBE_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数；radius≤0 或越界、path 点数不在 2~32 或含非法点、steps/radialSegments 非整数或越界、段数总和超 4096、采样点超 257、三开关全关、center/id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：revolve3d 是母线绕固定轴回转（只能画回转对称体）；tube3d 是截面沿任意路径扫掠（路径可弯可折）。helix3d/arc3d/bezier3d 生成的是零粗度中心线；tube3d 给中心线加管半径生成真正的管状线框。
 - 铁律：tube3d 是 3D 命令；2D 的管道 / 路径命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-22 D24 追加段：prism3d 通用棱柱（独立自主 3D 画板任务）
+ * 上方 TUBE 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'prism3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** prism3d 通用棱柱提示词段 */
+export const BOARD3D_PRISM_PROMPT_OPS = Object.freeze(['prism3d']);
+export const BOARD3D_PRISM_PROMPT = `
+# 补充：prism3d 通用棱柱 / 斜棱柱（2026-11-22 追加）
+- 用途：给任意底面多边形 + 拉伸向量画棱柱 / 三棱柱 / 斜棱柱 / 正方体并标注顶点。内置 prism 只能画「正多边形直棱柱」（r+h、底面顶点自动均布、只能沿 y 轴），无法画给定底面顶点或斜拉；prism3d 补齐这一缺口。
+- 命令格式：{"op":"prism3d","id":"prism","base":[[-1,-1,0],[1,-1,0],[1,1,0],[-1,1,0]],"vector":[0,0,2],"asBase":true,"asTop":true,"asSides":true,"asVertices":false,"labelVertices":true,"vertexSize":0.1}
+  · base：底面顶点 [[x,y,z],...]，3~32 个（默认 z=0 平面边长 2 的正方形；配合默认 height=2 即标准正方体）。顶点按给定顺序首尾相连成闭合多边形，应给简单（不自交）多边形。
+  · vector：拉伸向量 [dx,dy,dz]，给它则忽略 axis/height；顶面 = 底面 + 向量，所有侧棱平行且等长。与底面不垂直时为斜棱柱。
+  · axis / height：不给 vector 时沿坐标轴拉伸，axis 默认 'z'（可 x/y/z），height 默认 2（0~10000）。
+  · asBase / asTop / asSides：是否画底面 / 顶面 / 侧棱（均默认 true）。
+  · asVertices：是否在 2n 个顶点放小球标记（默认 false）。labelVertices：是否在 2n 个顶点放标注（默认 false），底面 A/B/C…，顶面 A'/B'/C'…，正服务「标注顶点」用例。
+  · vertexSize：顶点球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。五个输出开关至少开一个。
+- 示例：
+  · 正方体 + 标顶点：{"op":"prism3d","id":"cube","labelVertices":true}
+  · 三棱柱（默认沿 z 拉伸 3）：{"op":"prism3d","base":[[0,0,0],[2,0,0],[1,1.732,0]],"height":3}
+  · 斜四棱柱：{"op":"prism3d","base":[[0,0,0],[2,0,0],[2,2,0],[0,2,0]],"vector":[0.8,0,3]}
+  · 只要侧棱线框 + 顶点球：{"op":"prism3d","base":[[0,0,0],[1,0,0],[1,1,0]],"vector":[0,0,2],"asBase":false,"asTop":false,"asVertices":true}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数；base 点数不在 3~32 或含非法点、vector/height/axis/id 非法、vertexSize 越界、五个输出开关全关 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：add3d 内置 prism 是正多边形直棱柱（无任意底面、无斜拉）；polyhedron3d 是五种柏拉图立体；revolve3d/torus3d/ellipsoid3d/capsule3d/tube3d 都是回转 / 曲面体。prism3d 专用于「任意底面 + 直/斜拉伸」的柱体。
+- 铁律：prism3d 是 3D 命令；2D 的棱柱 / 多边形命令在本分支依旧不认识，不要输出。`;

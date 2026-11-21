@@ -247,6 +247,19 @@ async function send() {
         if (m.pointCount) parts.push(`${m.pointCount} 标记点`);
         appendLog('ai', `已生成管道（${m.path && m.path.length ? m.path.length : '?'} 个路径控制点 → ${m.sampleCount != null ? m.sampleCount : '?'} 个采样截面，管半径 r=${m.radius != null ? m.radius : '?'}，每段细分 ${m.steps != null ? m.steps : '?'}，截面 ${m.radialSegments != null ? m.radialSegments : '?'} 段）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-22 D24：prism3d 展示底面顶点数 / 拉伸向量与高度 / 底面顶面侧棱与顶点标注（数值以画板返回为准）。
+      for (const pr of results) {
+        if (!pr.ok || pr.op !== 'prism3d') continue;
+        const m = pr.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.baseEdgeCount) parts.push(`${m.baseEdgeCount} 底边`);
+        if (m.topEdgeCount) parts.push(`${m.topEdgeCount} 顶边`);
+        if (m.sideEdgeCount) parts.push(`${m.sideEdgeCount} 侧棱`);
+        if (m.pointCount) parts.push(`${m.pointCount} 顶点球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 顶点标注`);
+        appendLog('ai', `已生成棱柱（${m.vertexCount != null ? m.vertexCount : '?'} 边形底面，拉伸向量 [${m.vector && m.vector.length ? m.vector.join(',') : '?'}、高度 ${m.height != null ? m.height : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
