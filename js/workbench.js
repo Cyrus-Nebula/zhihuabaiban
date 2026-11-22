@@ -108,12 +108,15 @@
   }
 
   function render() {
-    const list = Store.list();
     const box = document.getElementById('fileList');
     const empty = document.getElementById('emptyState');
-    document.getElementById('fileCount').textContent = list.length ? `（${list.length} 个）` : '';
+    const count = document.getElementById('fileCount');
+    // 首页「我的画板」已拆分为独立页 /files.html；该板块不在首页时直接跳过渲染。
+    if (!box) return;
+    const list = Store.list();
+    if (count) count.textContent = list.length ? `（${list.length} 个）` : '';
     box.innerHTML = '';
-    empty.hidden = list.length > 0;
+    if (empty) empty.hidden = list.length > 0;
 
     list.forEach((f) => {
       const card = document.createElement('div');

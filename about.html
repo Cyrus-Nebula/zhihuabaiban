@@ -1,14 +1,14 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <link rel="stylesheet" href="/css/app.css?v=blue1" />
+  <link rel="stylesheet" href="/css/app.css?v=acct1" />
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>关于 · 智绘几何</title>
 <meta name="description" content="智绘几何 · 关于">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=n1" />
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=n1" />
-<link rel="stylesheet" href="/css/pages.css?v=blue1" />
+<link rel="stylesheet" href="/css/pages.css?v=dedup2" />
 </head>
 <body class="nf-page">
 <header class="site-nav">
@@ -27,18 +27,18 @@
   <div class="card about">
     <p>智绘几何是一个<strong>开源</strong>的在线动态几何画板：平面画板由本地加载的 <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a> 驱动；立体画板是本站自研的 Three.js 引擎，不依赖外部 SDK；AI 作图经智谱 GLM 驱动，密钥只放在服务端。</p>
     <p>所有文件仅保存在你自己的浏览器 localStorage 中，不上传任何服务器；登录后才启用云端同步。换浏览器或清理缓存会丢失，重要画板请及时「导出 JSON」。</p>
-    <p id="privacy"><b>隐私说明</b>：本站不收集个人数据，不投放广告，不做行为追踪。云端同步只保存你主动保存的画板内容。</p>
+    <p id="privacy"><b>隐私说明</b>：本站不投放广告、不做行为追踪。画板默认只保存在你的浏览器本机；只有当你主动登录并点击同步时，账号邮箱（由 Supabase 以加盐哈希保存密码）和你选择同步的画板内容才会上传到云端，你随时可以删除账号与云端数据。</p>
     <div class="links">
       <a class="btn" href="/open.html">开放平台 ↗</a>
       <a class="btn" href="/generate.html?v=n1">图片与视频生成 ↗</a>
       <a class="btn" href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码 ↗</a>
-      <a class="btn" href="https://github.com/Cyrus-Nebula/zhihuabaiban/commit/d230aab8ff11275a62ce58d47a86e8e15889c965" target="_blank" rel="noopener">当前版本 commit ↗</a>
+      <a class="btn" href="https://github.com/Cyrus-Nebula/zhihuabaiban/commits/main" target="_blank" rel="noopener">更新历史 ↗</a>
     </div>
   </div>
 
-  <h2 id="updates" style="font-size:20px;margin:34px 0 12px">最近更新</h2>
+  <h2 id="updates" class="section-title">最近更新</h2>
   <div class="card">
-    <ul style="margin:0;padding-left:20px;line-height:1.9;color:var(--muted)">
+    <ul class="bullet-list">
       <li>v4 Phase 0：修复已登录仍被 3D 登录墙挡住、Supabase CDN 失败、元信息过时。</li>
       <li>v4 Phase 1：统一页面壳层与令牌，补齐子页页脚/登录态，首页空态收起。</li>
       <li>AI 面板新增作图/查询切换、限流重试出口、模型状态常显。</li>
@@ -52,6 +52,6 @@
 <script src="/js/config.js"></script>
 <script src="/js/store.js"></script>
 <script src="/js/auth.js"></script>
-<script src="/js/page-shell.js"></script>
+<script src="/js/page-shell.js?v=dedup2"></script>
 </body>
 </html>

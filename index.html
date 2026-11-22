@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="ui-v2 ui-v3">
 <head>
-  <link rel="stylesheet" href="/css/app.css?v=blue1" />
+  <link rel="stylesheet" href="/css/app.css?v=acct1" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>智绘几何 · 让数学可视化变得简单</title>
-  <meta name="description" content="智绘几何——开源的在线动态几何画板：AI 一句话作图、16 种手动作图工具、拖拽探索、模板案例，数据只存本机浏览器。" />
+  <meta name="description" content="智绘几何——开源的在线动态几何画板：AI 一句话作图、16 种手动作图工具、拖拽探索、模板案例。画板默认只存本机浏览器，登录后可自选云端同步。" />
   <meta name="theme-color" content="#002B66" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=n1" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=n1" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="智绘几何 · 让数学可视化变得简单" />
-  <meta property="og:description" content="开源的在线动态几何画板：AI 一句话作图，数据只存本机。" />
+  <meta property="og:description" content="开源的在线动态几何画板：AI 一句话作图，画板默认只存本机，登录后可自选云同步。" />
   <meta property="og:url" content="https://geora.de5.net/" />
   <meta name="twitter:card" content="summary" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
@@ -196,7 +196,7 @@
           <div class="k">EXPORT</div>
           <h3>导出与试卷</h3>
           <p>PNG、SVG、黑白试题图、离线 HTML、LaTeX / TikZ、JSON 和嵌入代码，全部在本机生成。</p>
-          <div class="foot"><a href="#about">看导出格式 →</a></div>
+          <div class="foot"><a href="/about.html">看导出格式 →</a></div>
           <div class="fig" aria-hidden="true"><svg viewBox="0 0 150 110" fill="none" stroke="#002B66" stroke-width="1.4"><path d="M16 84C40 84 46 30 72 30s34 54 62 54"/><path d="M16 84h134M16 20v64" stroke-opacity=".35"/></svg></div>
         </article>
       </div>
@@ -219,46 +219,6 @@
     </div>
   </section>
 
-    <!-- 快速入门 -->
-  <section class="section" id="quickstart">
-    <div class="qs-panel">
-      <div class="qs-head">
-        <h2 class="section-title">快速入门</h2>
-        <button class="qs-close" id="qsClose" type="button" aria-label="收起快速入门" aria-expanded="true">×</button>
-      </div>
-      <div class="steps" id="qsSteps">
-        <div class="step"><span class="step-no">1</span><h3>描述需求，AI 作图</h3><p>在首页或画板右侧用自然语言描述，AI 直接生成可拖拽的动态图形。</p></div>
-        <div class="step"><span class="step-no">2</span><h3>工具手动作图</h3><p>点、线段、直线、圆、多边形、函数曲线一应俱全，几何关系自动保持。</p></div>
-        <div class="step"><span class="step-no">3</span><h3>拖拽探索</h3><p>拖动顶点观察图形变化，在动态演示中验证定理与猜想。</p></div>
-        <div class="step"><span class="step-no">4</span><h3>保存与导出</h3><p>文件只存在本机浏览器，可导出 .json 工程备份或 PNG 图片。</p></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 模板与案例 -->
-  <section class="section" id="templates">
-    <div class="section-head">
-      <h2 class="section-title">模板与案例</h2>
-      <span class="muted">点击卡片即用</span>
-    </div>
-    <div class="tpl-grid" id="tplGrid"></div>
-  </section>
-
-  <!-- 我的画板 -->
-  <section class="section" id="files">
-    <h2 class="section-title">我的画板 <span class="muted" id="fileCount"></span></h2>
-    <div class="v3-workstats" id="v3WorkStats" aria-label="工作台统计">
-      <div class="v3-ws"><b id="v3WsLocal">0</b><span>本机画板</span></div>
-      <div class="v3-ws"><b id="v3WsCloud">0</b><span>云端同步</span></div>
-      <div class="v3-ws"><b id="v3WsExport">0</b><span>本周导出</span></div>
-      <div class="v3-ws"><b id="v3WsSize">0 B</b><span>本地占用</span></div>
-    </div>
-    <div id="fileList" class="file-grid"></div>
-    <div id="emptyState" class="empty" hidden>
-      还没有画板。用上方 AI 输入框描述一个图形，或从「模板与案例」里挑一个开始。
-    </div>
-  </section>
-
   <!-- 云端画板（登录后可见） -->
   <section class="section" id="cloudSection" hidden>
     <div class="section-head">
@@ -268,15 +228,6 @@
     <p class="banner banner-info" id="cloudNote" hidden></p>
     <div id="cloudList" class="cloud-list"></div>
     <div id="cloudEmpty" class="empty" hidden>还没有云端画板。登录后点上方「同步全部本地画板到云端」，或在画板页点「保存并同步」。</div>
-  </section>
-
-  <!-- 关于 -->
-  <section class="section" id="about">
-    <h2 class="section-title">关于</h2>
-    <div class="about-card">
-      <p>智绘几何是一个<strong>开源</strong>的在线动态几何画板：平面画板由开源引擎 <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a> 驱动（本地加载，不依赖外网）；AI 作图经智谱 GLM 驱动，Key 只放在服务端；立体画板由 <a href="https://dajiaoai.com" target="_blank" rel="noopener">大角几何</a> 开放 SDK 提供。</p>
-      <p>所有文件仅保存在你自己的浏览器 localStorage 中，不上传任何服务器；换浏览器或清理缓存会丢失，重要画板请及时「导出 JSON」。</p>
-    </div>
   </section>
 
   <!-- 开源入口：极简指向开放平台，参考大角几何首页写法（置于末位） -->
@@ -298,7 +249,7 @@
 
   <footer class="site-footer">
     <p>平面画板 · <a href="https://jsxgraph.org" target="_blank" rel="noopener">JSXGraph</a>（LGPL）｜AI · 智谱 GLM｜立体画板 · 大角几何 SDK（Apache-2.0）</p>
-    <p>开源项目 · <a href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码</a>（MIT）｜本站不收集任何个人数据</p>
+    <p>开源项目 · <a href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码</a>（MIT）｜不投广告 · 不追踪 · 画板默认只存本机</p>
   </footer>
 
   <button class="fab-help" id="fabHelp" type="button" title="帮助：查看关于与常见问题" aria-label="帮助">?</button>
@@ -312,9 +263,9 @@
   <script src="js/models.js"></script>
   <script src="js/templates.js?v=blue1"></script>
   <script src="js/auth.js"></script>
-  <script src="js/workbench.js"></script>
-  <script src="js/landing.js"></script>
-  <script src="js/site-improve.js?v=blue1" defer></script>
-  <script src="js/page-shell.js" defer></script>
+  <script src="js/workbench.js?v=dedup1"></script>
+  <script src="js/landing.js?v=dedup1"></script>
+  <script src="js/site-improve.js?v=dedup2" defer></script>
+  <script src="js/page-shell.js?v=dedup2" defer></script>
 </body>
 </html>

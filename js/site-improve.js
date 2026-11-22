@@ -184,7 +184,8 @@
           '<li><b>保存与导出</b>：文件只存本机浏览器，可导出 .json 工程备份或 PNG 图片。</li>' +
         '</ol>' +
         '<div class="si-help-links">' +
-          '<a href="#about">了解更多</a>' +
+          '<a href="/quickstart.html">查看完整指南</a>' +
+          '<a href="/about.html">了解更多</a>' +
           '<a href="https://github.com/Cyrus-Nebula/zhihuabaiban/issues" target="_blank" rel="noopener">反馈问题</a>' +
         '</div>' +
       '</div>';
@@ -350,7 +351,7 @@
     if (footer) {
       footer.innerHTML = '<p>© 2026 智绘几何 · 开源 · ' +
         '<a href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码（MIT）</a>' +
-        '　·　本站不收集任何个人数据</p>';
+        '　·　不投广告 · 不追踪 · 画板默认只存本机</p>';
     }
   }
 
@@ -1263,8 +1264,8 @@
     });
     var ot = document.getElementById('v3OpenTemplates');
     if (ot) ot.addEventListener('click', function () {
-      var t = document.getElementById('templates');
-      if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // 模板已拆分为独立页面，直接跳转；不再滚动到首页内已删除的 #templates。
+      location.href = '/templates.html';
     });
   }
 

@@ -66,7 +66,7 @@
         '<a href="https://github.com/Cyrus-Nebula/zhihuabaiban" target="_blank" rel="noopener">GitHub 源码（MIT）</a><span class="sep">·</span>' +
         '<a href="/about.html#updates">更新记录</a><span class="sep">·</span>' +
         '<a href="/about.html#privacy">隐私说明</a><span class="sep">·</span>' +
-        '<span>本站不收集任何个人数据</span>' +
+        '<span>不投广告 · 不追踪 · 画板默认只存本机</span>' +
       '</div>';
     document.body.appendChild(f);
   }

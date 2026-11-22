@@ -165,8 +165,10 @@
     if (e.key === 'Escape') setMenu(false);
   });
 
-  /* ---------- 滚动高亮（IntersectionObserver 代替 scroll 轮询） ---------- */
-  const linkMap = ['#quickstart', '#templates', '#files', '#about'];
+  /* ---------- 滚动高亮（仅当首页仍保留对应板块时生效） ---------- */
+  // 快速入门/模板/关于已拆分为独立页面，首页不再重复这些板块；
+  // 这里只观察实际存在的锚点，避免对已删除 DOM 的无效引用。
+  const linkMap = ['#quickstart', '#templates', '#files', '#about'].filter((h) => document.querySelector(h));
   const linkEls = Array.from(siteLinks.querySelectorAll('a'));
   if ('IntersectionObserver' in window) {
     const visible = new Set();
@@ -187,25 +189,28 @@
     });
   }
 
-  /* ---------- 快速入门面板：收起/展开 ---------- */
+  /* ---------- 快速入门面板：收起/展开（首页已拆分为独立页，若仍存在则兼容） ---------- */
   const qsClose = $('qsClose');
   const qsSteps = $('qsSteps');
-  qsClose.addEventListener('click', () => {
-    const hidden = qsSteps.hidden;
-    qsSteps.hidden = !hidden;
-    qsClose.textContent = hidden ? '×' : '+';
-    qsClose.setAttribute('aria-expanded', String(hidden));
-    qsClose.setAttribute('aria-label', hidden ? '收起快速入门' : '展开快速入门');
+  if (qsClose && qsSteps) {
+    qsClose.addEventListener('click', () => {
+      const hidden = qsSteps.hidden;
+      qsSteps.hidden = !hidden;
+      qsClose.textContent = hidden ? '×' : '+';
+      qsClose.setAttribute('aria-expanded', String(hidden));
+      qsClose.setAttribute('aria-label', hidden ? '收起快速入门' : '展开快速入门');
+    });
+  }
+
+  /* ---------- 浮动帮助按钮：指向独立快速入门页 ---------- */
+  const fabHelp = $('fabHelp');
+  if (fabHelp) fabHelp.addEventListener('click', () => {
+    location.href = '/quickstart.html';
   });
 
-  /* ---------- 浮动帮助按钮 ---------- */
-  $('fabHelp').addEventListener('click', () => {
-    document.querySelector('#about').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-
-  /* ---------- 模板与案例 ---------- */
+  /* ---------- 模板与案例（首页已拆分到 /templates.html，若仍存在则渲染） ---------- */
   const grid = $('tplGrid');
-  TEMPLATES.forEach((t) => {
+  if (grid) TEMPLATES.forEach((t) => {
     const card = document.createElement('div');
     card.className = 'tpl-card';
 
