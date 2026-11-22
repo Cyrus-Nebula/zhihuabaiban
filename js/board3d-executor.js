@@ -34,6 +34,7 @@ import { resolvePyramid3D } from './board3d-pyramid.js';
 import { resolveFrustum3D } from './board3d-frustum.js';
 import { resolveVector3D } from './board3d-vector.js';
 import { resolveCone3D } from './board3d-cone.js';
+import { resolveCylinder3D } from './board3d-cylinder.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -326,6 +327,20 @@ export const BOARD3D_CONE_OPS = Object.freeze(['cone3d']);
 /** 含全部扩展命令的完整集（28 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE19_OPS = Object.freeze([
   ...BOARD3D_COMPLETE18_OPS, ...BOARD3D_CONE_OPS,
+]);
+
+// 2026-11-23 D29：cylinder3d 通用圆柱 / 斜圆柱，给底面圆心 base + 底面法向 axis + 半径 radius +
+// 高 height（或显式顶面圆心 top）生成底圈 + 顶圈 + 侧母线线框（可选圆心/圈点小球与 O/A…/A'… 标注）。
+// 单独成组、不并入任何历史契约常量
+// （BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 / COMPLETE2 11 / COMPLETE3 12 /
+// COMPLETE4 13 / COMPLETE5 14 / COMPLETE6 15 / COMPLETE7 16 / COMPLETE8 17 /
+// COMPLETE9 18 / COMPLETE10 19 / COMPLETE11 20 / COMPLETE12 21 / COMPLETE13 22 /
+// COMPLETE14 23 / COMPLETE15 24 / COMPLETE16 25 / COMPLETE17 26 / COMPLETE18 27 /
+// COMPLETE19 28 条），按协作铁律逐字不变。
+export const BOARD3D_CYLINDER_OPS = Object.freeze(['cylinder3d']);
+/** 含全部扩展命令的完整集（29 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE20_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE19_OPS, ...BOARD3D_CYLINDER_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1192,6 +1207,35 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           let coneState = {};
           try { coneState = (a.getState ? a.getState() : {}) || {}; } catch (_) { coneState = {}; }
           const r = resolveCone3D(cmd, coneState);
+          if (!r.ok) {
+            results.push({ op, ok: false, error: r.error });
+            break;
+          }
+          const created = [];
+          const failed = [];
+          for (const item of r.items) {
+            if (known.has(item.id)) { failed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { failed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            created.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: failed.length === 0 && created.length > 0,
+            count: r.items.length, created, meta: r.meta,
+            ...(failed.length ? { failed } : {}),
+          });
+          break;
+        }
+        case 'cylinder3d': {
+          // 2026-11-23 D29：3D 通用圆柱 / 斜圆柱，给 base + axis + radius + height（或显式 top）
+          // 生成底圈 + 顶圈 + 侧母线线框（可选圆心/圈点小球与 O/A…/A'… 标注）。不需要源对象；从
+          // 「当前」getState 读状态仅用于生成 id 时避让已有对象，getState 缺失 / 抛错降级为空场景，
+          // 整批不中断；id 冲突分项失败、api.add 返回 null/false 分项回报；2D 命令仍由 default 拒绝。
+          let cylState = {};
+          try { cylState = (a.getState ? a.getState() : {}) || {}; } catch (_) { cylState = {}; }
+          const r = resolveCylinder3D(cmd, cylState);
           if (!r.ok) {
             results.push({ op, ok: false, error: r.error });
             break;

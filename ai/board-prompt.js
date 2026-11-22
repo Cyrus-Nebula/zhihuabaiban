@@ -2470,3 +2470,33 @@ export const BOARD3D_CONE_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；base/apex 非法、apex 与 base 重合或过近、axis 非法或零向量、radius/height 越界、segments 非整数或越界、开关非布尔、四开关全关、vertexSize 越界、id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：内置 cone 只能沿 y 轴画正圆锥；pyramid3d / frustum3d 是多边形底面；revolve3d 需手写母线；vector3d 画的是不闭合的箭头。要画「真圆底面 + 可斜圆锥」用 cone3d。
 - 铁律：cone3d 是 3D 命令；2D 的圆锥 / 三角形命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-23 D29 追加段：cylinder3d 通用圆柱 / 斜圆柱（独立自主 3D 画板任务）
+ * 上方 CONE 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'cylinder3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** cylinder3d 通用圆柱提示词段 */
+export const BOARD3D_CYLINDER_PROMPT_OPS = Object.freeze(['cylinder3d']);
+export const BOARD3D_CYLINDER_PROMPT = `
+# 补充：cylinder3d 通用圆柱 / 斜圆柱（2026-11-23 追加）
+- 用途：给底面圆心 base + 底面法向 axis + 半径 radius + 高 height（或显式顶面圆心 top）画一个真圆柱 / 斜圆柱并可选标注。内置 cylinder(r,h) 只能沿 y 轴画正圆柱、无法指定底面圆心 / 法向 / 顶面偏移；prism3d / frustum3d 底面是多边形、画不出真圆底面 / 顶圈；cone3d 顶圈收缩为顶点；cylinder3d 填补「任意朝向 + 任意底面圆心 + 等半径顶圈 + 可斜」的圆柱缺口。
+- 命令格式：{"op":"cylinder3d","id":"cyl","base":[0,0,0],"axis":"z","radius":1,"height":2,"segments":24,"asBase":true,"asTop":true,"asSides":true,"asPoints":false,"labelVertices":false,"vertexSize":0.1}
+  · base：底面圆心 [x,y,z]（默认 [0,0,0]）。
+  · axis：底面平面法向，'x'/'y'/'z' 或任意非零 3D 向量（默认 'z'，底面落在 xy 平面）。底圈与顶圈恒垂直 axis。
+  · radius：半径（默认 1，区间 0.01~10000），底圈与顶圈等半径。
+  · height：顶面沿 axis 距底面的高（默认 2，区间 0.01~10000），仅在未给 top 时生效，此时顶面圆心 = base + height·axis（正圆柱）。
+  · top：可选，显式顶面圆心 [x,y,z]；给了就忽略 height。top 与 axis 分离（顶面圆心投影不在底面圆心）即斜圆柱。
+  · segments：底圈 / 顶圈 / 侧母线条数（默认 24，整数 3~64）。
+  · asBase / asTop / asSides：是否画底面圆 / 顶面圆 / 顶底对应点的侧母线（均默认 true）。
+  · asPoints：是否在两圆心与底圈/顶圈各点放小球（默认 false）。labelVertices：是否标注圆心 O/O' 与底圈 A/B/C…、顶圈 A'/B'/C'（默认 false），直接服务「标注顶点」用例。
+  · vertexSize：小球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。五个输出开关至少开一个。
+- 示例：
+  · 默认正圆柱（xy 平面半径 1、高 2、24 分段）：{"op":"cylinder3d"}
+  · 正圆柱 + 标顶点：{"op":"cylinder3d","radius":1.5,"height":3,"labelVertices":true}
+  · 斜圆柱（axis=z 但顶面圆心偏移到 [1.5,0,3]）：{"op":"cylinder3d","axis":"z","top":[1.5,0,3],"radius":2}
+  · 横躺圆柱（axis=x）：{"op":"cylinder3d","axis":"x","base":[0,0,0],"radius":1,"height":4}
+  · 只要双圆不要侧母线：{"op":"cylinder3d","asSides":false,"color":"#e04040"}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；base/top 非法、顶面与底面圆心重合或过近、axis 非法或零向量、radius/height 越界、segments 非整数或越界、开关非布尔、五开关全关、vertexSize 越界、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：内置 cylinder 只能沿 y 轴画正圆柱；prism3d / frustum3d 是多边形底面；cone3d 只有一个圆底面（顶圈收缩为点）；revolve3d 需手写母线。要画「双真圆 + 可斜圆柱」用 cylinder3d。
+- 铁律：cylinder3d 是 3D 命令；2D 的圆柱 / 矩形命令在本分支依旧不认识，不要输出。`;

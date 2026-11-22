@@ -322,6 +322,23 @@ async function send() {
           : `高 ${m.height != null ? m.height : '?'} 沿 [${m.axis && m.axis.length ? m.axis.join(',') : '?'}]`;
         appendLog('ai', `已生成${kind}（圆心 [${m.base && m.base.length ? m.base.join(',') : '?'}]，半径 ${m.radius != null ? m.radius : '?'}，${apexDesc}，母线 ${m.slantHeight != null ? m.slantHeight : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-23 D29：cylinder3d 展示正/斜圆柱、底面圆心与法向、半径/高（或显式顶面圆心）、底圈/顶圈/侧母线与圆心标注（数值以画板返回为准）。
+      for (const cc of results) {
+        if (!cc.ok || cc.op !== 'cylinder3d') continue;
+        const m = cc.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.baseRingCount) parts.push(`${m.baseRingCount} 底圈`);
+        if (m.topRingCount) parts.push(`${m.topRingCount} 顶圈`);
+        if (m.sideCount) parts.push(`${m.sideCount} 侧母线`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 标注`);
+        const kind = m.isRight ? '正圆柱' : '斜圆柱';
+        const topDesc = m.topExplicit
+          ? `顶面圆心 [${m.top && m.top.length ? m.top.join(',') : '?'}]`
+          : `高 ${m.height != null ? m.height : '?'} 沿 [${m.axis && m.axis.length ? m.axis.join(',') : '?'}]`;
+        appendLog('ai', `已生成${kind}（圆心 [${m.base && m.base.length ? m.base.join(',') : '?'}]，半径 ${m.radius != null ? m.radius : '?'}，${topDesc}，侧母线长 ${m.sideLength != null ? m.sideLength : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
