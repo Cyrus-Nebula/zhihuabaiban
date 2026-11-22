@@ -291,6 +291,21 @@ async function send() {
           : `相似比 ${m.ratio != null ? m.ratio : '?'} 沿 ${m.axis || '?'} 抬升 ${m.height != null ? m.height : '?'}`;
         appendLog('ai', `已生成棱台（${m.vertexCount != null ? m.vertexCount : '?'} 边形底面，${topDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-23 D27：vector3d 展示起点→终点、长度与方向、箭头尺寸、杆/底圈/母线与端点标注（数值以画板返回为准）。
+      for (const vc of results) {
+        if (!vc.ok || vc.op !== 'vector3d') continue;
+        const m = vc.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.shaftCount) parts.push(`${m.shaftCount} 杆`);
+        if (m.headRingCount) parts.push(`${m.headRingCount} 底圈`);
+        if (m.headRibCount) parts.push(`${m.headRibCount} 母线`);
+        if (m.pointCount) parts.push(`${m.pointCount} 端点球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 端点标注`);
+        const dir = m.direction && m.direction.length ? `[${m.direction.join(',')}]` : '?';
+        const headDesc = m.headLengthClamped ? `${m.headLength}（已按杆长钳制）` : `${m.headLength}`;
+        appendLog('ai', `已生成空间向量（[${m.from && m.from.length ? m.from.join(',') : '?'}] → [${m.to && m.to.length ? m.to.join(',') : '?'}]，长度 ${m.length != null ? m.length : '?'}，方向 ${dir}，箭头长 ${headDesc}/半径 ${m.headRadius != null ? m.headRadius : '?'}/${m.headSegments != null ? m.headSegments : '?'} 分段）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

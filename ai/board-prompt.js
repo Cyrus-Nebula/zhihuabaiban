@@ -2412,3 +2412,31 @@ export const BOARD3D_FRUSTUM_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数；base/top 点数不在 3~32 或含非法点、top 数量与 base 不等、ratio 不在 0~1、height/axis/id 非法、vertexSize 越界、五个输出开关全关 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：add3d 内置 cylinder(rt≠rb) 是回转圆台（无法画任意多边形底面）；prism3d 上下全等；pyramid3d 顶缩为一点；polyhedron3d 是五种柏拉图立体；revolve3d/torus3d/ellipsoid3d/capsule3d/tube3d 是回转 / 曲面体。frustum3d 专用于「任意底面 + 相似收缩顶面」的台体。
 - 铁律：frustum3d 是 3D 命令；2D 的棱台 / 梯形 / 多边形命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-23 D27 追加段：vector3d 空间向量 / 有向线段箭头（独立自主 3D 画板任务）
+ * 上方 FRUSTUM 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'vector3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** vector3d 空间向量提示词段 */
+export const BOARD3D_VECTOR_PROMPT_OPS = Object.freeze(['vector3d']);
+export const BOARD3D_VECTOR_PROMPT = `
+# 补充：vector3d 空间向量 / 有向线段箭头（2026-11-23 追加）
+- 用途：画一条从 A 指向 B 的**有向**线段（空间向量 / 法向量 / 力 / 有向边）。内置 line 只能画无向线段、内置 cone 只能沿 y 轴画正圆锥；vector3d 把圆锥箭头的底圆严格放在垂直 AB、距终点 headLength 的位置，箭头尖端恰为终点 B。
+- 命令格式：{"op":"vector3d","id":"vec","from":[0,0,0],"to":[3,0,4],"headLength":0.5,"headRadius":0.25,"headSegments":12,"asShaft":true,"asHead":true,"asPoints":false,"labelEndpoints":true}
+  · from / to：起点 / 终点 [x,y,z]（默认 [0,0,0] → [0,0,2]，沿 z 轴正向）。二者不得重合，长度须在 0.01~10000，零向量整条拒绝。
+  · headLength：箭头锥沿杆回退长度（默认 0.4，区间 0.01~1000）。会自动钳制到不超过杆长的 0.9 倍，保证箭头底心不越过起点、不倒退。
+  · headRadius：箭头锥底半径（默认 0.2，区间 0.01~1000）。底圈恒垂直于杆方向。
+  · headSegments：底圈 / 母线条数（默认 12，整数 3~48）；值越大箭头越圆滑。
+  · asShaft：是否画杆 from→to（默认 true）。asHead：是否画圆锥箭头（默认 true）。
+  · asPoints：是否在起点 / 终点放小球（默认 false）。labelEndpoints：是否在起点 / 终点放 A / B 标注（默认 false）。
+  · vertexSize：端点球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。四个输出开关至少开一个。
+- 示例：
+  · 默认空间向量（原点沿 z 正向、长 2）：{"op":"vector3d"}
+  · 法向量（从面上一点指向 [3,0,4]，标注端点）：{"op":"vector3d","from":[0,0,0],"to":[3,0,4],"labelEndpoints":true}
+  · 力箭头（粗箭头 + 端点球）：{"op":"vector3d","from":[-2,0,0],"to":[2,0,0],"headLength":0.7,"headRadius":0.35,"asPoints":true}
+  · 只要细杆不要箭头：{"op":"vector3d","from":[0,0,0],"to":[0,0,3],"asHead":false}
+  · 低多边形箭头：{"op":"vector3d","headSegments":6,"color":"#e04040"}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；from/to 非法或重合、长度越界、headLength/headRadius 越界、headSegments 非整数或越界、开关非布尔、四开关全关、vertexSize 越界、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：add3d 的 line 是无向线段；measure3d 只量测距离/夹角/中点并写读数、不画箭头；内置 cone 只能沿 y 轴；prism3d/pyramid3d/frustum3d 画的是实体多面体线框。要画「有方向的向量/法向量/力」用 vector3d。
+- 铁律：vector3d 是 3D 命令；2D 的向量 / 箭头 / 有向线段命令在本分支依旧不认识，不要输出。`;
