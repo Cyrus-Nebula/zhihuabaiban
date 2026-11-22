@@ -2440,3 +2440,33 @@ export const BOARD3D_VECTOR_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；from/to 非法或重合、长度越界、headLength/headRadius 越界、headSegments 非整数或越界、开关非布尔、四开关全关、vertexSize 越界、id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：add3d 的 line 是无向线段；measure3d 只量测距离/夹角/中点并写读数、不画箭头；内置 cone 只能沿 y 轴；prism3d/pyramid3d/frustum3d 画的是实体多面体线框。要画「有方向的向量/法向量/力」用 vector3d。
 - 铁律：vector3d 是 3D 命令；2D 的向量 / 箭头 / 有向线段命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-23 D28 追加段：cone3d 通用圆锥 / 斜圆锥（独立自主 3D 画板任务）
+ * 上方 VECTOR 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'cone3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** cone3d 通用圆锥提示词段 */
+export const BOARD3D_CONE_PROMPT_OPS = Object.freeze(['cone3d']);
+export const BOARD3D_CONE_PROMPT = `
+# 补充：cone3d 通用圆锥 / 斜圆锥（2026-11-23 追加）
+- 用途：给底面圆心 base + 底面法向 axis + 半径 radius + 高 height（或显式顶点 apex）画一个真圆锥 / 斜圆锥并可选标注。内置 cone(r,h) 只能沿 y 轴画正圆锥、无法指定底面圆心 / 法向 / 顶点偏移；pyramid3d / frustum3d 底面是多边形、画不出真圆底面；cone3d 填补「任意朝向 + 任意底面圆心 + 可斜」的圆锥缺口。
+- 命令格式：{"op":"cone3d","id":"cone","base":[0,0,0],"axis":"z","radius":1,"height":2,"segments":24,"asBase":true,"asSides":true,"asPoints":false,"labelVertices":false,"vertexSize":0.1}
+  · base：底面圆心 [x,y,z]（默认 [0,0,0]）。
+  · axis：底面平面法向，'x'/'y'/'z' 或任意非零 3D 向量（默认 'z'，底面落在 xy 平面）。底圈恒垂直 axis。
+  · radius：底半径（默认 1，区间 0.01~10000）。
+  · height：顶点沿 axis 距底面的高（默认 2，区间 0.01~10000），仅在未给 apex 时生效，此时顶点 = base + height·axis（正圆锥）。
+  · apex：可选，显式顶点 [x,y,z]；给了就忽略 height。apex 与 axis 分离（顶点投影不在圆心）即斜圆锥。
+  · segments：底圈 / 母线条数（默认 24，整数 3~64）。
+  · asBase / asSides：是否画底面圆 / 顶点到底圈各点的母线（均默认 true）。
+  · asPoints：是否在顶点与底圈各点放小球（默认 false）。labelVertices：是否标注顶点 S 与底圈 A/B/C…（默认 false），直接服务「标注顶点」用例。
+  · vertexSize：小球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。四个输出开关至少开一个。
+- 示例：
+  · 默认正圆锥（xy 平面半径 1、高 2、24 分段）：{"op":"cone3d"}
+  · 正圆锥 + 标顶点：{"op":"cone3d","radius":1.5,"height":3,"labelVertices":true}
+  · 斜圆锥（axis=z 但顶点偏移到 [1.5,0,3]）：{"op":"cone3d","axis":"z","apex":[1.5,0,3],"radius":2}
+  · 横躺圆锥（axis=x）：{"op":"cone3d","axis":"x","base":[0,0,0],"radius":1,"height":4}
+  · 只要母线线框不要底面：{"op":"cone3d","asBase":false,"color":"#e04040"}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；base/apex 非法、apex 与 base 重合或过近、axis 非法或零向量、radius/height 越界、segments 非整数或越界、开关非布尔、四开关全关、vertexSize 越界、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：内置 cone 只能沿 y 轴画正圆锥；pyramid3d / frustum3d 是多边形底面；revolve3d 需手写母线；vector3d 画的是不闭合的箭头。要画「真圆底面 + 可斜圆锥」用 cone3d。
+- 铁律：cone3d 是 3D 命令；2D 的圆锥 / 三角形命令在本分支依旧不认识，不要输出。`;

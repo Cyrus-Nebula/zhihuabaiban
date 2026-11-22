@@ -306,6 +306,22 @@ async function send() {
         const headDesc = m.headLengthClamped ? `${m.headLength}（已按杆长钳制）` : `${m.headLength}`;
         appendLog('ai', `已生成空间向量（[${m.from && m.from.length ? m.from.join(',') : '?'}] → [${m.to && m.to.length ? m.to.join(',') : '?'}]，长度 ${m.length != null ? m.length : '?'}，方向 ${dir}，箭头长 ${headDesc}/半径 ${m.headRadius != null ? m.headRadius : '?'}/${m.headSegments != null ? m.headSegments : '?'} 分段）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-23 D28：cone3d 展示正/斜圆锥、底面圆心与法向、半径/高（或显式顶点）、底圈/母线与顶点标注（数值以画板返回为准）。
+      for (const cc of results) {
+        if (!cc.ok || cc.op !== 'cone3d') continue;
+        const m = cc.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.baseRingCount) parts.push(`${m.baseRingCount} 底圈`);
+        if (m.sideCount) parts.push(`${m.sideCount} 母线`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 标注`);
+        const kind = m.isRight ? '正圆锥' : '斜圆锥';
+        const apexDesc = m.apexExplicit
+          ? `顶点 [${m.apex && m.apex.length ? m.apex.join(',') : '?'}]`
+          : `高 ${m.height != null ? m.height : '?'} 沿 [${m.axis && m.axis.length ? m.axis.join(',') : '?'}]`;
+        appendLog('ai', `已生成${kind}（圆心 [${m.base && m.base.length ? m.base.join(',') : '?'}]，半径 ${m.radius != null ? m.radius : '?'}，${apexDesc}，母线 ${m.slantHeight != null ? m.slantHeight : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
