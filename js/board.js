@@ -605,6 +605,44 @@ function setModelStatus(text, cls) {
   el.className = 'ai-model-status' + (cls ? ' ' + cls : '');
 }
 
+/* ---- v4：自检状态固定徽标 ----
+ * state: 'running'（进行中，紫）/ 'ok'（收敛，绿）/ 'warn'（收手，橙）
+ * 第三个参数传入一轮自检读数数组 [{pass,value,kind,label,expected}]，用于渲染 ✔/✘ 计数。
+ * 传 null 隐藏徽标（新一次生成开始时重置）。
+ */
+function setSelfcheck(state, note, list) {
+  const el = $('aiSelfcheck');
+  if (!el) return;
+  if (!state) { el.className = 'ai-selfcheck hidden'; el.textContent = ''; return; }
+  const passed = (list || []).filter((x) => x.pass === true).length;
+  const failed = (list || []).filter((x) => x.pass === false).length;
+  const total = (list || []).length;
+  const dot = '<span class="sc-dot"></span>';
+  let body = '';
+  if (total) {
+    body += `<span>自检 <span class="sc-round">${total}</span> 项</span>`
+      + `<span class="sc-pass">✔ ${passed}</span>`;
+    if (failed) body += `<span class="sc-fail">✘ ${failed}</span>`;
+  }
+  if (note) body += `<span>${note}</span>`;
+  el.className = 'ai-selfcheck' + (state === 'ok' ? ' ok' : state === 'warn' ? ' warn' : '');
+  el.innerHTML = dot + body;
+}
+
+/* 计算一组自检读数的「残差改善量」总残差：pass 项记 0；fail 项取 |value-expected|（无期望值时归一到 |value|）。
+ * 关系断言（perpendicular 等）残差本身即 |value|，判定阈值即容差，量纲已归一到同一尺度，可跨轮比较。 */
+function totalResidual(list) {
+  let s = 0;
+  for (const x of list || []) {
+    if (x.pass === true) continue;
+    const v = Number(x.value);
+    if (!Number.isFinite(v)) { s += 1; continue; }
+    if (x.expected != null && Number.isFinite(Number(x.expected))) s += Math.abs(v - Number(x.expected));
+    else s += Math.abs(v);
+  }
+  return s;
+}
+
 /* ---- 对象列表 ---- */
 function refreshObjects() {
   const entries = [...executor.registry.entries()];
@@ -2654,6 +2692,7 @@ async function aiSend() {
   lastRequest = reqSnapshot;
   hideRetry();
   clearImage();
+  setSelfcheck(null);   // 新一次生成：重置自检徽标
   $('ai-send').disabled = true;
   if (aiMode === 'query') {
     $('ai-send').textContent = '查询中…';
@@ -2810,14 +2849,28 @@ async function aiSend() {
       if (readings.length) {
         let cur = readings;
         let prevFail = failsOf(cur).length;
-        let stall = 0;             // 连续「失败项没减少」的轮数
+        let prevResidual = totalResidual(cur);   // 残差改善量基线：上一轮的总残差
+        let stall = 0;             // 连续「失败项/残差无实质改善」的轮数
         let attempted = [];       // 累计已执行的修正命令，供下一轮 diff
         let lastSig = '';         // 上一轮修正命令签名，检测反复横跳
         let corrected = 0;        // 累计成功修正的命令条数
+        const EPS = 1e-3;          // 残差改善量阈值：小于此值视为「无实质改善」
+        // 徽标初始态：running。首轮即全部通过时下方会立即改写为 ok。
+        setSelfcheck('running', '自检中…', cur);
         appendLog('ai', '【自检】' + summaryOf(cur));
+        // 收敛/收手后，把 probeVerify 的最终结果回画成画板上的 ✔/✘ 读数（复用 verify 命令，
+        // 由 executor 在最新画板状态下重新求值并画文本；不进文档、重放不复现）。
+        const paintFinalReadouts = () => {
+          if (!origVerifies.length) return;
+          try { executor.execute(origVerifies.map((c) => ({ ...c, op: 'verify' }))); } catch (_) { /* 不阻断收尾 */ }
+        };
         for (let round = 1; round <= MAX_FIX_ROUNDS; round++) {
           const failed = failsOf(cur);
-          if (!failed.length) break;                        // 已收敛 / 纯读数：无需修正
+          if (!failed.length) {                             // 已收敛 / 纯读数：无需修正
+            setSelfcheck('ok', `已收敛 · 累计修正 ${corrected} 处`, cur);
+            paintFinalReadouts();
+            break;
+          }
           const passedTxt = cur.filter((x) => x.pass === true).map((x) => x.label || x.kind).join('、');
           const failTxt = failed.map((x) =>
             `✘ ${x.label || x.kind} = ${Number(x.value).toFixed(3)}（期望 ${x.expected != null ? x.expected : '符合关系'}）`).join('\n');
@@ -2825,6 +2878,7 @@ async function aiSend() {
             ? `\n【上一轮已尝试的改动（请勿原样重复，换一种改法）】\n${attempted.slice(-8).map((c) => JSON.stringify(c)).join('\n')}\n`
             : '\n';
           const status = `【自检状态条】已自检 ${cur.length} 项，✔ ${cur.length - failed.length} 项，✘ ${failed.length} 项；第 ${round}/${MAX_FIX_ROUNDS} 轮修正`;
+          setSelfcheck('running', `第 ${round}/${MAX_FIX_ROUNDS} 轮修正`, cur);
           appendLog('ai', status);
           let fixCmds = [];
           try {
@@ -2847,12 +2901,30 @@ async function aiSend() {
               .filter((c) => c && typeof c === 'object' && !['clear', 'measure', 'verify'].includes(c.op));
             if (fixData.message) appendLog('ai', fixData.message);
           } catch (e2) {
+            setSelfcheck('warn', '自检修正未完成 · 已停止', cur);
+            paintFinalReadouts();
             appendLog('ai', '自检修正未完成：' + e2.message);
             break;
           }
-          if (!fixCmds.length) { appendLog('ai', '【自检状态条】AI 判定已符合意图，收敛结束。'); break; }
+          if (!fixCmds.length) {
+            // AI 说"不用改了"时以机器复判为准：避免"AI 口头判定符合、verify 实际仍失败"误报收敛。
+            const finalCur = reprobe();
+            const finalFails = failsOf(finalCur).length;
+            setSelfcheck(finalFails ? 'warn' : 'ok',
+              finalFails ? 'AI 已停止 · 自检仍未全过' : `AI 判定符合意图 · 收敛（累计修正 ${corrected} 处）`, finalCur);
+            paintFinalReadouts();
+            appendLog('ai', finalFails
+              ? '【自检状态条】AI 未再给出修正命令，但自检仍有未通过项，已收手供人工确认。'
+              : '【自检状态条】AI 判定已符合意图，收敛结束。');
+            break;
+          }
           const sig = JSON.stringify(fixCmds);
-          if (sig === lastSig) { appendLog('ai', '【自检状态条】修正命令与上轮相同（反复横跳），已停止自动修正。'); break; }
+          if (sig === lastSig) {
+            setSelfcheck('warn', '反复横跳 · 已停止', cur);
+            paintFinalReadouts();
+            appendLog('ai', '【自检状态条】修正命令与上轮相同（反复横跳），已停止自动修正。');
+            break;
+          }
           lastSig = sig;
           executor.clearMeasures();   // 清掉上一轮临时 ✔/✘ 读数，保持画板干净（状态条留在面板日志）
           let fixed = 0;
@@ -2870,22 +2942,39 @@ async function aiSend() {
           refreshObjects();
           cur = reprobe();          // 复跑首轮原始 verify，机器判定修正是否真的奏效
           const nextFails = failsOf(cur).length;
-          appendLog('ai', `【自检】第 ${round} 轮修正 ${fixed} 处 → ${summaryOf(cur)}`);
+          const nextResidual = totalResidual(cur);
+          const gain = prevResidual - nextResidual;   // 残差改善量：>0 表示更接近预期
+          setSelfcheck('running', `第 ${round}/${MAX_FIX_ROUNDS} 轮 · 残差 ${prevResidual.toFixed(3)}→${nextResidual.toFixed(3)}`, cur);
+          appendLog('ai', `【自检】第 ${round} 轮修正 ${fixed} 处 → ${summaryOf(cur)}（残差 ${prevResidual.toFixed(3)} → ${nextResidual.toFixed(3)}，改善 ${gain.toFixed(3)}）`);
           if (nextFails === 0) {
+            setSelfcheck('ok', `已收敛 · 累计修正 ${corrected} 处`, cur);
+            paintFinalReadouts();
             appendLog('ai', `【自检状态条】已收敛：${cur.length} 项全部符合预期（累计修正 ${corrected} 处）。`);
             break;
           }
           if (nextFails > prevFail) {
+            setSelfcheck('warn', '失败项变多 · 已收手', cur);
+            paintFinalReadouts();
             appendLog('ai', '【自检状态条】失败项反而变多，提前收手，读数如上供人工确认。');
             break;
           }
-          stall = nextFails >= prevFail ? stall + 1 : 0;
+          // 残差改善量判定：只要残差实质下降（gain ≥ EPS）就清零 stall（即使失败项数没变，
+          // 例如从「差很多」逼近到「差一点」也算进展）；残差与失败项均无改善才累计 stall。
+          if (gain >= EPS) stall = 0;
+          else if (nextFails >= prevFail) stall += 1;
           if (stall >= 2) {
-            appendLog('ai', '【自检状态条】连续 2 轮无改善，提前收手，读数如上供人工确认。');
+            setSelfcheck('warn', '连续无改善 · 已收手', cur);
+            paintFinalReadouts();
+            appendLog('ai', '【自检状态条】连续 2 轮残差/失败项无实质改善，提前收手，读数如上供人工确认。');
             break;
           }
           prevFail = nextFails;
-          if (round === MAX_FIX_ROUNDS) appendLog('ai', '【自检状态条】已达修正轮数上限，读数如上供人工确认。');
+          prevResidual = nextResidual;
+          if (round === MAX_FIX_ROUNDS) {
+            setSelfcheck('warn', '达修正上限 · 停止', cur);
+            paintFinalReadouts();
+            appendLog('ai', '【自检状态条】已达修正轮数上限，读数如上供人工确认。');
+          }
         }
       }
     }

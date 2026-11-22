@@ -184,3 +184,20 @@ html.ui-v3 body.board-page .export-preset select{
 html.ui-v3 body.board-page .export-preset .exp-check input{flex:none}
 html.ui-v3 body.board-page .export-preset .export-menu-item{width:100%;text-align:left;margin-top:5px}
 html.ui-v3 body.board-page .ai-head{flex-wrap:wrap!important;row-gap:4px;padding:8px 12px}
+/* v4：自检状态固定徽标（running 紫 / ok 绿 / warn 橙；常驻 AI 面板顶部，不随日志滚动） */
+html.ui-v3 body.board-page .ai-selfcheck{
+  margin:0 12px;padding:7px 10px;border-radius:9px;font-size:11.5px;line-height:1.5;
+  background:#f1eefe;border:1px solid #ded6fa;color:#5b43c7;
+  display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+}
+html.ui-v3 body.board-page .ai-selfcheck.hidden{display:none}
+html.ui-v3 body.board-page .ai-selfcheck .sc-dot{
+  width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;
+}
+html.ui-v3 body.board-page .ai-selfcheck .sc-round{font-variant-numeric:tabular-nums;opacity:.85}
+html.ui-v3 body.board-page .ai-selfcheck .sc-pass{color:#2f8f5b;font-weight:600}
+html.ui-v3 body.board-page .ai-selfcheck .sc-fail{color:#c0392b;font-weight:600}
+html.ui-v3 body.board-page .ai-selfcheck.ok{background:#e9f8ef;border-color:#c6ecd6;color:#247a4c}
+html.ui-v3 body.board-page .ai-selfcheck.ok .sc-pass{color:#247a4c}
+html.ui-v3 body.board-page .ai-selfcheck.warn{background:#fff4d8;border-color:#f0dca6;color:#9a6b12}
+html.ui-v3 body.board-page .ai-selfcheck.warn .sc-fail{color:#a8341f}

@@ -225,6 +225,9 @@
         <button data-mode="query" type="button" role="tab" aria-selected="false">查询</button>
       </div>
 
+      <!-- v4：自检状态固定徽标（不随日志滚动；running/ok/warn 三态，收敛后保留最终读数摘要） -->
+      <div id="aiSelfcheck" class="ai-selfcheck hidden" role="status" aria-live="polite"></div>
+
       <div id="view-chat" class="ai-view">
         <div id="ai-log" class="ai-log"></div>
         <div id="aiRetry" class="ai-retry hidden" role="alert">
