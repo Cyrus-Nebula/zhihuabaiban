@@ -1,16 +1,16 @@
 /* ==========================================================================
    智绘几何 · 画板页 UI 统一层 (board-ui.css)
-   1) 视觉对齐主页紫色设计语言  2) 16 个按数学定义自绘工具图标
+   1) 视觉对齐主页蓝色设计语言  2) 16 个按数学定义自绘工具图标
    3) 图标右侧中文标注（含 iPad 窄屏）；保留全部 id / data-* / 业务 JS
    必须在 redesign.css 之后加载；删除本文件 link 即可整体回滚。
    ========================================================================== */
 
-/* ---------- 品牌令牌（对齐主页 style.css 紫色系） ---------- */
+/* ---------- 品牌令牌（对齐主页 style.css 蓝色系） ---------- */
 html.ui-v3 body.board-page{
-  --bu-brand:#6549d5;
-  --bu-brand-ink:#4c3dbe;
-  --bu-brand-soft:#f0effc;
-  --bu-brand-line:#d8d3f5;
+  --bu-brand:#1677ff;
+  --bu-brand-ink:#002b66;
+  --bu-brand-soft:#eaf2ff;
+  --bu-brand-line:#c9deff;
   --bu-line:#e8e8f0;
 }
 
@@ -39,7 +39,7 @@ html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool{
   background:transparent;color:#3a3a48;white-space:nowrap;
   transition:background .18s,color .18s,border-color .18s;
 }
-html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool:hover{background:#f7f6fd;color:var(--bu-brand-ink)}
+html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool:hover{background:#f7faff;color:var(--bu-brand-ink)}
 html.ui-v3 body.board-page .board-main.rail-layout .tool-grid .tool.active{
   background:var(--bu-brand-soft)!important;border-color:var(--bu-brand-line)!important;
   color:var(--bu-brand-ink)!important;font-weight:600;
@@ -94,14 +94,14 @@ html.ui-v3 body.board-page .board-main.rail-layout .toolbar .fn-domain{
 html.ui-v3 body.board-page .board-main.rail-layout .toolbar .fn-range{width:0!important;min-width:0!important}
 html.ui-v3 body.board-page .board-main.rail-layout .toolbar #fn-input{width:0!important;min-width:0!important}
 
-/* ---------- 顶栏：紫色主操作 + 圆角 ---------- */
+/* ---------- 顶栏：蓝色主操作 + 圆角 ---------- */
 html.ui-v3 body.board-page .topbar{background:#fff!important;border-bottom:1px solid var(--bu-line)!important}
 html.ui-v3 body.board-page .topbar .btn,html.ui-v3 body.board-page .topbar .ghost{
   border-radius:10px!important;border-color:var(--bu-line)!important;
   background:#fff!important;color:#3a3a48!important;font-size:12px;
 }
 html.ui-v3 body.board-page .topbar .btn:hover,html.ui-v3 body.board-page .topbar .ghost:hover{
-  border-color:var(--bu-brand-line)!important;color:var(--bu-brand-ink)!important;background:#faf9ff!important;
+  border-color:var(--bu-brand-line)!important;color:var(--bu-brand-ink)!important;background:#f7faff!important;
 }
 html.ui-v3 body.board-page .topbar #btn-export-menu{
   background:var(--bu-brand)!important;border-color:var(--bu-brand)!important;
@@ -109,7 +109,7 @@ html.ui-v3 body.board-page .topbar #btn-export-menu{
 }
 html.ui-v3 body.board-page .topbar .doc-name{border-radius:8px}
 
-/* ---------- AI 面板：白卡片 / 紫色 tab / 紫色生成 ---------- */
+/* ---------- AI 面板：白卡片 / 蓝色 tab / 蓝色生成 ---------- */
 html.ui-v3 body.board-page .ai-panel{background:#fff;border-left:1px solid var(--bu-line)}
 html.ui-v3 body.board-page .ai-tab.active{
   background:var(--bu-brand-soft)!important;border-color:var(--bu-brand-line)!important;
@@ -174,7 +174,7 @@ html.ui-v3 body.board-page .obj-derived{
 }
 html.ui-v3 body.board-page .export-preset{padding:8px 12px;border-bottom:1px solid var(--bu-line)}
 html.ui-v3 body.board-page .export-preset label{
-  display:flex;align-items:center;gap:8px;font-size:12px;color:#6b6480;margin:6px 0;
+  display:flex;align-items:center;gap:8px;font-size:12px;color:#64748b;margin:6px 0;
 }
 html.ui-v3 body.board-page .export-preset input[type=text],
 html.ui-v3 body.board-page .export-preset select{
@@ -184,10 +184,10 @@ html.ui-v3 body.board-page .export-preset select{
 html.ui-v3 body.board-page .export-preset .exp-check input{flex:none}
 html.ui-v3 body.board-page .export-preset .export-menu-item{width:100%;text-align:left;margin-top:5px}
 html.ui-v3 body.board-page .ai-head{flex-wrap:wrap!important;row-gap:4px;padding:8px 12px}
-/* v4：自检状态固定徽标（running 紫 / ok 绿 / warn 橙；常驻 AI 面板顶部，不随日志滚动） */
+/* v4：自检状态固定徽标（running 蓝 / ok 绿 / warn 橙；常驻 AI 面板顶部，不随日志滚动） */
 html.ui-v3 body.board-page .ai-selfcheck{
   margin:0 12px;padding:7px 10px;border-radius:9px;font-size:11.5px;line-height:1.5;
-  background:#f1eefe;border:1px solid #ded6fa;color:#5b43c7;
+  background:#eaf2ff;border:1px solid #c9deff;color:#1d4ed8;
   display:flex;align-items:center;gap:7px;flex-wrap:wrap;
 }
 html.ui-v3 body.board-page .ai-selfcheck.hidden{display:none}

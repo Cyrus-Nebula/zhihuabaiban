@@ -3,17 +3,17 @@
  * 这样首页、子页、画板、AI 生成页共享同一套颜色与圆角语义。
  */
 :root {
-  --app-brand: #6549d5;
-  --app-primary: #6549d5;
+  --app-brand: #1677ff;
+  --app-primary: #1677ff;
   --app-navy: #002b66;
-  --app-ink: #1b1730;
-  --app-muted: #6b6480;
-  --app-line: #e9e3f7;
-  --app-bg: #faf8ff;
+  --app-ink: #0f172a;
+  --app-muted: #64748b;
+  --app-line: #dbe7ff;
+  --app-bg: #f7faff;
   --app-surface: #ffffff;
-  --app-soft: #f2edff;
+  --app-soft: #eaf2ff;
   --app-radius: 16px;
-  --app-shadow: 0 10px 30px rgba(101, 73, 213, .10);
+  --app-shadow: 0 10px 30px rgba(22, 119, 255, .10);
 }
 
 /* 读屏专用：视觉隐藏但保留可访问性 */
@@ -45,7 +45,7 @@ button, .btn, select, input[type="button"], input[type="submit"] { min-height: 3
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 700;
 }
-#authBtn.is-user { background: var(--app-soft); border-color: #d9ccff; }
+#authBtn.is-user { background: var(--app-soft); border-color: #c9deff; }
 .auth-menu {
   position: absolute; z-index: 80; top: 52px; right: 22px;
   min-width: 168px; padding: 6px; border-radius: 12px;
@@ -68,13 +68,13 @@ button, .btn, select, input[type="button"], input[type="submit"] { min-height: 3
 }
 .site-footer a { color: var(--app-brand); text-decoration: none; }
 .site-footer a:hover { text-decoration: underline; }
-.site-footer .sep { color: #c9c2dd; }
+.site-footer .sep { color: #cbd5e1; }
 
 /* v4 提示条 / 状态条 */
 .v4-notice {
   margin: 0 0 20px; padding: 12px 14px;
-  border: 1px solid #ddd2ff; border-radius: 12px;
-  background: var(--app-soft); color: #4a3b86;
+  border: 1px solid #c9deff; border-radius: 12px;
+  background: var(--app-soft); color: #002b66;
   font-size: 13px; line-height: 1.6;
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
 }
@@ -102,7 +102,7 @@ body.landing #files.empty-collapsed { min-height: 0; }
 body.landing #files.empty-collapsed .v3-workstats { display: none; }
 body.landing #files.empty-collapsed #emptyState {
   padding: 14px 18px; border-radius: 12px;
-  background: var(--app-soft); color: #4a3b86; font-size: 14px;
+  background: var(--app-soft); color: #002b66; font-size: 14px;
 }
 body.landing #files.empty-collapsed #emptyState a { color: var(--app-brand); font-weight: 650; }
 .v3-stat em {
@@ -115,8 +115,8 @@ body.landing #files.empty-collapsed #emptyState a { color: var(--app-brand); fon
   max-width: 1120px; margin: 0 auto 28px; padding: 0 24px;
 }
 .v4-newbar-in {
-  border: 1px solid #ddd2ff; border-radius: var(--app-radius);
-  background: linear-gradient(135deg, #f7f3ff, #fff);
+  border: 1px solid #c9deff; border-radius: var(--app-radius);
+  background: linear-gradient(135deg, #eaf2ff, #fff);
   padding: 18px 20px; display: flex; flex-wrap: wrap;
   gap: 14px; align-items: center; justify-content: space-between;
   box-shadow: var(--app-shadow);
@@ -127,7 +127,7 @@ body.landing #files.empty-collapsed #emptyState a { color: var(--app-brand); fon
 .v4-newbar-links a {
   padding: 7px 12px; border-radius: 9px; font-size: 12px;
   color: var(--app-brand); background: var(--app-surface);
-  border: 1px solid #ddd2ff; text-decoration: none;
+  border: 1px solid #c9deff; text-decoration: none;
 }
 .v4-newbar-links a:hover { background: var(--app-soft); }
 

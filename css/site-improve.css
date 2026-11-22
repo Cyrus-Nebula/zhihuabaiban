@@ -63,7 +63,7 @@
 }
 .si-help li b { font-weight: 600; }
 .si-help-links { display: flex; gap: 18px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border, rgba(17, 24, 39, .08)); }
-.si-help-links a { font-size: 13px; color: var(--primary, #4c3dbe); text-decoration: none; }
+.si-help-links a { font-size: 13px; color: var(--primary, #002b66); text-decoration: none; }
 .si-help-links a:hover { text-decoration: underline; }
 .si-help-x {
   position: absolute; top: 12px; right: 12px; width: 30px; height: 30px;
@@ -108,10 +108,10 @@ body.landing:not(.nf-page) .hero-ai-left .ai-model { max-width: 100%; }
 .si-login-cta { margin-top: 14px; font-size: 13px; color: var(--secondary, #4b5565); line-height: 1.8; }
 .si-login-cta button {
   border: 1px solid var(--primary-soft-border, #dcd8f3); background: var(--primary-soft, #f2f1fc);
-  color: var(--primary-ink, #4335ad); border-radius: 7px; padding: 5px 12px;
+  color: var(--primary-ink, #002b66); border-radius: 7px; padding: 5px 12px;
   font: inherit; font-size: 13px; cursor: pointer; margin-left: 4px;
 }
-.si-login-cta button:hover { border-color: var(--primary, #4c3dbe); }
+.si-login-cta button:hover { border-color: var(--primary, #002b66); }
 
 /* #8 快速入门收起态：标题下给一行说明，避免只留一个 + 号看不懂 */
 .si-qs-tip { margin: 0 0 14px; font-size: 12.5px; color: var(--muted, #6b7487); }
@@ -121,11 +121,11 @@ body.landing:not(.nf-page) .hero-ai-left .ai-model { max-width: 100%; }
 .si-about-list { margin: 2px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.95; color: var(--secondary, #4b5565); }
 .si-about-list li { margin: 0; }
 .si-about-meta { margin: 4px 0 0; font-size: 12.5px; line-height: 1.9; color: var(--muted, #6b7487); }
-.si-about-meta a { color: var(--primary, #4c3dbe); text-decoration: none; }
+.si-about-meta a { color: var(--primary, #002b66); text-decoration: none; }
 .si-about-meta a:hover { text-decoration: underline; }
 body.landing:not(.nf-page) .site-footer { line-height: 1.9; }
 body.landing:not(.nf-page) .site-footer a { color: var(--secondary, #4b5565); text-decoration: none; }
-body.landing:not(.nf-page) .site-footer a:hover { color: var(--primary, #4c3dbe); text-decoration: underline; }
+body.landing:not(.nf-page) .site-footer a:hover { color: var(--primary, #002b66); text-decoration: underline; }
 
 /* ---------------------------------------------------------------------------
  * 平面画板（board-page）
@@ -203,7 +203,7 @@ body.board-page .topbar > a.btn.ghost {
   white-space: nowrap;
 }
 body.board-page .topbar > a.btn.ghost:hover {
-  border-color: var(--primary, #4c3dbe); color: var(--primary, #4c3dbe);
+  border-color: var(--primary, #002b66); color: var(--primary, #002b66);
 }
 body.board-page .topbar > .doc-name {
   font-size: 14px; font-weight: 600; line-height: 42px;
@@ -211,7 +211,7 @@ body.board-page .topbar > .doc-name {
 }
 body.board-page .topbar > .doc-name:hover,
 body.board-page .topbar > .doc-name:focus {
-  border-color: var(--primary, #4c3dbe); outline: none; background: var(--panel, #fff);
+  border-color: var(--primary, #002b66); outline: none; background: var(--panel, #fff);
 }
 
 /* #12 顶栏：style.css 原本就有 flex-wrap:wrap，按钮自动换行，无需横向滚动。
@@ -299,7 +299,7 @@ body.nf-page .nf-code { font-size: 56px; }
   padding: 7px 14px; font-size: 13px; color: var(--secondary, #4b5565); text-decoration: none;
   background: var(--panel, #fff);
 }
-.nf-links a:hover { border-color: var(--primary, #4c3dbe); color: var(--primary, #4c3dbe); }
+.nf-links a:hover { border-color: var(--primary, #002b66); color: var(--primary, #002b66); }
 .nf-tip { font-size: 12px; color: var(--muted, #6b7487); margin-top: 4px; }
 .nf-brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; color: var(--text, #111827); text-decoration: none; }
 .nf-brand img { width: 26px; height: 26px; }
@@ -314,8 +314,8 @@ body.nf-page .nf-code { font-size: 56px; }
 /* ---- ① 侧拉抽屉：触发按钮常驻工具条最左 ---- */
 .si-tools-trigger {
   order: -2;
-  border: 1px solid var(--primary, #4c3dbe); border-radius: 8px;
-  background: var(--primary, #4c3dbe); color: #fff;
+  border: 1px solid var(--primary, #002b66); border-radius: 8px;
+  background: var(--primary, #002b66); color: #fff;
   padding: 6px 12px; font: inherit; font-size: 12px; font-weight: 500;
   cursor: pointer; white-space: nowrap;
 }
@@ -360,7 +360,7 @@ body.nf-page .nf-code { font-size: 56px; }
   text-align: center; border-radius: 8px; font-size: 13px;
 }
 .si-drawer-tools .tool.active {
-  background: var(--primary, #4c3dbe); color: #fff; border-color: var(--primary, #4c3dbe);
+  background: var(--primary, #002b66); color: #fff; border-color: var(--primary, #002b66);
 }
 .si-drawer-tools .toolbar-sep { display: none; }
 .si-drawer-tip { margin: 18px 2px 0; font-size: 11.5px; line-height: 1.75; color: var(--muted, #6b7487); }
@@ -382,7 +382,7 @@ body.board-page #btn-save.si-saving { opacity: .72; pointer-events: none; }
   width: 100%; min-height: 44px; padding: 11px 14px; border-radius: 9px;
   font: inherit; font-size: 13.5px; cursor: pointer;
 }
-.si-cf-primary { border: 1px solid var(--primary, #4c3dbe); background: var(--primary, #4c3dbe); color: #fff; }
+.si-cf-primary { border: 1px solid var(--primary, #002b66); background: var(--primary, #002b66); color: #fff; }
 .si-cf-plain { border: 1px solid var(--border, rgba(17, 24, 39, .16)); background: var(--panel, #fff); color: var(--text, #111827); }
 .si-cf-ghost { border: 0; background: transparent; color: var(--muted, #6b7487); }
 .si-more-menu > .si-menu-item {
@@ -457,7 +457,7 @@ body.board3d-page .board3d-topbar > a.btn.ghost {
   font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap;
 }
 body.board3d-page .board3d-topbar > a.btn.ghost:hover {
-  border-color: var(--primary, #4c3dbe); color: var(--primary, #4c3dbe);
+  border-color: var(--primary, #002b66); color: var(--primary, #002b66);
 }
 body.board3d-page .board3d-topbar > .doc-name {
   font-size: 14px; font-weight: 600; line-height: 42px;
@@ -465,7 +465,7 @@ body.board3d-page .board3d-topbar > .doc-name {
 }
 body.board3d-page .board3d-topbar > .doc-name:hover,
 body.board3d-page .board3d-topbar > .doc-name:focus {
-  border-color: var(--primary, #4c3dbe); outline: none; background: var(--panel, #fff);
+  border-color: var(--primary, #002b66); outline: none; background: var(--panel, #fff);
 }
 body.board3d-page .board3d-topbar .btn {
   display: inline-flex; align-items: center; justify-content: center;

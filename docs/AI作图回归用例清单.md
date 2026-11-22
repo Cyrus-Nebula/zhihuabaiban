@@ -685,7 +685,7 @@
 
 | 完成项 | 说明 |
 |---|---|
-| 自检状态固定徽标 | `board.html` 新增 `#aiSelfcheck`，常驻 AI 面板顶部不随日志滚动；`setSelfcheck(state,note,list)` 三态：running 紫 / ok 绿 / warn 橙，显示「自检 N 项 ✔x ✘y + 轮次/残差/收敛」。每次生成开始重置隐藏 |
+| 自检状态固定徽标 | `board.html` 新增 `#aiSelfcheck`，常驻 AI 面板顶部不随日志滚动；`setSelfcheck(state,note,list)` 三态：running 蓝 / ok 绿 / warn 橙，显示「自检 N 项 ✔x ✘y + 轮次/残差/收敛」。每次生成开始重置隐藏 |
 | 残差改善量收敛判定 | `board.js` 新增 `totalResidual()`：pass 项记 0、fail 项取 \|value−expected\|（关系断言取 \|value\|）；每轮算 `gain=prev−next`，gain≥1e-3 视为实质改善并清零 stall，只有残差与失败项都无改善才累计 stall（≥2 收手）。解决"失败项数不变但已逼近预期"被误判为停滞 |
 | 收敛后回画最终读数 | `paintFinalReadouts()` 用 `executor.execute(origVerifies)` 在最新画板状态重跑 verify，把 ✔/✘ 读数回画到画板（不进文档、重放不复现） |
 | AI 空命令不误报收敛 | AI 返回空 commands 时先 `reprobe()` 以机器复判为准：仍 fail 则徽标报 warn「AI 已停止·自检仍未全过」，不再误报 ok |

@@ -566,7 +566,7 @@ html.ui-v2 body.board-page .toolbar #btn-poly-done{order:0!important;background:
 /* ==========================================================================
    首页令牌与布局优先级修正
    根因：unslop.css 用 body.landing (0,1,1) 重定义了一套 2026-10 旧令牌
-   （--bg:#f6f7f9 / --primary:#4c3dbe / --radius:12px …），特异性高于本文件
+   （--bg:#f6f7f9 / --primary:#002b66 / --radius:12px …），特异性高于本文件
    :root (0,1,0)，会把纸白底、蓝笔色、3px 圆角全部盖回旧值；它还给
    body.landing 下的容器写了 64px 导航 / 96px hero / 80px section 等旧间距。
    这里用 html.ui-v2 body.landing (0,2,1) 一次复位令牌，再逐条对齐 v2 布局。

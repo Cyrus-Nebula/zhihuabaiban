@@ -19,7 +19,7 @@
 
 /* ---------------------------------------------------------------------------
  * Pass 0 · Design tokens
- * 沿用项目已有品牌紫与 Manrope 字体；把「洒在框架上的颜色」收回成
+ * 沿用项目已有品牌蓝与 Manrope 字体；把「洒在框架上的颜色」收回成
  * 单一中性色阶 + 一个克制使用的 accent。
  * -------------------------------------------------------------------------*/
 body.landing {
@@ -31,11 +31,11 @@ body.landing {
   --secondary: #4b5565;
   --muted: #6b7487;
 
-  --primary: #4c3dbe;              /* 品牌紫加深，保证白字 ≥4.5:1 */
-  --primary-hover: #4233ad;
+  --primary: #002b66;              /* 品牌蓝加深，保证白字 ≥4.5:1 */
+  --primary-hover: #0e63d8;
   --primary-soft: #f2f1fc;
   --primary-soft-border: #dcd8f3;
-  --primary-ink: #4335ad;          /* accent 作为文字/墨色时用更深的同色 */
+  --primary-ink: #002b66;          /* accent 作为文字/墨色时用更深的同色 */
 
   --radius: 12px;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -73,7 +73,7 @@ body.landing .site-footer     { margin-top: 48px; padding: 24px 24px 32px; }
 
 /* ---------------------------------------------------------------------------
  * Pass 2 · Color
- * 去渐变文字 / 渐变 logo / 毛玻璃 / 紫色发光；深度改由中性表面与 hairline 承担。
+ * 去渐变文字 / 渐变 logo / 毛玻璃 / 彩色发光；深度改由中性表面与 hairline 承担。
  * -------------------------------------------------------------------------*/
 body.landing .site-nav::before {
   background: var(--panel);
@@ -110,7 +110,7 @@ body.landing .fab-help:hover {
   box-shadow: var(--shadow-1);
 }
 
-/* 计数：紫色发光圆点 → 安静的等宽数字 */
+/* 计数：彩色发光圆点 → 安静的等宽数字 */
 body.landing .step-no {
   width: auto; height: auto;
   background: none; color: var(--muted);
@@ -232,7 +232,7 @@ body.landing .tpl-cat {
   border-color: var(--border);
   color: var(--secondary);
 }
-/* 6 张模板卡各一个紫色实心按钮 = accent 被摊薄；降为次要按钮，
+/* 6 张模板卡各一个彩色实心按钮 = accent 被摊薄；降为次要按钮，
    把唯一的强调色留给顶栏「新建画板」这一处主操作 */
 body.landing .tpl-card .btn-primary {
   background: var(--raised);

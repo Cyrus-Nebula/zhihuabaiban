@@ -1662,7 +1662,7 @@ export const BOARD3D_SYSTEM_PROMPT = `你是「智绘几何」立体画板（3D�
 == 例2：四棱锥 + 内切球（半透明叠加） ==
 用户："画一个底面边长 3、高 3 的四棱锥，里面放一个半径 1 的球。"
 思路：棱锥中心 (0,1.5,0)（高 3），球心抬到 (0,1,0)；两者都半透明才看得见内部。
-{"op":"add3d","id":"pyr","type":"pyramid","pos":[0,1.5,0],"params":{"s":3,"h":3},"color":"#6549d5","opacity":0.4}
+{"op":"add3d","id":"pyr","type":"pyramid","pos":[0,1.5,0],"params":{"s":3,"h":3},"color":"#1677ff","opacity":0.4}
 {"op":"add3d","id":"ball","type":"sphere","pos":[0,1,0],"params":{"r":1},"color":"#e11d48","opacity":0.75}
 {"op":"label3d","id":"lblO","text":"O","pos":[0,1,0]}
 

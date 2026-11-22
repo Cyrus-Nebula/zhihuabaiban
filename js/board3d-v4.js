@@ -11,34 +11,34 @@ const SAMPLES = {
   torus: {
     op: 'torus3d', axis: 'y', center: [0, 0, 0], R: 1.6, r: 0.6,
     majorSegments: 24, minorSegments: 12, asMeridians: true, asRings: true,
-    color: '#6549d5', opacity: 1,
+    color: '#1677ff', opacity: 1,
   },
   capsule: {
     op: 'capsule3d', axis: 'y', center: [0, 0, 0], radius: 0.6, length: 1.6,
     meridians: 16, rings: 10, asMeridians: true, asRings: true,
-    color: '#6549d5', opacity: 1,
+    color: '#1677ff', opacity: 1,
   },
   ellipsoid: {
     op: 'ellipsoid3d', axis: 'y', center: [0, 0, 0], a: 1.6, b: 1, c: 1,
     meridians: 16, parallels: 10, asMeridians: true, asParallels: true,
-    color: '#6549d5', opacity: 1,
+    color: '#1677ff', opacity: 1,
   },
   polyhedron: {
     op: 'polyhedron3d', kind: 'cube', center: [0, 0, 0], radius: 1.2,
-    asVertices: true, labelVertices: true, vertexSize: 0.1, color: '#6549d5',
+    asVertices: true, labelVertices: true, vertexSize: 0.1, color: '#1677ff',
   },
   revolve: {
     op: 'revolve3d', profile: [[0, 0], [1, 0], [1, 2], [0, 2]],
     axis: 'y', segments: 18, sweep: 360, asMeridians: true, asRings: true,
-    color: '#6549d5', opacity: 1,
+    color: '#1677ff', opacity: 1,
   },
   helix: {
     op: 'helix3d', axis: 'y', radius: 1, pitch: 0.6, turns: 4,
-    segments: 96, asPoints: false, color: '#6549d5',
+    segments: 96, asPoints: false, color: '#1677ff',
   },
   arc: {
     op: 'arc3d', axis: 'z', center: [0, 0, 0], radius: 1.5,
-    startAngle: 0, sweep: 120, segments: 32, asPoints: false, color: '#6549d5',
+    startAngle: 0, sweep: 120, segments: 32, asPoints: false, color: '#1677ff',
   },
 };
 

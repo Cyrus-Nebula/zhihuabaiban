@@ -1,7 +1,7 @@
 :root{
-  --brand:var(--app-brand,#6549d5); --primary:var(--app-primary,#6549d5);
-  --ink:var(--app-ink,#1b1730); --muted:var(--app-muted,#6b6480);
-  --line:var(--app-line,#e9e3f7); --bg:var(--app-bg,#faf8ff);
+  --brand:var(--app-brand,#1677ff); --primary:var(--app-primary,#1677ff);
+  --ink:var(--app-ink,#0f172a); --muted:var(--app-muted,#64748b);
+  --line:var(--app-line,#dbe7ff); --bg:var(--app-bg,#f7faff);
   --card:var(--app-surface,#ffffff); --radius:var(--app-radius,16px);
 }
 *{box-sizing:border-box}

@@ -164,7 +164,7 @@ window.DAJIAO_TEMPLATES = [
       { op: 'function', id: 'f4', expr: 'x + 2', from: -8, to: 6 },
       { op: 'style', target: 'f4', color: '#F9A825', strokeWidth: 2 },
       { op: 'function', id: 'f5', expr: 'x - 2', from: -6, to: 8 },
-      { op: 'style', target: 'f5', color: '#6D28D9', strokeWidth: 2 },
+      { op: 'style', target: 'f5', color: '#1d4ed8', strokeWidth: 2 },
       { op: 'text', id: 't1', x: 6.2, y: 6.6, text: 'y = x' },
       { op: 'text', id: 't2', x: 3.4, y: 8.6, text: 'y = 2x' },
       { op: 'text', id: 't3', x: 6.4, y: 4.2, text: 'y = 0.5x' },
