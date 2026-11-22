@@ -275,6 +275,22 @@ async function send() {
           : `质心沿 ${m.axis || '?'} 抬升 ${m.height != null ? m.height : '?'}`;
         appendLog('ai', `已生成棱锥（${m.vertexCount != null ? m.vertexCount : '?'} 边形底面，${apexDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-22 D26：frustum3d 展示底面顶点数 / 相似比与抬升方式 / 底面顶边侧棱与顶点标注（数值以画板返回为准）。
+      for (const fr of results) {
+        if (!fr.ok || fr.op !== 'frustum3d') continue;
+        const m = fr.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.baseEdgeCount) parts.push(`${m.baseEdgeCount} 底边`);
+        if (m.topEdgeCount) parts.push(`${m.topEdgeCount} 顶边`);
+        if (m.sideEdgeCount) parts.push(`${m.sideEdgeCount} 侧棱`);
+        if (m.pointCount) parts.push(`${m.pointCount} 顶点球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 顶点标注`);
+        const topDesc = m.topMode === 'explicit'
+          ? '显式顶面顶点'
+          : `相似比 ${m.ratio != null ? m.ratio : '?'} 沿 ${m.axis || '?'} 抬升 ${m.height != null ? m.height : '?'}`;
+        appendLog('ai', `已生成棱台（${m.vertexCount != null ? m.vertexCount : '?'} 边形底面，${topDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

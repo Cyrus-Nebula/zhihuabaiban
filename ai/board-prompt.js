@@ -2299,3 +2299,32 @@ export const BOARD3D_PYRAMID_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数；base 点数不在 3~32 或含非法点、apex/height/axis/id 非法、vertexSize 越界、四个输出开关全关 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：add3d 内置 pyramid 是正四棱锥（无任意底面、无斜顶点）；prism3d 是底面 + 拉伸向量的柱体（顶面全等）；polyhedron3d 是五种柏拉图立体；revolve3d/torus3d/ellipsoid3d/capsule3d/tube3d 是回转 / 曲面体。pyramid3d 专用于「任意底面 + 单顶点」的锥体。
 - 铁律：pyramid3d 是 3D 命令；2D 的棱锥 / 多边形命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-22 D26 追加段：frustum3d 通用棱台 / 斜棱台（独立自主 3D 画板任务）
+ * 上方 PYRAMID 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'frustum3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** frustum3d 通用棱台提示词段 */
+export const BOARD3D_FRUSTUM_PROMPT_OPS = Object.freeze(['frustum3d']);
+export const BOARD3D_FRUSTUM_PROMPT = `
+# 补充：frustum3d 通用棱台 / 斜棱台（2026-11-22 追加）
+- 用途：给任意底面多边形 + 相似比画棱台 / 三棱台 / 四棱台 / 正棱台 / 斜棱台并标注顶点。内置 cylinder 只能画「圆台」（回转体、无法画多边形底面）；prism3d 上下底面全等（相似比 1）、pyramid3d 收缩到单顶点（相似比 0）；frustum3d 填补中间 0<ratio<1 的缺口，与二者互补。
+- 命令格式：{"op":"frustum3d","id":"fru","base":[[-1,-1,0],[1,-1,0],[1,1,0],[-1,1,0]],"ratio":0.5,"height":2,"asBase":true,"asTop":true,"asSides":true,"asVertices":false,"labelVertices":true,"vertexSize":0.1}
+  · base：底面顶点 [[x,y,z],...]，3~32 个（默认 z=0 平面边长 2 的正方形）。顶点按给定顺序首尾相连成闭合多边形，应给简单（不自交）多边形。
+  · ratio：顶面相对底面质心的相似比 0~1（默认 0.5）。顶面点 = 质心 + (底点 − 质心) × ratio + axis 方向 × height；ratio=1 退化为棱柱、ratio=0 退化为棱锥，0<ratio<1 为正棱台。
+  · top：可选，显式给顶面顶点数组（数量须与 base 相同）；给了 top 则忽略 ratio/axis/height，可画斜棱台 / 一般台体。
+  · axis / height：不给 top 时沿坐标轴抬升，axis 默认 'z'（可 x/y/z），height 默认 2（0~10000）。
+  · asBase / asTop / asSides：是否画底面 / 顶面 / 侧棱（均默认 true，侧棱 = 每个底点连对应顶顶点）。
+  · asVertices：是否在 2n 个顶点放小球标记（默认 false）。labelVertices：是否在 2n 个顶点放标注（默认 false），底面 A/B/C…、顶面 A'/B'/C'…，正服务「标注顶点」用例。
+  · vertexSize：顶点球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。五个输出开关至少开一个。
+- 示例：
+  · 正四棱台 + 标顶点：{"op":"frustum3d","id":"fru","labelVertices":true}
+  · 三棱台（默认 ratio=0.5、沿 z 抬升 2）：{"op":"frustum3d","base":[[0,0,0],[2,0,0],[1,1.732,0]],"height":2}
+  · 斜四棱台（显式顶面顶点）：{"op":"frustum3d","base":[[0,0,0],[2,0,0],[2,2,0],[0,2,0]],"top":[[0.6,0.3,3],[1.4,0.3,3],[1.4,1.7,3],[0.6,1.7,3]]}
+  · 退化为正四棱柱：{"op":"frustum3d","ratio":1,"height":3}
+  · 退化为正四棱锥：{"op":"frustum3d","ratio":0,"height":3}
+  · 只要侧棱线框 + 顶点球：{"op":"frustum3d","ratio":0.5,"asBase":false,"asTop":false,"asVertices":true}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数；base/top 点数不在 3~32 或含非法点、top 数量与 base 不等、ratio 不在 0~1、height/axis/id 非法、vertexSize 越界、五个输出开关全关 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：add3d 内置 cylinder(rt≠rb) 是回转圆台（无法画任意多边形底面）；prism3d 上下全等；pyramid3d 顶缩为一点；polyhedron3d 是五种柏拉图立体；revolve3d/torus3d/ellipsoid3d/capsule3d/tube3d 是回转 / 曲面体。frustum3d 专用于「任意底面 + 相似收缩顶面」的台体。
+- 铁律：frustum3d 是 3D 命令；2D 的棱台 / 梯形 / 多边形命令在本分支依旧不认识，不要输出。`;
