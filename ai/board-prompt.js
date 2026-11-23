@@ -2800,3 +2800,34 @@ export const BOARD3D_DIHEDRAL_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；edge/pointA/pointB/foot 非法、pointA 或 pointB 落在棱上、footT/rayLength/arcRadius/vertexSize/opacity 越界、segments 非整数或越界、开关非布尔、六开关全关、id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：measure3d 量三点夹角不量半平面夹角；plane3d 是面片、arc3d 需给定圆心、vector3d 只画单条有向线段。要画「二面角的平面角 / 空间角标注」用 dihedral3d。
 - 铁律：dihedral3d 是 3D 命令；2D 的角 / 夹角命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-24 D33 追加段：lineplane3d 直线与平面所成角（独立自主 3D 画板任务）
+ * 上方 DIHEDRAL 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'lineplane3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** lineplane3d 直线与平面所成角提示词段 */
+export const BOARD3D_LINEPLANE_PROMPT_OPS = Object.freeze(['lineplane3d']);
+export const BOARD3D_LINEPLANE_PROMPT = `
+# 补充：lineplane3d 直线与平面所成角（2026-11-24 追加）
+- 用途：给一条直线（两点 line）与一个平面（三点 points，或 center+axis），自动生成标准的「线面角」作图：直线 + 平面面片 + 斜足 V（直线与平面交点）+ 从斜线上一点 A 向平面作垂线的垂足 H + 斜线 VA + 垂线 AH + 射影 VH + 圆弧 + 角度读数。线面角定义为直线与它在平面内射影的夹角（取锐角或直角，0°~90°）；内置 measure3d 只能量三点夹角、dihedral3d 量的是两半平面的二面角，都量不了「直线与平面的夹角」。lineplane3d 直接服务「线面角 / 直线与平面所成角 / 空间角标注 / 正方体中棱与底面夹角」核心用例。
+- 命令格式：{"op":"lineplane3d","id":"lp","line":[[-1,0,0],[1,0,0]],"points":[[-1,-1,0],[1,-1,0],[0,1,0]],"rayLength":1,"arcRadius":0.5,"segments":24,"width":2,"height":2,"asLine":true,"asPlane":true,"asOblique":true,"asPerp":true,"asProjection":true,"asArc":true,"asPoints":false,"labelAngle":true,"vertexSize":0.1}
+  · line：直线两点 [[x1,y1,z1],[x2,y2,z2]]（默认 x 轴上 [-1,0,0]→[1,0,0]），两点不能重合。
+  · points：平面三点 [[x,y,z]×3]（默认 xy 面）；与 center+axis 互斥，给了 points 就忽略 center/axis。
+  · center + axis：另一种定面方式，center 为面内一点、axis 为法向轴 [x,y,z]（非零点）。points 与 center/axis 都缺省时用默认 xy 面。
+  · rayLength：斜线 VA 长度（默认 1，区间 0.01~10000）。
+  · arcRadius：圆弧半径（默认 0.5，区间 0.01~10000）；若超过 rayLength 会自动钳制到 rayLength，meta 回报 arcRadiusClamped。
+  · segments：圆弧分段数（默认 24，整数 3~64）。width / height：平面面片宽 / 高（默认 2/2，区间 0.01~10000）。
+  · asLine / asPlane：是否画直线 / 平面面片边框（均默认 true）。asOblique / asPerp / asProjection：是否画斜线 VA / 垂线 AH / 射影 VH（均默认 true）。
+  · asArc：是否画圆弧（默认 true）。asPoints：是否在 V / A / H 放小球（默认 false）。labelAngle：是否标注角度读数如「45°」（默认 true）。
+  · vertexSize：小球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。八个输出开关至少开一个。
+- 几何守恒（画对了应满足）：|u|=|nh|=|up|=1；斜足 V 恒在平面内；垂线 AH 垂直平面（AH∥法向、H 为 A 的垂足）；|VA|=rayLength、|VH|=rayLength·cosθ、|AH|=rayLength·sinθ；圆弧各点到 V 距离恒为 arcRadius、弧首点沿射影方向、弧末点方向恰为直线方向 u；线面角 θ=arcsin(|u·nh|)∈[0,π/2]，角度读数=θ×180/π。直线⊥平面得 90°、直线∥面或在面内得 0°。
+- 示例：
+  · 默认（x 轴直线 vs xy 面，0°）：{"op":"lineplane3d"}
+  · 直线⊥平面（90°）：{"op":"lineplane3d","line":[[0,0,0],[0,0,1]],"points":[[-1,-1,0],[1,-1,0],[0,1,0]]}
+  · 45° 线面角：{"op":"lineplane3d","line":[[0,0,-1],[0,1,0]],"points":[[-1,-1,0],[1,-1,0],[0,1,0]]}
+  · 用 center+axis 定面：{"op":"lineplane3d","line":[[0,0,-1],[0,1,0]],"center":[0,0,0],"axis":[0,0,1]}
+  · 只要角标注与圆弧：{"op":"lineplane3d","asLine":false,"asPlane":false,"asPerp":false,"asProjection":false,"asPoints":true,"labelAngle":true}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；line/points/center/axis 非法、三点共线、points 与 center/axis 混用、rayLength/arcRadius/vertexSize/opacity/width/height 越界、segments 非整数或越界、开关非布尔、八开关全关、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：measure3d 量三点夹角、dihedral3d 量两半平面二面角，都不量线面角；plane3d 只画面片、arc3d 需给定圆心。要画「直线与平面所成角 / 线面角标注」用 lineplane3d。
+- 铁律：lineplane3d 是 3D 命令；2D 的角 / 夹角命令在本分支依旧不认识，不要输出。`;

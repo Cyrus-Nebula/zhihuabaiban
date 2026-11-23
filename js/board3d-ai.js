@@ -387,6 +387,21 @@ async function send() {
         const footDesc = m.footExplicit ? `显式垂足 [${m.foot && m.foot.length ? m.foot.join(',') : '?'}]` : `垂足 [${m.foot && m.foot.length ? m.foot.join(',') : '?'}]（棱上 ${m.footT != null ? m.footT : '?'}）`;
         appendLog('ai', `已生成二面角（平面角 ${m.angleDeg != null ? m.angleDeg : '?'}°，棱 ${edgeDesc}，${footDesc}，射线长 ${m.rayLength != null ? m.rayLength : '?'} / 弧半径 ${m.arcRadius != null ? m.arcRadius : '?'}${m.arcRadiusClamped ? '（已钳制）' : ''}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-24 D33：lineplane3d 展示线面角大小、斜足/垂足、斜线/垂线/射影与圆弧读数（数值以画板返回为准）。
+      for (const lp of results) {
+        if (!lp.ok || lp.op !== 'lineplane3d') continue;
+        const m = lp.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.lineCount) parts.push('直线');
+        if (m.planeCount) parts.push('平面面片');
+        if (m.arcCount) parts.push(`${m.arcCount} 圆弧`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push('角度标注');
+        const footDesc = m.foot && m.foot.length ? `[${m.foot.join(',')}]` : '?';
+        const perpDesc = m.perpFoot && m.perpFoot.length ? `[${m.perpFoot.join(',')}]` : '?';
+        appendLog('ai', `已生成线面角（${m.angleDeg != null ? m.angleDeg : '?'}°，斜足 ${footDesc}、垂足 ${perpDesc}，斜线长 ${m.rayLength != null ? m.rayLength : '?'} / 弧半径 ${m.arcRadius != null ? m.arcRadius : '?'}${m.arcRadiusClamped ? '（已钳制）' : ''}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
