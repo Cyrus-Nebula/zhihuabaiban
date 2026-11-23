@@ -2500,3 +2500,33 @@ export const BOARD3D_CYLINDER_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；base/top 非法、顶面与底面圆心重合或过近、axis 非法或零向量、radius/height 越界、segments 非整数或越界、开关非布尔、五开关全关、vertexSize 越界、id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：内置 cylinder 只能沿 y 轴画正圆柱；prism3d / frustum3d 是多边形底面；cone3d 只有一个圆底面（顶圈收缩为点）；revolve3d 需手写母线。要画「双真圆 + 可斜圆柱」用 cylinder3d。
 - 铁律：cylinder3d 是 3D 命令；2D 的圆柱 / 矩形命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-23 D30 追加段：plane3d 任意空间平面面片（独立自主 3D 画板任务）
+ * 上方 CYLINDER 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'plane3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** plane3d 任意空间平面提示词段 */
+export const BOARD3D_PLANE_PROMPT_OPS = Object.freeze(['plane3d']);
+export const BOARD3D_PLANE_PROMPT = `
+# 补充：plane3d 任意空间平面面片（2026-11-23 追加）
+- 用途：给中心 center + 法向 axis（或三点 points 定面）+ 宽 width + 高 height 画一个任意朝向的矩形平面面片、截面或工作面，可选内部网格、法向量与顶点标注。内置 plane 只能画水平 xy 面（固定绕 X 轴转 -90°），无法指定法向 / 倾斜 / 竖直；prism3d / pyramid3d / frustum3d 的底面依附于柱锥台、不能单独画一片平面；grid3d 是把已有对象排成阵列而非画面片。plane3d 填补「任意朝向 + 可选网格 + 法向量 + 顶点标注」的平面缺口。
+- 命令格式：{"op":"plane3d","id":"pln","center":[0,0,0],"axis":"z","width":4,"height":3,"gridU":0,"gridV":0,"normalLength":1,"asBorder":true,"asGrid":false,"asNormal":false,"asPoints":false,"labelVertices":false,"vertexSize":0.1}
+  · center：面片中心 / 锚点 [x,y,z]（默认 [0,0,0]；给 points 时缺省取 p1）。
+  · axis：平面法向，'x'/'y'/'z' 或任意非零 3D 向量（默认 'z'，即水平 xy 面）。四角与网格恒垂直 axis、恒共面。
+  · points：可选，三点 [p1,p2,p3] 定面（与 axis 二选一，给了就优先用三点法向，三点需不共线）。
+  · width / height：面片沿平面内两正交方向的宽与高（默认 4 / 3，区间 0.01~10000）。
+  · gridU / gridV：沿两方向的内部网格细分数（默认 0，整数 0~32）；0 表示不画该方向内部线。
+  · normalLength：从中心出发的法向量线段长度（默认 1，区间 0.01~10000）。
+  · asBorder / asGrid / asNormal：是否画四条边界 / 内部网格 / 法向量（asBorder 默认 true，其余默认 false）。
+  · asPoints：是否在四角与中心放小球（默认 false）。labelVertices：是否标注中心 O 与四角 A/B/C/D（默认 false；同时开了 asNormal 会多标法向量端点 n），直接服务「标注顶点」用例。
+  · vertexSize：小球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。五个输出开关至少开一个。
+- 示例：
+  · 默认水平矩形面（xy 面 4×3）：{"op":"plane3d"}
+  · 竖直墙面试图（法向 x）：{"op":"plane3d","axis":"x","width":5,"height":3,"labelVertices":true}
+  · 倾斜截面（法向任意向量）：{"op":"plane3d","center":[0,0,1],"axis":[1,1,1],"width":3,"height":3}
+  · 三点定面（过 p1/p2/p3）：{"op":"plane3d","points":[[0,0,0],[2,0,0],[0,2,1]],"width":4,"height":4}
+  · 带网格与法向量：{"op":"plane3d","gridU":2,"gridV":2,"asGrid":true,"asNormal":true,"labelVertices":true}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；center/points 非法或三点共线、axis 非法或零向量、width/height 越界、gridU/gridV 非整数或越界、normalLength 越界、开关非布尔、五开关全关、vertexSize 越界、opacity 非法、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：内置 plane 只能水平；grid3d 是阵列不是面片；prism3d/pyramid3d/frustum3d 的底面依附于立体。要画「一片任意朝向的平面 / 截面 / 工作面」用 plane3d。
+- 铁律：plane3d 是 3D 命令；2D 的矩形 / 平面命令在本分支依旧不认识，不要输出。`;

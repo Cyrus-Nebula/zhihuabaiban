@@ -35,6 +35,7 @@ import { resolveFrustum3D } from './board3d-frustum.js';
 import { resolveVector3D } from './board3d-vector.js';
 import { resolveCone3D } from './board3d-cone.js';
 import { resolveCylinder3D } from './board3d-cylinder.js';
+import { resolvePlane3D } from './board3d-plane.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -341,6 +342,17 @@ export const BOARD3D_CYLINDER_OPS = Object.freeze(['cylinder3d']);
 /** 含全部扩展命令的完整集（29 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE20_OPS = Object.freeze([
   ...BOARD3D_COMPLETE19_OPS, ...BOARD3D_CYLINDER_OPS,
+]);
+
+// 2026-11-23 D30：plane3d 任意空间平面面片，给中心 center + 法向 axis（或三点 points 定面）+
+// 宽 width + 高 height 生成边界 + 可选网格 + 法向量 + 角点小球与 A/B/C/D·O 标注。
+// 单独成组、不并入任何历史契约常量
+// （BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 / COMPLETE2 11 / … / COMPLETE20 29 条），
+// 按协作铁律逐字不变。
+export const BOARD3D_PLANE_OPS = Object.freeze(['plane3d']);
+/** 含全部扩展命令的完整集（30 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE21_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE20_OPS, ...BOARD3D_PLANE_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1236,6 +1248,35 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           let cylState = {};
           try { cylState = (a.getState ? a.getState() : {}) || {}; } catch (_) { cylState = {}; }
           const r = resolveCylinder3D(cmd, cylState);
+          if (!r.ok) {
+            results.push({ op, ok: false, error: r.error });
+            break;
+          }
+          const created = [];
+          const failed = [];
+          for (const item of r.items) {
+            if (known.has(item.id)) { failed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { failed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            created.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: failed.length === 0 && created.length > 0,
+            count: r.items.length, created, meta: r.meta,
+            ...(failed.length ? { failed } : {}),
+          });
+          break;
+        }
+        case 'plane3d': {
+          // 2026-11-23 D30：3D 任意空间平面面片，给 center + axis（或三点 points 定面）+ width + height
+          // 生成边界 + 可选网格 + 法向量线框（可选角点小球与 O/A/B/C/D/n 标注）。不需要源对象；从
+          // 「当前」getState 读状态仅用于生成 id 时避让已有对象，getState 缺失 / 抛错降级为空场景，
+          // 整批不中断；id 冲突分项失败、api.add 返回 null/false 分项回报；2D 命令仍由 default 拒绝。
+          let planeState = {};
+          try { planeState = (a.getState ? a.getState() : {}) || {}; } catch (_) { planeState = {}; }
+          const r = resolvePlane3D(cmd, planeState);
           if (!r.ok) {
             results.push({ op, ok: false, error: r.error });
             break;

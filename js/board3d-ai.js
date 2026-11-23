@@ -339,6 +339,20 @@ async function send() {
           : `高 ${m.height != null ? m.height : '?'} 沿 [${m.axis && m.axis.length ? m.axis.join(',') : '?'}]`;
         appendLog('ai', `已生成${kind}（圆心 [${m.base && m.base.length ? m.base.join(',') : '?'}]，半径 ${m.radius != null ? m.radius : '?'}，${topDesc}，侧母线长 ${m.sideLength != null ? m.sideLength : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-23 D30：plane3d 展示中心与法向、宽高与网格、边界/网格/法向量线、角点小球与 O/A/B/C/D 标注（数值以画板返回为准）。
+      for (const pc of results) {
+        if (!pc.ok || pc.op !== 'plane3d') continue;
+        const m = pc.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.borderCount) parts.push(`${m.borderCount} 边界`);
+        if (m.gridLineCount) parts.push(`${m.gridLineCount} 网格`);
+        if (m.normalCount) parts.push(`${m.normalCount} 法向量`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 标注`);
+        const fromDesc = m.byPoints ? '三点定面' : `法向 [${m.axis && m.axis.length ? m.axis.join(',') : '?'}]`;
+        appendLog('ai', `已生成平面面片（中心 [${m.center && m.center.length ? m.center.join(',') : '?'}]，${fromDesc}，宽 ${m.width != null ? m.width : '?'} × 高 ${m.height != null ? m.height : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
