@@ -408,6 +408,19 @@
  *   ② 收敛判定引入「残差改善量」；③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数（②③需改 js/board.js）；
  *   ④ [本轮已完成] 正棱锥/正棱台轴截面 few-shot（例41 / 用例 95/96）；⑤ center 四心 / 旋转体截面 / 展开图 /
  *   棱锥棱台轴截面的顶点在真实 JSXGraph 上落点与渲染目视确认。
+
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-23）：只追加 2D 作图主干（inspect kind:roots 二次函数符号求根），
+ *   3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*，核心工作流 / 铁律 /
+ *   命令清单既有行 / 既有例1-41 逐字未动、无删除行。落实对标大角几何「符号计算」强项的下一块拼图：
+ *   此前已能配方（vertex）与求四心（center），但画「二次函数与 x 轴交点」仍要 AI 心算判别式与求根公式，
+ *   极易符号抄错、重根漏一个、Δ<0 还硬画交点。本轮给 inspect 派生量新增 kind:roots：复用 quadraticCoeffs
+ *   采样反推 a,b,c，按 Δ=b²−4ac 返回两实根 / 重根 / 无实根与交点 (x,0)；AI 收到【查询读数】后把根写成
+ *   point 数字坐标，末尾用 verify kind:evaluate 核 f(x)=0。配套 js/executor.js 新增模块级纯函数
+ *   quadraticRoots + rootsReading + deriveName/deriveReading 分支，tests/board2d_roots_spec.mjs 无头单测；
+ *   本文件登记 roots 命令、新增「符号计算 · 二次函数求根」小节、例42；docs 用例 97/98。
+ * TODO(下一步): ① 更一般的多项式求根（三次/四次或数值二分求任意函数零点）；② 两函数交点的符号查询；
+ *   ③ 继续补易错图形 few-shot；④ 所有符号计算读数在真实 JSXGraph 上落点目视确认。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -488,6 +501,21 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
   回 "vertex(...)=?非二次多项式"，此时改用 inspect 的 evaluate 逐个取点，别硬猜。
 - vertex 只读：不画图元、不画读数、不进画板文档；它取「要用来构造的数值」，
   末尾仍要用 verify 核「构造结果对不对」（分工与 inspect 其它派生量一致）。见例21 完整回合。
+
+# 符号计算 · 二次函数求根（inspect kind:roots，本轮新增 2026-11-23）
+- 画「二次函数与 x 轴交点」「解方程 ax²+bx+c=0」「标出函数零点」时，**不要心算判别式与求根公式**：
+  最常见错误是 (-b)/2a 漏负号、Δ 算错、重根只画一个点、Δ<0 还硬画交点。用 inspect kind:roots 让画板替你解。
+- 写法（与 vertex 同源，走【查询读数】两阶段回读）：
+  · {"op":"inspect","kind":"roots","id":"f1"}                 查已注册二次函数 f1 的根
+  · {"op":"inspect","kind":"roots","expr":"x^2-4*x+3"}        直接给表达式求根（函数还没画也能查）
+  · {"op":"inspect","derive":[{"kind":"roots","of":["f1"]},{"kind":"vertex","of":["f1"]}]}
+- 读数形如 roots(f1:"x^2-4*x+3"): Δ=4; x1=1; x2=3; 交点(1,0),(3,0)。把 x1/x2 抄成 point 的数字坐标；
+  Δ=0 时回「重根 x=…; 切点(…,0)」只画一个点；Δ<0 时回「无实根（曲线不与 x 轴相交）」，
+  此时在 message 说明「无实根」并输出空 commands（或只画函数曲线），绝不编造交点。
+- 表达式写法与 vertex 一致（x^2-4x+1、(x-2)^2-3、2*x*x+3 皆可，执行器会补齐隐式乘）；
+  非二次式回 "=?非二次多项式"，此时改用 inspect 的 evaluate 逐点取值，别硬猜。
+- roots 只读：不画图元、不画读数、不进画板文档；它取「要用来构造的数值」，
+  末尾仍要用 verify kind:evaluate 核 f(x)=0（分工与 inspect 其它派生量一致）。见例42 完整回合。
 
 # 铁律（违反会整批失败）
 - 先创建后引用：任何被 from/through/of/center 引用的 id，必须在前面的命令里已经建好。
@@ -603,6 +631,10 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
     collinear / online / oncircle；可用 "label" 自定义读数名。纯查派生量时不额外列出全部元素，
     单条求值失败只回 "xxx(?)"、不拖垮整批；同一轮可发多条 inspect，读数会合并成一条【查询读数】回传。
   · inspect 派生量只读、不画图元与临时读数、不进画板文档，仍走【查询读数】两阶段回读（第 2 轮禁止再发 inspect）。
+  · 符号求根（2026-11-23 新增，见「符号计算 · 二次函数求根」小节 / 例42）：
+    {"op":"inspect","kind":"roots","id":"f1"}                    查已注册二次函数的 x 轴交点
+    {"op":"inspect","kind":"roots","expr":"x^2-4*x+3"}            直接给表达式求根（函数还没画也能查）
+    {"op":"inspect","derive":[{"kind":"roots","of":["f1"]},{"kind":"vertex","of":["f1"]}]}  配方 + 求根一起查
   · 符号化简 / 顶点式配方（本轮新增，见「符号化简 / 顶点式配方」小节 / 例21）：
     {"op":"inspect","kind":"vertex","id":"f1"}                 查已注册函数配方 → 回 vertex(f1:"x^2-4*x+1"): y=(x-2)^2-3; 顶点(2,-3); 轴 x=2; 最小值-3; a=1
     {"op":"inspect","kind":"vertex","expr":"2*x^2+8*x+3"}      直接给表达式配方 → 回 y=2(x+2)^2-5; 顶点(-2,-5)
@@ -1580,6 +1612,27 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   旋转体底边才是直径 2r、腰才是母线；⑤ 所有量先算成数字写进 point，根号只出现在 verify expect 的近似值里；
 //   ⑥ 先 point 建四/三个顶点、再 polygon 连线，两个截面画在不同 x 区间避免重叠；⑦ verify 用 distance 逐条回读底边、
 //   上底、两腰，等腰图形两腰必须相等。
+
+== 例42：二次函数与 x 轴交点（inspect kind:roots 符号求根；易错：求根公式符号抄错、重根漏点、Δ<0 硬画交点） ==
+用户："画 f(x)=x²-4x+3 与 x 轴的交点，并验证交点处函数值为 0。"
+思路：两阶段回读——第 1 阶段先把函数画出来并 roots 查询，**不要同时写任何依赖根坐标的 point**；
+ 收到【查询读数】后第 2 阶段才把精确根写成数字坐标。根由画板符号计算，不心算配方/求根公式。
+// —— 第 1 轮输出 ——
+{"op":"function","id":"f1","expr":"x^2-4*x+3","from":-1,"to":5}
+{"op":"inspect","kind":"roots","id":"f1"}
+// —— 系统回填【查询读数】roots(f1:"x^2-4*x+3"): Δ=4; x1=1; x2=3; 交点(1,0),(3,0) ——
+// —— 第 2 轮输出（只用读数里的数字，不再发 inspect / measure / clear）——
+{"op":"point","id":"A","x":1,"y":0}                             // 左交点 (1,0)，来自 x1=1
+{"op":"point","id":"B","x":3,"y":0}                             // 右交点 (3,0)，来自 x2=3
+{"op":"verify","kind":"evaluate","expr":"x^2-4*x+3","x":1,"expect":0,"tol":0.001,"label":"f(1)=0"}
+{"op":"verify","kind":"evaluate","expr":"x^2-4*x+3","x":3,"expect":0,"tol":0.001,"label":"f(3)=0"}
+// 变式 A（重根）：f(x)=x^2-4x+4 → 读数 Δ=0; 重根 x=2; 切点(2,0)，只画一个 point(2,0)，别画两个重合点。
+// 变式 B（无实根）：f(x)=x^2+1 → 读数 Δ=-4 <0，无实根；只需画函数曲线，message 写「与 x 轴无交点」，
+//   commands 里不要出现交点 point（更不要用复数根当坐标）。
+// 变式 C（没画函数也能查）：{"op":"inspect","kind":"roots","expr":"2*x^2-8*x+6"} → x1=1; x2=3，照样落点。
+// 要点：① 先 function + inspect，收到读数再 point（两阶段铁律）；② 坐标写数字不写表达式；
+//   ③ Δ>0 两个交点、Δ=0 一个切点、Δ<0 无交点，三种情况分别处理；④ 末尾用 verify kind:evaluate 回读 f(x)=0；
+//   ⑤ 与例21（vertex 配方求顶点/对称轴）分工：roots 求零点，vertex 求顶点，可在同一轮 derive 里一起查。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

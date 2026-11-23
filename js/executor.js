@@ -361,7 +361,40 @@
  *     ③ 收敛后把 probeVerify 结果回画成最终 ✔ 读数；④ 旋转体截面 few-shot；
  *     ⑤ [本轮已完成] 三角形四心符号计算（例38 / 用例 89/90）；
  *     ⑥ center 的四心在真实 JSXGraph 上目视确认（坐标落点 / 共线退化）。
+
+ *
+ * 2026-11-23 追加（AI作图对标大角几何·符号计算）：inspect 派生量新增 kind:"roots" 二次函数符号求根。
+ *   (1) 模块级导出纯函数 quadraticRoots(a,b,c)：按 Δ=b²−4ac 返回两实根 / 重根 / 无实根，供无头单测；
+ *   (2) rootsReading(d)：表达式取 d.expr 或已注册函数的 __aiExpr，复用 quadraticCoeffs 采样反推 a,b,c，
+ *       再交给 quadraticRoots 得交点 (x,0) 读数；只读、不画图元、走既有【查询读数】链路；
+ *   (3) deriveName / deriveReading 各加 roots 分支；既有 kind 与 vertex/center 行为逐字节不变。
+ *   配套：ai/board-prompt.js 命令清单登记 + 「符号计算 · 二次函数求根」小节 + 例42、docs 用例 97/98、
+ *   tests/board2d_roots_spec.mjs 无头单测 + run-2d-specs.mjs 聚合入口。
+ *   TODO: ① 三次/四次或任意函数数值求根；② 两函数交点的符号查询；③ roots 在真实 JSXGraph 落点目视确认。
  */
+
+/**
+ * 二次函数 ax²+bx+c=0 的实根（inspect kind:"roots" 的纯函数内核，2026-11-23 追加）。
+ * 模块级导出、不依赖 JSXGraph / registry / DOM，Node 22 ESM 可直接 import 做无头单测。
+ * Δ=b²−4ac：Δ>0 两实根（升序）；Δ≈0 重根返回两个相同的 x；Δ<0 无实根 roots:[]。
+ * 系数非有限数或 a≈0 抛错（非二次交给上层提示改用 evaluate 逐点取值）。
+ */
+export function quadraticRoots(a, b, c) {
+  const A = Number(a), B = Number(b), C = Number(c);
+  if (![A, B, C].every(Number.isFinite)) throw new Error('二次方程系数须为有限数');
+  if (Math.abs(A) < 1e-12) throw new Error('二次项系数 a 不能为 0');
+  const D = B * B - 4 * A * C;
+  const EPS = 1e-9 * Math.max(1, Math.abs(B * B), Math.abs(4 * A * C));
+  if (D < -EPS) return { ok: true, discriminant: D, real: false, roots: [], double: false };
+  if (Math.abs(D) <= EPS) {
+    const x = -B / (2 * A);
+    return { ok: true, discriminant: 0, real: true, roots: [x, x], double: true };
+  }
+  const s = Math.sqrt(D);
+  const x1 = (-B - s) / (2 * A), x2 = (-B + s) / (2 * A);
+  return { ok: true, discriminant: D, real: true, roots: [x1 < x2 ? x1 : x2, x1 < x2 ? x2 : x1], double: false };
+}
+
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
 
 /** 取元素的数值（滑动条/角等有 Value() 的元素），取不到返回 NaN */
@@ -2349,6 +2382,7 @@ export function createExecutor(board) {
     if (kind === 'evaluate') return 'evaluate(' + String(d.expr) + ',x=' + String(d.x) + ')';
     if (kind === 'vertex') return 'vertex(' + String((d && (d.id || d.expr || (Array.isArray(d.of) ? d.of[0] : null))) || '?') + ')';
     if (kind === 'center') return 'center(' + (Array.isArray(d.of) ? d.of.join(',') : '?') + ')';
+    if (kind === 'roots') return 'roots(' + String((d && (d.id || d.expr || (Array.isArray(d.of) ? d.of[0] : null))) || '?') + ')';
     return kind + '(' + (Array.isArray(d.of) ? d.of.join(',') : '') + ')';
   }
 
@@ -2453,11 +2487,42 @@ export function createExecutor(board) {
     return txt;
   }
 
+
+  /**
+   * 单条 roots 读数（inspect 派生量 kind:"roots"，2026-11-23 追加）：二次函数符号求根。
+   * 表达式取 d.expr，或按 d.id / target / of[0] 读已注册函数的 __aiExpr（与 vertexReading 同源）；
+   * 先复用 quadraticCoeffs 采样反推 a,b,c，再交给模块级纯函数 quadraticRoots 按判别式给实根。
+   * 把「x1/x2」直接抄成 point 的数字坐标，末尾用 verify kind:evaluate 核 f(x)=0。只读、不画图元。
+   */
+  function rootsReading(d) {
+    let expr = d && d.expr != null ? String(d.expr) : '';
+    let src = '';
+    if (!expr && d) {
+      const ref = d.id != null ? d.id : (d.target != null ? d.target : (Array.isArray(d.of) ? d.of[0] : null));
+      if (ref != null) {
+        const el = registry.get(String(ref));
+        if (el && el.__aiExpr) { expr = String(el.__aiExpr); src = String(ref) + ':'; }
+      }
+    }
+    if (!expr) return deriveName(d) + '=?无函数表达式';
+    const q = quadraticCoeffs(expr);
+    if (!q) return deriveName(d) + '=?非二次多项式';
+    const r = quadraticRoots(q.a, q.b, q.c);
+    if (!r.real) return 'roots(' + src + '"' + expr + '"): Δ=' + qfmt(r.discriminant) + ' <0，无实根（曲线不与 x 轴相交）';
+    if (r.double) {
+      const x = r.roots[0];
+      return 'roots(' + src + '"' + expr + '"): Δ=0; 重根 x=' + qfmt(x) + '; 切点(' + qfmt(x) + ',0)';
+    }
+    return 'roots(' + src + '"' + expr + '"): Δ=' + qfmt(r.discriminant) + '; x1=' + qfmt(r.roots[0])
+      + '; x2=' + qfmt(r.roots[1]) + '; 交点(' + qfmt(r.roots[0]) + ',0),(' + qfmt(r.roots[1]) + ',0)';
+  }
+
   /** 单条派生量求值 → "名字=数值+单位"；复用 measureValue（纯计算，不画读数、不进注册表）。 */
   function deriveReading(d) {
     const kd = String((d && d.kind) || '').toLowerCase();
     if (kd === 'vertex') return vertexReading(d);
     if (kd === 'center') return centerReading(d);
+    if (kd === 'roots') return rootsReading(d);
     const m = measureValue(d);
     const v = Number.isFinite(m.value) ? m.value.toFixed(m.kind === 'angle' ? 1 : 3) : '?';
     return deriveName(d) + '=' + v + (m.unit || '');
@@ -2479,6 +2544,8 @@ export function createExecutor(board) {
     //   {"op":"inspect","kind":"vertex","id":"f1"} / {"...","expr":"x^2-4x+1"}  二次函数符号化简（见 vertexReading）
     //   {"op":"inspect","kind":"center","of":["A","B","C"]}  三角形四心符号计算（本轮新增，见 centerReading）：
     //       一次回读重心/外心/垂心/内心坐标 + R/r/面积；也可 points:[[0,0],[3,0],[0,3]] 直接给三点
+    //   {"op":"inspect","kind":"roots","id":"f1"} / {"...","expr":"x^2-4x+3"}  二次函数符号求根（本轮新增，见 rootsReading）：
+    //       回 Δ 与两实根 / 重根 / 无实根及交点 (x,0)，AI 抄成 point 数字坐标，末尾 verify f(x)=0
     // 单条失败只回 "xxx(?)"，绝不整批失败；旧命令（无 kind/derive/x/xs）行为逐字节不变。
     const derives = [];
     if (cmd.kind != null) derives.push(cmd);
