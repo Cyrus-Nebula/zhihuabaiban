@@ -423,7 +423,9 @@ export function quadraticRoots(a, b, c) {
  * 采样函数 sample(x) 由调用方注入（executor 内用 evalExprAt 把表达式编译成采样器），本函数只做数值：
  *   ① 等距扫描 segments 段，记录端点处 f≈0 的点（吸附）与相邻异号区间；
  *   ② 每个异号区间用二分法迭代至宽度 < tol 或值 < tol，取中点为零点；
- *   ③ 相切重根（f 不变号）靠「端点吸附 + 局部极值采样」近似捕捉，不保证精确重根；
+ *   ③ 相切重根（f 不变号）先靠「端点吸附」，采样点未精确命中切点时再用 Golden-section
+ *      在区间内精炼 |f| 极小点（两端同号 + 中间 |f| 严格局部极小才触发，精炼后 |f(x*)|<=tol
+ *      才记为重根，避免把普通极值误判为零点）；2026-11-23 第二十二轮追加；
  *   ④ 结果按 x 升序、相邻间距 < mergeTol 的合并去重（避免同一根被吸附+二分各记一次）。
  *  treats sample(x) 返回非有限数（定义域外的 NaN/±Inf）为「空洞」，扫描时跳过该段（与绘图 NaN 断点一致）。
  */
@@ -444,7 +446,22 @@ export function numericRoots(sample, opts) {
   const val = (x) => { const v = sample(x); return typeof v === 'number' && Number.isFinite(v) ? v : NaN; };
   const found = [];
 
+  // ③.5 Golden-section 最小化 |f|：仅在相切候选（两端同号 + 中间严格局部极小）上精修切点，
+  //      采样点没正好落在切点上时尤其有用；收敛后 |f(x*)|<=tol 才认定为重根。
+  const goldenMinAbs = (a, b) => {
+    const gr = (Math.sqrt(5) - 1) / 2;               // 0.618… 黄金比例
+    let c = b - gr * (b - a), d = a + gr * (b - a);
+    let fc = Math.abs(val(c)), fd = Math.abs(val(d));
+    for (let k = 0; k < 100 && (b - a) > tol; k++) {
+      if (fc < fd) { b = d; d = c; fd = fc; c = b - gr * (b - a); fc = Math.abs(val(c)); }
+      else { a = c; c = d; fc = fd; d = a + gr * (b - a); fd = Math.abs(val(d)); }
+    }
+    const x = (a + b) / 2;
+    return { x, fx: Math.abs(val(x)) };
+  };
+
   // ① 端点 + 逐段扫描：吸附近零点、登记异号区间
+  let ppx = NaN, ppv = NaN;                              // 前前点，识别不变号的局部极小（相切候选）
   let px = from, pv = val(px);
   if (Number.isFinite(pv) && Math.abs(pv) <= tol) found.push(px);
   for (let i = 1; i <= segments; i++) {
@@ -462,7 +479,15 @@ export function numericRoots(sample, opts) {
         if (fa * fm <= 0) b = m; else { a = m; fa = fm; }
       }
       found.push((a + b) / 2);
+    } else if (Number.isFinite(ppv) && Number.isFinite(pv) && Number.isFinite(cv)
+               && ppv * cv > 0                            // 两端同号 → 不变号（相切特征）
+               && Math.abs(pv) < Math.abs(ppv) && Math.abs(pv) < Math.abs(cv)  // 中间严格局部极小
+               && Math.abs(pv) > tol) {                   // 未被直接吸附为零点
+      // ③.5 相切候选：用 Golden-section 精修 |f| 极小点，避免切点不在采样网格上时被漏掉
+      const g = goldenMinAbs(ppx, cx);
+      if (Number.isFinite(g.fx) && g.fx <= tol) found.push(g.x);
     }
+    ppx = px; ppv = pv;
     px = cx; pv = cv;
     if (found.length > maxRoots * 4) break;               // 防御性：病态函数早停
   }

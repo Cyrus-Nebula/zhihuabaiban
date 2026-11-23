@@ -67,6 +67,17 @@ section('E. 相切交点吸附（x² 与 2x−1 切于 (1,1)）');
   ok(r.points.some((p) => near(p.x, 1) && near(p.y, 1)), '含切点 x≈1, y≈1');
 }
 
+section('E2. 相切交点精确捕捉（切点 x=1.0137 未落在采样网格上，2026-11-23 第二十二轮）');
+{
+  const c = 1.0137;
+  const r = numericIntersections((x) => x * x, (x) => 2 * c * x - c * c, { from: -5, to: 5 });
+  ok(r.count >= 1, 'Golden-section 捕捉到相切交点');
+  ok(r.points.some((p) => near(p.x, 1.0137) && near(p.y, c * c)), '切点 (1.0137, 1.0276)');
+  ok(r.points.every((p) => near(p.fa, p.gb, 1e-3)), '切点处 fa≈gb');
+  const r2 = numericIntersections((x) => x * x + 1, () => -2, { from: -10, to: 10 });
+  ok(r2.count === 0, '恒分离两曲线仍无交点（相切逻辑不误报）');
+}
+
 section('F. 非法采样函数抛错');
 {
   let e1 = false; try { numericIntersections(null, Math.sin, {}); } catch (_) { e1 = true; }

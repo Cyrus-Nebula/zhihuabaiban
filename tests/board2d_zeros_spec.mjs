@@ -63,6 +63,19 @@ section('E. 相切重根吸附（(x-2)² 在采样点上的零点）');
   ok(r.roots.some((x) => near(x, 2)), '含切点 x≈2');
 }
 
+section('E2. 相切重根精确捕捉（切点 x=2.0137 未落在采样网格上，2026-11-23 第二十二轮）');
+{
+  const r = numericRoots((x) => (x - 2.0137) * (x - 2.0137), { from: 0, to: 4 });
+  ok(r.count >= 1, 'Golden-section 捕捉到相切重根');
+  ok(r.roots.some((x) => near(x, 2.0137)), '切点 x≈2.0137');
+  const r2 = numericRoots((x) => x * x + 1, { from: -10, to: 10 });
+  ok(r2.count === 0, '普通极小（x²+1）不被误判为零点');
+  const r3 = numericRoots(() => 5, { from: -10, to: 10 });
+  ok(r3.count === 0, '常数函数不被误判为零点');
+  const r4 = numericRoots(Math.sin, { from: -7, to: 7 });
+  ok(r4.count === 5, 'Golden-section 不影响变号求根（sin 仍 5 根）');
+}
+
 section('F. 非法参数抛错');
 {
   let e1 = false; try { numericRoots(null, {}); } catch (_) { e1 = true; }
