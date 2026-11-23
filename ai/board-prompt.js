@@ -2767,3 +2767,36 @@ export const BOARD3D_CONEFRUSTUM_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；base/top 非法、axis 非法或零向量、radiusBottom/radiusTop/height 越界、segments 非整数或越界、开关非布尔、五开关全关、vertexSize 越界、opacity 非法、id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：内置 cylinder 只能沿 y 轴正圆台；cone3d 上底是点、cylinder3d 上下等半径；frustum3d 是多边形棱台；revolve3d 需手写母线。要画「上下底半径不同的真圆台 / 斜圆台 / 圆台轴截面」用 conefrustum3d。
 - 铁律：conefrustum3d 是 3D 命令；2D 的梯形 / 台体命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-24 D32 追加段：dihedral3d 空间二面角 / 平面角标注（独立自主 3D 画板任务）
+ * 上方 CONEFRUSTUM 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'dihedral3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** dihedral3d 空间二面角 / 平面角标注提示词段 */
+export const BOARD3D_DIHEDRAL_PROMPT_OPS = Object.freeze(['dihedral3d']);
+export const BOARD3D_DIHEDRAL_PROMPT = `
+# 补充：dihedral3d 空间二面角 / 平面角（2026-11-24 追加）
+- 用途：给二面角的棱（棱上两点 edge）与两个半平面内各一点 pointA / pointB，自动生成标准的「平面角」作图：棱线 + 棱上垂足 O + 两条从 O 出发、分别落在两个半平面内且垂直棱的射线（平面角的两边）+ 圆弧 + 角度读数。内置 measure3d 只能量三点夹角（两条线段的夹角），量不了两个半平面的夹角；plane3d 只画单个平面、arc3d 只画给定圆心的圆弧。dihedral3d 直接服务「二面角 / 平面角 / 空间角标注 / 正方体相邻侧面夹角」这类核心用例。
+- 命令格式：{"op":"dihedral3d","id":"dh","edge":[[-1,0,0],[1,0,0]],"pointA":[0,1,0],"pointB":[0,0,1],"footT":0.5,"rayLength":1,"arcRadius":0.5,"segments":24,"asEdge":true,"asRays":true,"asArc":true,"asChord":false,"asPoints":false,"labelAngle":true,"vertexSize":0.1}
+  · edge：棱上两点 [[x1,y1,z1],[x2,y2,z2]]（默认 x 轴上 [-1,0,0]→[1,0,0]），两点不能重合。
+  · pointA / pointB：分别在两个半平面内的一点 [x,y,z]（默认 [0,1,0] 与 [0,0,1]，即标准 90° 二面角）。不能落在棱上，否则无法定半平面方向。
+  · footT：垂足 O 在棱段上的位置比例 0~1（默认 0.5，即棱中点）。
+  · foot：可选，显式垂足点 [x,y,z]；给了就投影到棱所在直线并忽略 footT，可取到棱的延长线上。
+  · rayLength：平面角两边的射线长度（默认 1，区间 0.01~10000）。
+  · arcRadius：圆弧半径（默认 0.5，区间 0.01~10000）；若超过 rayLength 会自动钳制到 rayLength，meta 回报 arcRadiusClamped。
+  · segments：圆弧分段数（默认 24，整数 3~64）。
+  · asEdge / asRays / asArc：是否画棱线 / 平面角两边 / 圆弧（均默认 true）。
+  · asChord：是否画两射线端点连线构成平面角三角形第三边（默认 false）。
+  · asPoints：是否在垂足与两射线端点放小球（默认 false）。labelAngle：是否标注角度读数如「90°」（默认 true），直接服务「空间角标注」用例。
+  · vertexSize：小球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。六个输出开关至少开一个。
+- 几何守恒（画对了应满足）：棱方向 u 与两条射线方向 dA / dB 均为单位向量；dA·u = dB·u = 0（两边恒垂直棱）；垂足 O 恒在棱所在直线上；两射线端点到 O 距离恒为 rayLength；圆弧各点到 O 距离恒为 arcRadius，首点 = O + arcRadius·dA、末点 = O + arcRadius·dB（弧精确夹在两边之间）；平面角 θ = arccos(dA·dB) ∈ [0,π]，角度读数 = θ×180/π。
+- 示例：
+  · 默认 90° 二面角：{"op":"dihedral3d"}
+  · 正方体相邻两侧面夹角（90°）：{"op":"dihedral3d","edge":[[0,0,0],[0,0,2]],"pointA":[1,0,0],"pointB":[0,1,0],"labelAngle":true}
+  · 120° 二面角（两半平面展开）：{"op":"dihedral3d","pointA":[0,1,0],"pointB":[0,-0.5,0.866]}
+  · 只要圆弧与角度读数：{"op":"dihedral3d","asEdge":false,"asRays":false,"asChord":false,"labelAngle":true}
+  · 带端点小球与第三边：{"op":"dihedral3d","asChord":true,"asPoints":true}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；edge/pointA/pointB/foot 非法、pointA 或 pointB 落在棱上、footT/rayLength/arcRadius/vertexSize/opacity 越界、segments 非整数或越界、开关非布尔、六开关全关、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：measure3d 量三点夹角不量半平面夹角；plane3d 是面片、arc3d 需给定圆心、vector3d 只画单条有向线段。要画「二面角的平面角 / 空间角标注」用 dihedral3d。
+- 铁律：dihedral3d 是 3D 命令；2D 的角 / 夹角命令在本分支依旧不认识，不要输出。`;

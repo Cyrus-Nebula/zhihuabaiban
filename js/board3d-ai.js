@@ -371,6 +371,22 @@ async function send() {
         const apexDesc = m.apex ? `，锥顶 [${m.apex.join(',')}]` : '';
         appendLog('ai', `已生成${kind}（圆心 [${m.base && m.base.length ? m.base.join(',') : '?'}]，下底半径 ${m.radiusBottom != null ? m.radiusBottom : '?'} / 上底半径 ${m.radiusTop != null ? m.radiusTop : '?'}，${topDesc}，母线 ${m.slantHeight != null ? m.slantHeight : '?'}${apexDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-24 D32：dihedral3d 展示二面角平面角大小、棱与垂足、两半平面射线与圆弧读数（数值以画板返回为准）。
+      for (const dh of results) {
+        if (!dh.ok || dh.op !== 'dihedral3d') continue;
+        const m = dh.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.edgeCount) parts.push(`${m.edgeCount} 棱`);
+        if (m.rayCount) parts.push(`${m.rayCount} 平面角边`);
+        if (m.arcCount) parts.push(`${m.arcCount} 圆弧`);
+        if (m.chordCount) parts.push(`${m.chordCount} 连线`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 角度标注`);
+        const edgeDesc = m.edge && m.edge.length === 2 ? `[${m.edge[0].join(',')}]→[${m.edge[1].join(',')}]` : '?';
+        const footDesc = m.footExplicit ? `显式垂足 [${m.foot && m.foot.length ? m.foot.join(',') : '?'}]` : `垂足 [${m.foot && m.foot.length ? m.foot.join(',') : '?'}]（棱上 ${m.footT != null ? m.footT : '?'}）`;
+        appendLog('ai', `已生成二面角（平面角 ${m.angleDeg != null ? m.angleDeg : '?'}°，棱 ${edgeDesc}，${footDesc}，射线长 ${m.rayLength != null ? m.rayLength : '?'} / 弧半径 ${m.arcRadius != null ? m.arcRadius : '?'}${m.arcRadiusClamped ? '（已钳制）' : ''}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

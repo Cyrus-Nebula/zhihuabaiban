@@ -37,6 +37,7 @@ import { resolveCone3D } from './board3d-cone.js';
 import { resolveCylinder3D } from './board3d-cylinder.js';
 import { resolvePlane3D } from './board3d-plane.js';
 import { resolveConefrustum3D } from './board3d-conefrustum.js';
+import { resolveDihedral3D } from './board3d-dihedral.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -366,6 +367,16 @@ export const BOARD3D_CONEFRUSTUM_OPS = Object.freeze(['conefrustum3d']);
 /** 含全部扩展命令的完整集（31 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE22_OPS = Object.freeze([
   ...BOARD3D_COMPLETE21_OPS, ...BOARD3D_CONEFRUSTUM_OPS,
+]);
+
+// 2026-11-24 D32：dihedral3d 空间二面角 / 平面角标注，给棱上两点 edge + 两个半平面内点
+// pointA / pointB 生成棱线 + 垂足 + 两条垂直棱的射线 + 圆弧 + 角度读数（可选小球与连线）。
+// 单独成组、不并入任何历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 /
+// COMPLETE2 11 / … / COMPLETE22 31 条），按协作铁律逐字不变。
+export const BOARD3D_DIHEDRAL_OPS = Object.freeze(['dihedral3d']);
+/** 含全部扩展命令的完整集（32 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE23_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE22_OPS, ...BOARD3D_DIHEDRAL_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1338,6 +1349,36 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: failed.length === 0 && created.length > 0,
             count: r.items.length, created, meta: r.meta,
             ...(failed.length ? { failed } : {}),
+          });
+          break;
+        }
+        case 'dihedral3d': {
+          // 2026-11-24 D32：3D 空间二面角 / 平面角标注，给 edge + pointA + pointB（或显式 foot）
+          // 生成棱线 + 垂足出发的两条垂直棱射线 + 圆弧 + 角度读数（可选端点小球与连线）。
+          // 不需要源对象；从「当前」getState 读状态仅用于生成 id 时避让已有对象，getState 缺失 / 抛错
+          // 降级为空场景，整批不中断；id 冲突分项失败、api.add 返回 null/false 分项回报；2D 命令仍由
+          // default 拒绝。
+          let dhState = {};
+          try { dhState = (a.getState ? a.getState() : {}) || {}; } catch (_) { dhState = {}; }
+          const dr = resolveDihedral3D(cmd, dhState);
+          if (!dr.ok) {
+            results.push({ op, ok: false, error: dr.error });
+            break;
+          }
+          const dhCreated = [];
+          const dhFailed = [];
+          for (const item of dr.items) {
+            if (known.has(item.id)) { dhFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { dhFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            dhCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: dhFailed.length === 0 && dhCreated.length > 0,
+            count: dr.items.length, created: dhCreated, meta: dr.meta,
+            ...(dhFailed.length ? { failed: dhFailed } : {}),
           });
           break;
         }
