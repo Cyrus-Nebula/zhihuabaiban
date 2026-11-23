@@ -24,6 +24,7 @@ const SPECS = [
   'board2d_inequality_spec.mjs',
   'board2d_center_spec.mjs',
   'board2d_roots_spec.mjs',
+  'board2d_zeros_spec.mjs',
 ];
 
 let failed = 0;

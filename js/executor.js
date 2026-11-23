@@ -371,6 +371,17 @@
  *   配套：ai/board-prompt.js 命令清单登记 + 「符号计算 · 二次函数求根」小节 + 例42、docs 用例 97/98、
  *   tests/board2d_roots_spec.mjs 无头单测 + run-2d-specs.mjs 聚合入口。
  *   TODO: ① 三次/四次或任意函数数值求根；② 两函数交点的符号查询；③ roots 在真实 JSXGraph 落点目视确认。
+ *
+ * 2026-11-23 再追加（AI作图对标大角几何·符号计算）：inspect 派生量新增 kind:"zeros" 任意函数数值求根。
+ *   roots/vertex 只吃二次多项式（靠 quadraticCoeffs 采样反推），三次以上 / 三角 / 指数等无解析求根公式的
+ *   函数仍要 AI 心算猜零点。本轮给 derive 框架加通用数值求根：
+ *   (1) 模块级导出纯函数 numericRoots(sample, opts)：区间等距扫描 + 变号二分 + 端点吸附+去重，Node 无头单测；
+ *   (2) zerosReading(d)：表达式取 d.expr 或已注册函数的 __aiExpr，区间取 d.from/d.to（默认 -10~10），
+ *       用 evalExprAt 采样后交给 numericRoots，回所有零点与交点 (x,0)；只读、不画图元；
+ *   (3) deriveName / deriveReading 各加 zeros 分支；既有 kind 与 vertex/center/roots 行为逐字节不变。
+ *   配套：ai/board-prompt.js 命令登记 + 「符号计算 · 任意函数数值求根」小节 + 例43、docs 用例 99/100、
+ *   tests/board2d_zeros_spec.mjs 无头单测 + run-2d-specs.mjs 聚合入口。
+ *   TODO: ① 两函数交点的符号查询（kind:intersections）；② zeros/roots 在真实 JSXGraph 落点目视确认。
  */
 
 /**
@@ -393,6 +404,66 @@ export function quadraticRoots(a, b, c) {
   const s = Math.sqrt(D);
   const x1 = (-B - s) / (2 * A), x2 = (-B + s) / (2 * A);
   return { ok: true, discriminant: D, real: true, roots: [x1 < x2 ? x1 : x2, x1 < x2 ? x2 : x1], double: false };
+}
+
+/**
+ * 任意函数在区间 [from,to] 上的数值零点（inspect kind:"zeros" 的纯函数内核，2026-11-23 追加）。
+ * 模块级导出、不依赖 JSXGraph / registry / DOM，Node 22 ESM 可直接 import 做无头单测。
+ * 采样函数 sample(x) 由调用方注入（executor 内用 evalExprAt 把表达式编译成采样器），本函数只做数值：
+ *   ① 等距扫描 segments 段，记录端点处 f≈0 的点（吸附）与相邻异号区间；
+ *   ② 每个异号区间用二分法迭代至宽度 < tol 或值 < tol，取中点为零点；
+ *   ③ 相切重根（f 不变号）靠「端点吸附 + 局部极值采样」近似捕捉，不保证精确重根；
+ *   ④ 结果按 x 升序、相邻间距 < mergeTol 的合并去重（避免同一根被吸附+二分各记一次）。
+ *  treats sample(x) 返回非有限数（定义域外的 NaN/±Inf）为「空洞」，扫描时跳过该段（与绘图 NaN 断点一致）。
+ */
+export function numericRoots(sample, opts) {
+  if (typeof sample !== 'function') throw new Error('numericRoots 需要 sample(x) 采样函数');
+  const o = opts || {};
+  let from = Number(o.from != null ? o.from : -10);
+  let to = Number(o.to != null ? o.to : 10);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) throw new Error('求根区间 from/to 须为有限数');
+  if (from > to) { const t = from; from = to; to = t; }   // 自动交换，宽容 AI 写反
+  if (to - from < 1e-12) throw new Error('求根区间宽度不能为 0');
+  const clamp = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+  const segments = Math.round(clamp(o.segments, 16, 4000, 600));
+  const tol = clamp(o.tol, 1e-12, 1e-2, 1e-7);
+  const maxRoots = Math.round(clamp(o.maxRoots, 1, 200, 50));
+  const span = to - from;
+  const mergeTol = span / segments * 0.5;   // 同段内重复根合并
+  const val = (x) => { const v = sample(x); return typeof v === 'number' && Number.isFinite(v) ? v : NaN; };
+  const found = [];
+
+  // ① 端点 + 逐段扫描：吸附近零点、登记异号区间
+  let px = from, pv = val(px);
+  if (Number.isFinite(pv) && Math.abs(pv) <= tol) found.push(px);
+  for (let i = 1; i <= segments; i++) {
+    const cx = i === segments ? to : from + span * i / segments;
+    const cv = val(cx);
+    if (Number.isFinite(cv) && Math.abs(cv) <= tol) {
+      found.push(cx);                                    // 采样点恰好落在零点上（含相切重根）
+    } else if (Number.isFinite(pv) && Number.isFinite(cv) && pv * cv < 0) {
+      // ② 变号区间二分
+      let a = px, b = cx, fa = pv;
+      for (let k = 0; k < 100 && (b - a) > tol; k++) {
+        const m = (a + b) / 2, fm = val(m);
+        if (!Number.isFinite(fm)) break;                  // 遇到空洞放弃该区间二分
+        if (Math.abs(fm) <= tol) { a = b = m; break; }
+        if (fa * fm <= 0) b = m; else { a = m; fa = fm; }
+      }
+      found.push((a + b) / 2);
+    }
+    px = cx; pv = cv;
+    if (found.length > maxRoots * 4) break;               // 防御性：病态函数早停
+  }
+
+  // ③ 升序 + 去重
+  found.sort((a, b) => a - b);
+  const roots = [];
+  for (const r of found) {
+    if (!roots.length || r - roots[roots.length - 1] > mergeTol) roots.push(Number(r.toFixed(9)));
+    if (roots.length >= maxRoots) break;
+  }
+  return { ok: true, roots, count: roots.length, from, to, segments, truncated: found.length > roots.length };
 }
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -2383,6 +2454,7 @@ export function createExecutor(board) {
     if (kind === 'vertex') return 'vertex(' + String((d && (d.id || d.expr || (Array.isArray(d.of) ? d.of[0] : null))) || '?') + ')';
     if (kind === 'center') return 'center(' + (Array.isArray(d.of) ? d.of.join(',') : '?') + ')';
     if (kind === 'roots') return 'roots(' + String((d && (d.id || d.expr || (Array.isArray(d.of) ? d.of[0] : null))) || '?') + ')';
+    if (kind === 'zeros') return 'zeros(' + String((d && (d.id || d.expr || (Array.isArray(d.of) ? d.of[0] : null))) || '?') + ')';
     return kind + '(' + (Array.isArray(d.of) ? d.of.join(',') : '') + ')';
   }
 
@@ -2517,12 +2589,52 @@ export function createExecutor(board) {
       + '; x2=' + qfmt(r.roots[1]) + '; 交点(' + qfmt(r.roots[0]) + ',0),(' + qfmt(r.roots[1]) + ',0)';
   }
 
+  /**
+   * 单条 zeros 读数（inspect 派生量 kind:"zeros"，2026-11-23 追加）：任意函数数值求根。
+   * 表达式取 d.expr，或按 d.id / target / of[0] 读已注册函数的 __aiExpr（与 roots/vertex 同源）；
+   * 区间取 d.from/d.to（默认 -10~10）。用 evalExprAt 做采样函数（JessieCode 优先、受限算术回退，
+   * 与绘图同源），交给模块级纯函数 numericRoots 扫描+二分。把读数里的零点抄成 point 数字坐标，
+   * 末尾用 verify kind:evaluate 核 f(x)≈0。相切重根可能只吸附到 1 个、奇偶穿越根更可靠；只读、不画图元。
+   */
+  function zerosReading(d) {
+    let expr = d && d.expr != null ? String(d.expr) : '';
+    let src = '';
+    if (!expr && d) {
+      const ref = d.id != null ? d.id : (d.target != null ? d.target : (Array.isArray(d.of) ? d.of[0] : null));
+      if (ref != null) {
+        const el = registry.get(String(ref));
+        if (el && el.__aiExpr) { expr = String(el.__aiExpr); src = String(ref) + ':'; }
+      }
+    }
+    if (!expr) return deriveName(d) + '=?无函数表达式';
+    const from = d && d.from != null ? d.from : -10;
+    const to = d && d.to != null ? d.to : 10;
+    const sample = (x) => {
+      let v = evalExprAt(expr, x);
+      if (!Number.isFinite(v)) {
+        const norm = normalizePolyExpr(String(expr));
+        if (norm !== String(expr)) v = evalExprAt(norm, x);
+      }
+      return v;
+    };
+    let r;
+    try { r = numericRoots(sample, { from, to, segments: d && d.segments, tol: d && d.tol }); }
+    catch (e) { return deriveName(d) + '=?' + (e && e.message ? e.message : '求根失败'); }
+    if (!r.roots.length) return 'zeros(' + src + '"' + expr + '"): [' + qfmt(from) + ',' + qfmt(to) + '] 内无数值零点（无交点或区间需调整）';
+    const pts = r.roots.map((x) => '(' + qfmt(x) + ',0)').join(',');
+    let txt = 'zeros(' + src + '"' + expr + '"): [' + qfmt(from) + ',' + qfmt(to) + '] 内 ' + r.count + ' 个零点';
+    r.roots.forEach((x, i) => { txt += '; x' + (i + 1) + '=' + qfmt(x); });
+    txt += '; 交点 ' + pts + (r.truncated ? '（已达上限，收窄区间）' : '');
+    return txt;
+  }
+
   /** 单条派生量求值 → "名字=数值+单位"；复用 measureValue（纯计算，不画读数、不进注册表）。 */
   function deriveReading(d) {
     const kd = String((d && d.kind) || '').toLowerCase();
     if (kd === 'vertex') return vertexReading(d);
     if (kd === 'center') return centerReading(d);
     if (kd === 'roots') return rootsReading(d);
+    if (kd === 'zeros') return zerosReading(d);
     const m = measureValue(d);
     const v = Number.isFinite(m.value) ? m.value.toFixed(m.kind === 'angle' ? 1 : 3) : '?';
     return deriveName(d) + '=' + v + (m.unit || '');
@@ -2546,6 +2658,8 @@ export function createExecutor(board) {
     //       一次回读重心/外心/垂心/内心坐标 + R/r/面积；也可 points:[[0,0],[3,0],[0,3]] 直接给三点
     //   {"op":"inspect","kind":"roots","id":"f1"} / {"...","expr":"x^2-4x+3"}  二次函数符号求根（本轮新增，见 rootsReading）：
     //       回 Δ 与两实根 / 重根 / 无实根及交点 (x,0)，AI 抄成 point 数字坐标，末尾 verify f(x)=0
+    //   {"op":"inspect","kind":"zeros","id":"f1","from":-10,"to":10} / {"...","expr":"x^3-x"}  任意函数数值求根（本轮新增，见 zerosReading）：
+    //       区间扫描+二分回所有零点与交点 (x,0)；三次以上/三角/指数等无解析公式时用，AI 抄成 point 再 verify f(x)≈0
     // 单条失败只回 "xxx(?)"，绝不整批失败；旧命令（无 kind/derive/x/xs）行为逐字节不变。
     const derives = [];
     if (cmd.kind != null) derives.push(cmd);
