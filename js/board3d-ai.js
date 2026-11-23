@@ -353,6 +353,24 @@ async function send() {
         const fromDesc = m.byPoints ? '三点定面' : `法向 [${m.axis && m.axis.length ? m.axis.join(',') : '?'}]`;
         appendLog('ai', `已生成平面面片（中心 [${m.center && m.center.length ? m.center.join(',') : '?'}]，${fromDesc}，宽 ${m.width != null ? m.width : '?'} × 高 ${m.height != null ? m.height : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-24 D31：conefrustum3d 展示正/斜圆台、下底圆心与法向、上下底半径/高（或显式顶面圆心）、底圈/顶圈/侧母线与圆心标注（数值以画板返回为准）。
+      for (const fc of results) {
+        if (!fc.ok || fc.op !== 'conefrustum3d') continue;
+        const m = fc.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.baseRingCount) parts.push(`${m.baseRingCount} 下底圈`);
+        if (m.topRingCount) parts.push(`${m.topRingCount} 上底圈`);
+        if (m.sideCount) parts.push(`${m.sideCount} 侧母线`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 标注`);
+        const kind = m.degenerate === 'cone' ? '圆锥（退化）' : (m.degenerate === 'cylinder' ? '圆柱（退化）' : (m.isRight ? '正圆台' : '斜圆台'));
+        const topDesc = m.topExplicit
+          ? `上底圆心 [${m.top && m.top.length ? m.top.join(',') : '?'}]`
+          : `高 ${m.height != null ? m.height : '?'} 沿 [${m.axis && m.axis.length ? m.axis.join(',') : '?'}]`;
+        const apexDesc = m.apex ? `，锥顶 [${m.apex.join(',')}]` : '';
+        appendLog('ai', `已生成${kind}（圆心 [${m.base && m.base.length ? m.base.join(',') : '?'}]，下底半径 ${m.radiusBottom != null ? m.radiusBottom : '?'} / 上底半径 ${m.radiusTop != null ? m.radiusTop : '?'}，${topDesc}，母线 ${m.slantHeight != null ? m.slantHeight : '?'}${apexDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

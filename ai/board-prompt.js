@@ -2736,3 +2736,34 @@ export const BOARD3D_PLANE_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；center/points 非法或三点共线、axis 非法或零向量、width/height 越界、gridU/gridV 非整数或越界、normalLength 越界、开关非布尔、五开关全关、vertexSize 越界、opacity 非法、id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：内置 plane 只能水平；grid3d 是阵列不是面片；prism3d/pyramid3d/frustum3d 的底面依附于立体。要画「一片任意朝向的平面 / 截面 / 工作面」用 plane3d。
 - 铁律：plane3d 是 3D 命令；2D 的矩形 / 平面命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-24 D31 追加段：conefrustum3d 通用圆台 / 斜圆台（独立自主 3D 画板任务）
+ * 上方 PLANE 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'conefrustum3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** conefrustum3d 通用圆台 / 斜圆台提示词段 */
+export const BOARD3D_CONEFRUSTUM_PROMPT_OPS = Object.freeze(['conefrustum3d']);
+export const BOARD3D_CONEFRUSTUM_PROMPT = `
+# 补充：conefrustum3d 通用圆台 / 斜圆台（2026-11-24 追加）
+- 用途：给下底圆心 base + 下底法向 axis + 下底半径 radiusBottom + 上底半径 radiusTop + 高 height（或显式上底圆心 top）画一个任意朝向、上下底半径不同的圆台 / 斜圆台线框，可选圆心、圈点小球与顶点标注。内置 cylinder(rt,rb,h) 虽能画圆台但只能沿 y 轴、无法指定底面圆心 / 法向 / 顶面偏移；cone3d 上底收缩为一点、cylinder3d 上下底等半径；frustum3d 底面是多边形棱台，画不出真圆底。conefrustum3d 填补「任意朝向 + 上下底半径不同 + 斜圆台 + 顶点标注」的圆台缺口，直接服务「空间几何体 / 圆台 / 圆台轴截面 / 标注顶点」用例。
+- 命令格式：{"op":"conefrustum3d","id":"cfm","base":[0,0,0],"axis":"z","radiusBottom":2,"radiusTop":1,"height":3,"segments":24,"asBase":true,"asTop":true,"asSides":true,"asPoints":false,"labelVertices":false,"vertexSize":0.1}
+  · base：下底面圆心 / 锚点 [x,y,z]（默认 [0,0,0]）。
+  · axis：下底法向，'x'/'y'/'z' 或任意非零 3D 向量（默认 'z'，下底落在 xy 平面）。上下底圈恒垂直 axis、恒共面且互相平行。
+  · radiusBottom：下底半径（默认 2，区间 0.01~10000）；radiusTop：上底半径（默认 1，区间 0~10000）。radiusTop < radiusBottom 是通常的圆台（上小下大），radiusTop > radiusBottom 是倒圆台；radiusTop=0 退化为圆锥，radiusTop=radiusBottom 退化为圆柱。
+  · height：沿 axis 的高（默认 2，区间 0.01~10000），仅未给 top 时生效。
+  · top：可选，显式上底面圆心 [x,y,z]；给了就忽略 height，可与 axis 分离形成斜圆台（上底仍是真圆、但各侧母线不再等长，锥顶偏离 axis）。
+  · segments：上下底圈 / 侧母线条数（默认 24，整数 3~64）。
+  · asBase / asTop / asSides：是否画下底圆 / 上底圆 / 侧母线（均默认 true）。
+  · asPoints：是否在两圆心与上下底圈各点放小球（默认 false）。labelVertices：是否标注下底圆心 O、上底圆心 O' 与下底圈 A/B/C…、上底圈 A'/B'/C'（默认 false），直接服务「标注顶点」用例。
+  · vertexSize：小球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。五个输出开关至少开一个。
+- 几何守恒（画对了应满足）：|下底圈点−base|=radiusBottom、|上底圈点−top|=radiusTop；上下底圈各点均垂直 axis 且共面；正圆台（不给 top 或 top 在 axis 上）各侧母线等长 = √(h²+(radiusBottom−radiusTop)²)，锥顶落在 axis 轴上；斜圆台侧母线变长、锥顶偏离轴线；上下底圈各点与锥顶共线。
+- 示例：
+  · 默认正圆台（下底半径2、上底半径1、高3）：{"op":"conefrustum3d","radiusBottom":2,"radiusTop":1,"height":3}
+  · 倒圆台（上大下小）：{"op":"conefrustum3d","radiusBottom":1,"radiusTop":2,"height":3}
+  · 圆台绕 x 轴横放：{"op":"conefrustum3d","axis":"x","radiusBottom":2,"radiusTop":0.8,"height":4,"labelVertices":true}
+  · 斜圆台（上底偏移）：{"op":"conefrustum3d","radiusBottom":2,"radiusTop":1,"top":[1.5,0,3]}
+  · 退化为圆锥 / 圆柱：{"op":"conefrustum3d","radiusTop":0} / {"op":"conefrustum3d","radiusBottom":2,"radiusTop":2}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；base/top 非法、axis 非法或零向量、radiusBottom/radiusTop/height 越界、segments 非整数或越界、开关非布尔、五开关全关、vertexSize 越界、opacity 非法、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：内置 cylinder 只能沿 y 轴正圆台；cone3d 上底是点、cylinder3d 上下等半径；frustum3d 是多边形棱台；revolve3d 需手写母线。要画「上下底半径不同的真圆台 / 斜圆台 / 圆台轴截面」用 conefrustum3d。
+- 铁律：conefrustum3d 是 3D 命令；2D 的梯形 / 台体命令在本分支依旧不认识，不要输出。`;

@@ -36,6 +36,7 @@ import { resolveVector3D } from './board3d-vector.js';
 import { resolveCone3D } from './board3d-cone.js';
 import { resolveCylinder3D } from './board3d-cylinder.js';
 import { resolvePlane3D } from './board3d-plane.js';
+import { resolveConefrustum3D } from './board3d-conefrustum.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -353,6 +354,18 @@ export const BOARD3D_PLANE_OPS = Object.freeze(['plane3d']);
 /** 含全部扩展命令的完整集（30 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE21_OPS = Object.freeze([
   ...BOARD3D_COMPLETE20_OPS, ...BOARD3D_PLANE_OPS,
+]);
+
+// 2026-11-24 D31：conefrustum3d 通用圆台 / 斜圆台，给下底圆心 base + 法向 axis + 下底半径
+// radiusBottom + 上底半径 radiusTop + 高 height（或显式 top）生成下底圈 + 上底圈 + 侧母线线框
+// （可选圆心/圈点小球与 O/A…/A'… 标注）。正圆台各侧母线等长、锥顶落在 axis 轴上；斜圆台
+// 侧母线变长、锥顶偏离轴线；radiusTop=0 退化圆锥、=radiusBottom 退化圆柱。
+// 单独成组、不并入任何历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 /
+// COMPLETE2 11 / … / COMPLETE21 30 条），按协作铁律逐字不变。
+export const BOARD3D_CONEFRUSTUM_OPS = Object.freeze(['conefrustum3d']);
+/** 含全部扩展命令的完整集（31 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE22_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE21_OPS, ...BOARD3D_CONEFRUSTUM_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1277,6 +1290,36 @@ export function applyBoard3DCommands(commands, api, options = {}) {
           let planeState = {};
           try { planeState = (a.getState ? a.getState() : {}) || {}; } catch (_) { planeState = {}; }
           const r = resolvePlane3D(cmd, planeState);
+          if (!r.ok) {
+            results.push({ op, ok: false, error: r.error });
+            break;
+          }
+          const created = [];
+          const failed = [];
+          for (const item of r.items) {
+            if (known.has(item.id)) { failed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { failed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            created.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: failed.length === 0 && created.length > 0,
+            count: r.items.length, created, meta: r.meta,
+            ...(failed.length ? { failed } : {}),
+          });
+          break;
+        }
+        case 'conefrustum3d': {
+          // 2026-11-24 D31：3D 通用圆台 / 斜圆台，给 base + axis + radiusBottom + radiusTop +
+          // height（或显式 top）生成下底圈 + 上底圈 + 侧母线线框（可选圆心/圈点小球与 O/A…/A'… 标注）。
+          // 不需要源对象；从「当前」getState 读状态仅用于生成 id 时避让已有对象，getState 缺失 / 抛错
+          // 降级为空场景，整批不中断；id 冲突分项失败、api.add 返回 null/false 分项回报；2D 命令仍由
+          // default 拒绝。
+          let cfmState = {};
+          try { cfmState = (a.getState ? a.getState() : {}) || {}; } catch (_) { cfmState = {}; }
+          const r = resolveConefrustum3D(cmd, cfmState);
           if (!r.ok) {
             results.push({ op, ok: false, error: r.error });
             break;
