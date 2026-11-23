@@ -382,6 +382,17 @@
  *   配套：ai/board-prompt.js 命令登记 + 「符号计算 · 任意函数数值求根」小节 + 例43、docs 用例 99/100、
  *   tests/board2d_zeros_spec.mjs 无头单测 + run-2d-specs.mjs 聚合入口。
  *   TODO: ① 两函数交点的符号查询（kind:intersections）；② zeros/roots 在真实 JSXGraph 落点目视确认。
+ *
+ * 2026-11-23 第二十一轮追加（inspect kind:"intersections" 两函数交点数值查询）：
+ *   (1) 模块级导出纯函数 numericIntersections(sampleA,sampleB,opts)：复用 numericRoots 求 h=f−g 的零点，
+ *       再把零点回代两条采样函数拿 y（取 (fa+gb)/2 抹平二分残差），不依赖 JSXGraph / DOM / registry；
+ *   (2) intersectionsReading(d)：of:[f1,g1] 读两条已画函数的 __aiExpr（MCP 式读状态），
+ *       或 exprs:["f(x)","g(x)"] 直接给表达式；只读、不画图元；
+ *   (3) deriveName / deriveReading 各加 intersections 分支；既有 kind 与 vertex/center/roots/zeros 行为逐字节不变。
+ *   配套：ai/board-prompt.js 命令登记 + 「符号计算 · 两函数交点数值查询」小节 + 例44、
+ *   docs 用例 101/102、tests/board2d_intersections_spec.mjs 无头单测 + run-2d-specs.mjs 聚合入口。
+ *   TODO: ① 相切交点的精确捕捉（h 不变号，现靠采样点吸附）；② 交点读数在真实 JSXGraph 落点目视确认；
+ *   ③ 继续补易错图形 few-shot。
  */
 
 /**
@@ -464,6 +475,42 @@ export function numericRoots(sample, opts) {
     if (roots.length >= maxRoots) break;
   }
   return { ok: true, roots, count: roots.length, from, to, segments, truncated: found.length > roots.length };
+}
+
+/**
+ * 两条函数在区间 [from,to] 上的交点（inspect kind:"intersections" 的纯函数内核，2026-11-23 追加）。
+ * 模块级导出、不依赖 JSXGraph / registry / DOM，Node 22 ESM 可直接 import 做无头单测。
+ * 复用 numericRoots 扫描 + 二分求 h(x)=sampleA(x)−sampleB(x) 的零点，再把零点回代两条采样函数拿 y：
+ *   y 取 (fa+gb)/2（交点处二者本应相等，取平均抹平二分残差）；fa/gb 原样回传供 AI 写 verify。
+ * 任一采样在某 x 非有限（定义域空洞 / 渐近线）时 h 记 NaN，该段跳过（与绘图 NaN 断点一致）。
+ */
+export function numericIntersections(sampleA, sampleB, opts) {
+  if (typeof sampleA !== 'function' || typeof sampleB !== 'function')
+    throw new Error('numericIntersections 需要两个 sample(x) 采样函数');
+  const valA = (x) => { const v = sampleA(x); return Number.isFinite(v) ? v : NaN; };
+  const valB = (x) => { const v = sampleB(x); return Number.isFinite(v) ? v : NaN; };
+  const diff = (x) => {
+    const a = valA(x), b = valB(x);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return NaN;
+    return a - b;
+  };
+  const r = numericRoots(diff, opts);
+  const points = [];
+  for (const x of r.roots) {
+    const fa = valA(x), gb = valB(x);
+    if (!Number.isFinite(fa) || !Number.isFinite(gb)) continue;   // 空洞处的伪根丢弃
+    points.push({
+      x,
+      y: Number(((fa + gb) / 2).toFixed(9)),
+      fa: Number(fa.toFixed(9)),
+      gb: Number(gb.toFixed(9)),
+    });
+  }
+  return {
+    ok: true, points, count: points.length,
+    from: r.from, to: r.to, segments: r.segments,
+    truncated: r.truncated || points.length < r.roots.length,
+  };
 }
 
 const POINT_STYLE = { size: 3.5, fillColor: '#3E44D9', strokeColor: '#3E44D9', face: 'o', withLabel: true };
@@ -2455,6 +2502,10 @@ export function createExecutor(board) {
     if (kind === 'center') return 'center(' + (Array.isArray(d.of) ? d.of.join(',') : '?') + ')';
     if (kind === 'roots') return 'roots(' + String((d && (d.id || d.expr || (Array.isArray(d.of) ? d.of[0] : null))) || '?') + ')';
     if (kind === 'zeros') return 'zeros(' + String((d && (d.id || d.expr || (Array.isArray(d.of) ? d.of[0] : null))) || '?') + ')';
+    if (kind === 'intersections') {
+      const arr = (Array.isArray(d && d.of) ? d.of : (Array.isArray(d && d.exprs) ? d.exprs : null));
+      return 'intersections(' + (arr ? arr.join('∩') : '?') + ')';
+    }
     return kind + '(' + (Array.isArray(d.of) ? d.of.join(',') : '') + ')';
   }
 
@@ -2628,6 +2679,56 @@ export function createExecutor(board) {
     return txt;
   }
 
+  /**
+   * 单条 intersections 读数（inspect 派生量 kind:"intersections"，2026-11-23 追加）：两函数交点数值查询。
+   * 两条表达式取 d.exprs:[f,g]（函数还没画也能查），或由 d.of:[f1,g1] 读两条已画函数的 __aiExpr
+   * （MCP 式读画板状态，与 vertex/roots/zeros 同源）。用 evalExprAt 做采样函数（JessieCode 优先、
+   * 受限算术回退，与绘图同源），交给模块级纯函数 numericIntersections 扫描 + 二分求 h=f−g 的零点。
+   * 读数把 P1/P2 的 (x,y) 写成数字，AI 抄成 point；末尾用 verify kind:evaluate 核 f(x)−g(x)=0。
+   * 只读、不画图元、不画读数、不进注册表；相切交点（h 不变号）可能只吸附到 1 个。
+   */
+  function intersectionsReading(d) {
+    const name = deriveName(d);
+    let eA = d && d.exprA != null ? String(d.exprA) : '';
+    let eB = d && d.exprB != null ? String(d.exprB) : '';
+    let srcA = '', srcB = '';
+    if (!eA && !eB && Array.isArray(d && d.exprs) && d.exprs.length >= 2) {
+      eA = String(d.exprs[0]); eB = String(d.exprs[1]);
+    }
+    if ((!eA || !eB) && Array.isArray(d && d.of) && d.of.length >= 2) {
+      for (let i = 0; i < 2; i++) {
+        const ref = String(d.of[i]);
+        const el = registry.get(ref);
+        if (!el || !el.__aiExpr) continue;
+        if (i === 0 && !eA) { eA = String(el.__aiExpr); srcA = ref + ':'; }
+        if (i === 1 && !eB) { eB = String(el.__aiExpr); srcB = ref + ':'; }
+      }
+    }
+    if (!eA || !eB) return name + '=?需 of:[f1,g1] 两个已画函数 或 exprs:["f(x)","g(x)"] 两条表达式';
+    const sample = (expr) => (x) => {
+      let v = evalExprAt(expr, x);
+      if (!Number.isFinite(v)) {
+        const norm = normalizePolyExpr(String(expr));
+        if (norm !== String(expr)) v = evalExprAt(norm, x);
+      }
+      return v;
+    };
+    const from = d && d.from != null ? d.from : -10;
+    const to = d && d.to != null ? d.to : 10;
+    let r;
+    try {
+      r = numericIntersections(sample(eA), sample(eB), {
+        from, to, segments: d && d.segments, tol: d && d.tol, maxRoots: d && d.maxRoots,
+      });
+    } catch (e) { return name + '=?' + (e && e.message ? e.message : '求交点失败'); }
+    const head = 'intersections(' + srcA + '"' + eA + '" ∩ ' + srcB + '"' + eB + '"): ['
+      + qfmt(from) + ',' + qfmt(to) + '] 内 ';
+    if (!r.count) return head + '无数值交点（两曲线不相交或区间需调整）';
+    const pts = r.points.map((p, i) => 'P' + (i + 1) + '=(' + qfmt(p.x) + ',' + qfmt(p.y)
+      + ') f=' + qfmt(p.fa) + ' g=' + qfmt(p.gb));
+    return head + r.count + ' 个交点; ' + pts.join('; ') + (r.truncated ? '（已达上限，收窄区间）' : '');
+  }
+
   /** 单条派生量求值 → "名字=数值+单位"；复用 measureValue（纯计算，不画读数、不进注册表）。 */
   function deriveReading(d) {
     const kd = String((d && d.kind) || '').toLowerCase();
@@ -2635,6 +2736,7 @@ export function createExecutor(board) {
     if (kd === 'center') return centerReading(d);
     if (kd === 'roots') return rootsReading(d);
     if (kd === 'zeros') return zerosReading(d);
+    if (kd === 'intersections') return intersectionsReading(d);
     const m = measureValue(d);
     const v = Number.isFinite(m.value) ? m.value.toFixed(m.kind === 'angle' ? 1 : 3) : '?';
     return deriveName(d) + '=' + v + (m.unit || '');
@@ -2660,6 +2762,8 @@ export function createExecutor(board) {
     //       回 Δ 与两实根 / 重根 / 无实根及交点 (x,0)，AI 抄成 point 数字坐标，末尾 verify f(x)=0
     //   {"op":"inspect","kind":"zeros","id":"f1","from":-10,"to":10} / {"...","expr":"x^3-x"}  任意函数数值求根（本轮新增，见 zerosReading）：
     //       区间扫描+二分回所有零点与交点 (x,0)；三次以上/三角/指数等无解析公式时用，AI 抄成 point 再 verify f(x)≈0
+    //   {"op":"inspect","kind":"intersections","of":["f1","g1"]} / {"...","exprs":["x^2","2*x+1"]}  两函数交点（第二十一轮新增，见 intersectionsReading）：
+    //       扫描+二分求 h=f−g 的零点并回读 P1(x,y)/P2(x,y)；AI 抄成 point，末尾 verify f(x)−g(x)=0（别心算联立猜坐标）
     // 单条失败只回 "xxx(?)"，绝不整批失败；旧命令（无 kind/derive/x/xs）行为逐字节不变。
     const derives = [];
     if (cmd.kind != null) derives.push(cmd);

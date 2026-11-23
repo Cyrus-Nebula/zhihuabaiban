@@ -743,3 +743,28 @@
   相切重根（f 不变号）只靠采样点吸附，可能只回 1 个、不保证精确重根；奇偶穿越根更可靠。
 - 求根区间 from/to 默认 -10~10，AI 须给足区间才查得到全视野交点；`sample(x)` 返回 NaN/±Inf 视为空洞跳过该段
   （与绘图 NaN 断点一致）。沙箱无头环境只测 `numericRoots` 纯函数规格，不做真实 JSXGraph 渲染。
+
+## 第二十一轮增量：两函数交点数值查询 inspect kind:intersections（2026-11-23）
+> 对标大角几何「符号+数值计算」强项：此前 zeros 只能求单个函数与 x 轴的交点，求 f 与 g 两曲线交点
+> 仍要 AI 心算联立方程（移项/求根公式/y 回代步步易错）。本轮给 `js/executor.js` 加模块级纯函数
+> `numericIntersections(sampleA,sampleB,opts)`（复用 numericRoots 扫描+二分求 h=f−g 零点，回代取公共 y），
+> `intersectionsReading` 用 `of:[f1,g1]` 读两条已画函数 `__aiExpr`（MCP 式读状态）或 `exprs:["f","g"]` 直给，
+> `ai/board-prompt.js` 登记 `kind:intersections` 并追加例44。全部为既有文件纯追加，3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 101 | 画 y=x² 与 y=2x+1，标出两交点并验证 | 第1轮 `function` f1:"x^2" from:-4 to:4 + `function` g1:"2*x+1" from:-4 to:4 → `inspect` kind:intersections of:[f1,g1] from:-4 to:4 → 收【查询读数】2个交点 P1=(-0.414,0.172) P2=(2.414,5.828) → 第2轮 `point` P1(-0.414,0.172) P2(2.414,5.828) → `verify` evaluate expr:"x^2-(2*x+1)" x:-0.414 / x:2.414 expect:0 tol:0.05 | ✅ | **心算联立抄错公式**；**只画一个交点**（两条 point、不同 id）；**y 自己回代算错**（用读数公共值）；两阶段回读第1轮不写交点 point |
+| 102 | 用表达式直查交点 / 无交点 / 相切退化 | `inspect` kind:intersections exprs:["sin(x)","x/2"] from:-6 to:6 → 3个交点约 -1.895/0/1.895；变式 exprs:["x^2+1","-2"] → 回「无数值交点」，只留曲线、message 说明不相交、不写 point；变式 exprs:["x^2","2*x-1"] → 相切于(1,1)可能只回1个点，画1个别硬凑2个 | ✅ | **表达式写法当已画 id**（没画函数用 exprs，已画用 of）；**无交点还编造 point**；**相切硬凑两个交点**；from/to 给太窄漏掉视野内交点 |
+
+## TODO 交接更新（2026-11-23 第二十一轮）
+1. [本轮已完成] 两函数交点数值查询——例44 + 用例 101/102 + `numericIntersections` 纯函数 + 30 项无头单测。
+2. [待办] 相切交点的精确捕捉（h 不变号，现靠采样点吸附，可补局部极值 Golden-section 细分）。
+3. [待办] intersections / zeros / roots 符号计算读数在真实 JSXGraph 上落点目视确认。
+4. [待办] 继续补易错图形 few-shot；另两个前端项（自检徽标 DOM / 收敛读数回画）需改 js/board.js，非本任务职责。
+
+## 已知限制（第二十一轮追加）
+- 例44（用例 101/102）：`intersections` 是数值二分，返回近似交点（读数四舍五入到 3 位），verify 需 tol:0.01~0.05，
+  别写 1e-6；y 取 (fa+gb)/2 抹平二分残差，读数里 fa/gb 并列便于核对。
+- 相切交点（h=f−g 不变号、只擦一下）只靠采样点吸附，可能只回 1 个、不保证精确重根；奇偶穿越交点更可靠。
+- 两条采样在某 x 非有限（1/x 在 x=0、sqrt 负半轴）视为空洞跳过该段，与绘图 NaN 断点一致；
+  `of:[f1,g1]` 引用的函数须先画好（读 `__aiExpr`），未画用 `exprs`。沙箱无头环境只测纯函数规格，不做真实渲染。

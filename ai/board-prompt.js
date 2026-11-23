@@ -432,6 +432,18 @@
  *   本文件登记 zeros 命令、新增「符号计算 · 任意函数数值求根」小节、例43；docs 用例 99/100。
  * TODO(下一步): ① 两函数交点的符号查询（kind:intersections）；② zeros/roots 在真实 JSXGraph 落点目视确认；
  *   ③ 继续补易错图形 few-shot。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-23 第二十一轮）：只追加 2D 作图主干（inspect kind:intersections 两函数交点数值查询），
+ *   3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；核心工作流 / 铁律 /
+ *   命令清单既有行 / 既有例1-43 逐字未动、无删除行。落实上一轮 TODO 交接项①——此前求 f 与 g 的交点只能靠
+ *   AI 心算联立方程（移项/公式抄错、只找到一个交点、y 坐标猜错）。本轮给 inspect 派生量新增 kind:intersections：
+ *   of:[f1,g1] 读两条已画函数的 __aiExpr（MCP 式读状态）或 exprs:["f","g"] 直接给表达式，扫描+二分求 h=f−g 的零点
+ *   并回读每个交点 P(x,y)（y 为两曲线公共值）；AI 收到【查询读数】后把交点写成 point 数字坐标，
+ *   末尾用 verify kind:evaluate 核 f(x)−g(x)=0。配套 js/executor.js 新增纯函数 numericIntersections +
+ *   intersectionsReading + 两处分支，tests/board2d_intersections_spec.mjs 无头单测；本文件登记 intersections 命令、
+ *   新增「符号计算 · 两函数交点数值查询」小节、例44；docs 用例 101/102。
+ * TODO(下一步): ① 相切交点的精确捕捉（h 不变号，现靠采样点吸附）；② intersections/zeros/roots 读数在真实
+ *   JSXGraph 落点目视确认；③ 继续补易错图形 few-shot。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -543,6 +555,26 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
   区间外的根查不到——给足区间；根很密时可收窄区间分段查。
 - zeros 只读：不画图元、不画读数、不进画板文档；先 function 画曲线 + zeros 查询拿读数，
   第 2 轮才落交点 point，末尾 verify kind:evaluate 核 f(x)≈0。见例43 完整回合。
+
+# 符号计算 · 两函数交点数值查询（inspect kind:intersections，本轮新增 2026-11-23 第二十一轮）
+- 求「两条曲线的交点」（抛物线与直线、两函数图像交于 A/B 等）时，不要心算联立方程、更不要猜坐标硬点——
+  移项、求根公式、y 回代每一步都可能抄错。用 inspect kind:intersections 让画板对 h(x)=f(x)−g(x) 做
+  区间扫描 + 二分，一次回读所有交点 P(x,y)（y 为两曲线的公共值）。
+- 写法（与 roots / zeros 同源，走【查询读数】两阶段回读）：
+  · {"op":"inspect","kind":"intersections","of":["f1","g1"],"from":-6,"to":6}  of 须是两个**已画函数** id（先创建后引用）
+  · {"op":"inspect","kind":"intersections","exprs":["x^2","2*x+1"],"from":-6,"to":6}  两条表达式（函数还没画也能查）
+  · {"op":"inspect","derive":[{"kind":"intersections","of":["f1","g1"],"label":"两曲线交点"}]}  批量与其它派生量混查
+- from/to 是**搜索区间**（必给数字，默认 -10~10）；交点必须落在区间内才查得到，按当前视野给足，如 from:-6 to:6。
+- 读数形如 intersections(f1:"x^2" ∩ g1:"2*x+1"): [-6,6] 内 2 个交点;
+  P1=(-0.414,0.172) f=0.172 g=0.172; P2=(2.414,5.828) f=5.828 g=5.828。
+  把 P1/P2 的 x、y 抄成 point 的数字坐标（**y 用读数里的公共值，别自己回代算错**）；
+  两个交点要写两条不同 id 的 point，末尾用 verify kind:evaluate 对 h(x)=f(x)−g(x) 写 expect:0、tol:0.01~0.05。
+- 精度与局限：数值二分给近似交点（读数四舍五入到 3 位），verify 别写 tol:1e-6；
+  **相切交点**（h 不变号、只擦一下）可能只吸附到 1 个，画 1 个点即可、别硬凑两个；
+  定义域空洞（1/x 在 x=0、sqrt(x) 负半轴）自动跳过；区间外的交点查不到。
+  回「无数值交点」时如实告诉用户两曲线不相交，commands 不写交点 point。
+- intersections 只读：不画图元、不画读数、不进画板文档；第 1 轮画两条函数 + 发查询（不要写依赖交点坐标的 point），
+  收到【查询读数】后第 2 轮才落交点 point 与 verify。见例44 完整回合。
 
 # 铁律（违反会整批失败）
 - 先创建后引用：任何被 from/through/of/center 引用的 id，必须在前面的命令里已经建好。
@@ -666,6 +698,10 @@ export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图�
     {"op":"inspect","kind":"zeros","id":"f1","from":-10,"to":10}  查任意函数在区间内的全部零点（三次以上/三角/指数）
     {"op":"inspect","kind":"zeros","expr":"x^3-x","from":-3,"to":3}  直接给表达式求零点，from/to 是搜索区间
     {"op":"inspect","derive":[{"kind":"zeros","expr":"sin(x)","from":-4,"to":4}]}  批量与其它派生量混查
+  · 两函数交点（2026-11-23 第二十一轮新增，见「符号计算 · 两函数交点数值查询」小节 / 例44）：
+    {"op":"inspect","kind":"intersections","of":["f1","g1"],"from":-6,"to":6}  读画板上已画的两条函数曲线的全部交点（MCP 式读状态）
+    {"op":"inspect","kind":"intersections","exprs":["x^2","2*x+1"],"from":-6,"to":6}  直接给两条表达式（函数还没画也能查）
+    {"op":"inspect","derive":[{"kind":"intersections","of":["f1","g1"]},{"kind":"vertex","of":["f1"]}]}  与其它派生量混查
   · 符号化简 / 顶点式配方（本轮新增，见「符号化简 / 顶点式配方」小节 / 例21）：
     {"op":"inspect","kind":"vertex","id":"f1"}                 查已注册函数配方 → 回 vertex(f1:"x^2-4*x+1"): y=(x-2)^2-3; 顶点(2,-3); 轴 x=2; 最小值-3; a=1
     {"op":"inspect","kind":"vertex","expr":"2*x^2+8*x+3"}      直接给表达式配方 → 回 y=2(x+2)^2-5; 顶点(-2,-5)
@@ -1685,6 +1721,27 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 // 变式 B（无实零点）：f(x)=x^2+1 → zeros 回「内无数值零点」，只保留函数曲线，message 写「与 x 轴无交点」，不写交点 point。
 // 要点：① zeros 给近似根，verify 的 tol 放宽到 0.01~0.05，别写 1e-6；② 相切重根可能只吸附到 1 个，穿越根更可靠；
 //   ③ 区间 from/to 给足才查得到全视野交点；④ 与 roots 分工——二次用 roots 精确解、非二次用 zeros 数值解。
+
+== 例44：抛物线 y=x² 与直线 y=2x+1 的交点（inspect kind:intersections；易错：心算联立、只画一个交点、y 坐标猜错） ==
+用户："画 y=x² 与 y=2x+1，标出它们的交点并验证。"
+思路：不要心算联立 x²=2x+1（移项/求根公式易抄错），让画板数值求交。两阶段回读——
+ 第 1 阶段只画两条函数 + 发 intersections 查询，**不要写任何依赖交点坐标的 point**；
+ 收到【查询读数】后第 2 阶段才把 P1/P2 抄成数字坐标。
+// —— 第 1 轮输出 ——
+{"op":"function","id":"f1","expr":"x^2","from":-4,"to":4}
+{"op":"function","id":"g1","expr":"2*x+1","from":-4,"to":4}
+{"op":"inspect","kind":"intersections","of":["f1","g1"],"from":-4,"to":4}
+// —— 系统回填【查询读数】intersections(f1:"x^2" ∩ g1:"2*x+1"): [-4,4] 内 2 个交点; P1=(-0.414,0.172) f=0.172 g=0.172; P2=(2.414,5.828) f=5.828 g=5.828 ——
+// —— 第 2 轮输出（只用读数里的数字，不再发 inspect / measure / clear）——
+{"op":"point","id":"P1","x":-0.414,"y":0.172}
+{"op":"point","id":"P2","x":2.414,"y":5.828}
+{"op":"verify","kind":"evaluate","expr":"x^2-(2*x+1)","x":-0.414,"expect":0,"tol":0.05,"label":"P1在两曲线上"}
+{"op":"verify","kind":"evaluate","expr":"x^2-(2*x+1)","x":2.414,"expect":0,"tol":0.05,"label":"P2在两曲线上"}
+// 变式 A（还没画函数）：{"op":"inspect","kind":"intersections","exprs":["sin(x)","x/2"],"from":-6,"to":6} → 约 -1.895/0/1.895 三个交点。
+// 变式 B（无交点）：y=x²+1 与 y=-2 → 回「无数值交点」，只留两条曲线，message 写「两曲线不相交」，不写 point。
+// 变式 C（相切）：y=x² 与 y=0 → 相切于 (0,0)，可能只回 1 个交点，画 1 个点即可，别硬凑两个。
+// 要点：① y 用读数里的公共值（别自己回代算错）；② 两个交点写两条 point、不同 id；
+//   ③ verify 对 h=f−g 写 evaluate expect:0、tol:0.05；④ 区间 from/to 给足；⑤ 第1轮别写依赖交点坐标的 point。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
