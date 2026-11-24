@@ -3060,3 +3060,35 @@ export const BOARD3D_SKEWLINE_INTENT_RE = /(异面直线|公垂线|空间直线|
 export function isSkewline3DIntent(text) {
   return BOARD3D_SKEWLINE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-25 D36 追加（仅在文件最末尾追加，上方 D1~D35 一切内容逐字未动）：两空间直线夹角。
+export const BOARD3D_LINE_ANGLE_PROMPT = `
+- 用途：给两条空间直线各两点，自动生成「异面直线所成角 / 线线角 / 空间两直线夹角」标准作图：两条直线（可 extend 延长）+ 过顶点 O 且平行于 L2 的辅助线 + 两条夹角射线 + 圆弧 + 角度读数，θ=90° 时可选直角符号、可选顶点小球与 O 标注。measure3d 只能量共顶点的三点夹角，量不了异面直线的方向夹角；skewline3d 量两线距离、lineplane3d 量线面角、dihedral3d 量二面角、pointplane3d 量点面距。
+- 命令格式：{"op":"lineangle3d","id":"lang","from1":[0,0,0],"to1":[2,0,0],"from2":[0,0,0],"to2":[1,1,0],"extend":0,"rayLength":1,"arcRadius":0.5,"segments":24,"rightAngleSize":0.25,"asLines":true,"asCopy":true,"asRays":true,"asArc":true,"asRightAngle":true,"asPoints":false,"labelAngle":true,"labelVertex":false,"vertexSize":0.1}
+  · from1/to1/from2/to2：两条直线各两点（[x,y,z]，同一直线两点不得重合）；四者全缺省时给出一组相交 45° 直线。
+  · extend：两条直线两端延长长度（默认 0，0~1000）。rayLength：夹角射线长（默认 1，0.05~100）。
+  · arcRadius：弧半径（默认 0.5，0.05~100，超过 rayLength 自动钳制）。segments：弧分段数（默认 24，3~64 整数）。
+  · rightAngleSize：直角符号边长（默认 0.25）；仅在 θ=90° 时真正画出，其它角度自动省略。
+  · asLines / asCopy / asRays / asArc / asRightAngle / asPoints / labelAngle / labelVertex：输出开关，至少开一个。
+  · vertexSize / color / labelColor / opacity：样式。任一数值只要在命令里出现就必须是合法有限数（支持数字字符串）。
+- 几何守恒：eu=(to1−from1)/|·|，ev=(to2−from2)/|·|；取 copyDir=ev 或 −ev 使 eu·copyDir≥0；θ=arccos(eu·copyDir)∈[0°,90°]；相交线取真实交点 O，异面 / 平行线取 L1 上的 from1 作 O，辅助线恒过 O 且平行 L2；弧点距 O 恒为 arcRadius、弧首沿 eu 末沿 copyDir；两射线端点距 O 恒为 rayLength；θ=0 退化为点不画弧。
+- 示例：
+  · 默认 45° 相交直线：{"op":"lineangle3d"}
+  · 异面直线夹角（x 轴与过 (0,1,0) 的 y 向直线错开，仍按方向求角）：{"op":"lineangle3d","from1":[0,0,0],"to1":[2,0,0],"from2":[0,1,-1],"to2":[0,1,1]}
+  · 垂直两直线，画直角符号与顶点标注：{"op":"lineangle3d","from2":[0,0,0],"to2":[0,1,0],"labelVertex":true}
+  · 只要角度读数（不画辅助线与弧）：{"op":"lineangle3d","asLines":false,"asCopy":false,"asRays":false,"asArc":false,"asRightAngle":false}
+- 约束：四点非法 / 方向点重合 / 数值越界 / segments 非整数 / 开关非布尔 / 八开关全关 / id 非法 —— 整条原子拒绝、零副作用。
+- 铁律：lineangle3d 是 3D 命令；2D 的夹角 / 垂线命令在本分支依旧不认识，不要输出。`;
+
+export const BOARD3D_LINE_ANGLE_PROMPT_OPS = Object.freeze(['lineangle3d']);
+
+/**
+ * D36 立体专属词意图识别扩展（纯追加，不改 BOARD3D_INTENT_RE / BOARD3D_SKEWLINE_INTENT_RE）：
+ * 「异面直线夹角 / 空间直线夹角 / 线线角 / 两直线所成角」几乎不出现在平面作图需求里。
+ */
+export const BOARD3D_LINEANGLE_INTENT_RE = /(异面直线.{0,6}(夹角|所成角)|空间两?直线.{0,6}(夹角|所成角)|两空间直线|线线角|两直线.{0,4}(夹角|所成角))/;
+
+/** 判断自然语言是否含 D36 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isLineangle3DIntent(text) {
+  return BOARD3D_LINEANGLE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}

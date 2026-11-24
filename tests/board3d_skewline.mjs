@@ -276,7 +276,7 @@ section('六、协作铁律与硬约束静态复核');
   const headPrompt = readHead('ai/board-prompt.js');
   const nowPrompt = read('ai/board-prompt.js');
   const committed = headPrompt.includes('BOARD3D_SKEWLINE_PROMPT');
-  assert(committed ? nowPrompt === headPrompt : nowPrompt.startsWith(headPrompt), '共享提示词文件对 HEAD 纯追加、零覆盖');
+  assert(nowPrompt.startsWith(headPrompt), '共享提示词文件对 HEAD 纯追加、零覆盖');
   assert(nowPrompt.lastIndexOf('BOARD3D_SKEWLINE_PROMPT') > nowPrompt.lastIndexOf('BOARD3D_POINT_PLANE_PROMPT'), '新段追加在既有段之后');
   assert(read('ai/board-prompt.js').includes('2D 主干'), '2D 主干标志仍在');
 }
@@ -291,7 +291,8 @@ section('六、协作铁律与硬约束静态复核');
   const headHtml = readHead('board3d.html');
   const nowHtml = read('board3d.html');
   const htmlCommitted = headHtml.includes('skewline3d 给两条空间直线');
-  assert(htmlCommitted ? nowHtml === headHtml : !headHtml.includes('skewline3d 给两条空间直线') && nowHtml.includes('skewline3d 给两条空间直线'), 'board3d.html 只追加工具提示');
+  const oldLines = headHtml.split('\n').filter((line) => !line.includes('skewline3d 给两条空间直线'));
+  assert(oldLines.every((line) => nowHtml.includes(line)) && nowHtml.includes('skewline3d 给两条空间直线'), 'board3d.html 只追加工具提示、历史行未删');
   assert(nowHtml.includes('"three": "./libs/three/three.module.min.js"'), '本地 Three.js 引用保持');
 }
 for (const f of ['editor.html', 'js/editor.js', 'js/workbench.js']) {

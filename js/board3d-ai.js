@@ -433,6 +433,23 @@ async function send() {
         const kindDesc = m.kind === 'skew' ? '异面' : m.kind === 'parallel' ? '平行' : m.kind === 'intersect' ? '相交' : m.kind === 'collinear' ? '共线' : (m.kind || '?');
         appendLog('ai', `已生成${kindDesc}直线公垂线（d=${m.distance != null ? m.distance : '?'}，垂足 M ${mDesc} / N ${nDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-25 D36：lineangle3d 展示两直线夹角、相交/异面类型与辅助线/圆弧读数（数值以画板返回为准）。
+      for (const la of results) {
+        if (!la.ok || la.op !== 'lineangle3d') continue;
+        const m = la.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.lineCount) parts.push('两条直线');
+        if (m.copyCount) parts.push('平行辅助线');
+        if (m.rayCount) parts.push('夹角射线');
+        if (m.arcCount) parts.push(`${m.arcCount} 段圆弧`);
+        if (m.rightAngleCount) parts.push('直角符号');
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push('角度/顶点标注');
+        const oDesc = m.origin && m.origin.length ? `[${m.origin.join(',')}]` : '?';
+        const kindDesc = m.kind === 'intersect' ? '相交' : m.kind === 'skew' ? '异面' : m.kind === 'parallel' ? '平行' : m.kind === 'collinear' ? '共线' : (m.kind || '?');
+        appendLog('ai', `已生成${kindDesc}直线夹角（θ=${m.angleDeg != null ? m.angleDeg : '?'}°，顶点 O ${oDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

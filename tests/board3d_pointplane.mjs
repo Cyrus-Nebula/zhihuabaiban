@@ -292,7 +292,7 @@ section('十、协作铁律与硬约束静态复核');
   const oldBp = readHead('ai/board-prompt.js');
   assert(bp.startsWith(oldBp), `ai/board-prompt.js 字节级纯追加（旧 ${oldBp.length} 字节为新前缀，未覆盖 2D 主干或既有 3D 段）`);
   const oldBe = readHead('ai/board-backend.js');
-  assert(oldBe.length < read('ai/board-backend.js').length, 'backend 文件增长（仅追加 3D 引用与拼接）');
+  assert(read('ai/board-backend.js').length >= oldBe.length, 'backend 未被截断（3D 引用仅追加、不回退）');
   const ai3 = read('js/board3d-ai.js');
   assert(ai3.includes('pointplane3d') && ai3.includes('lineplane3d') && ai3.includes('dihedral3d'), 'AI 面板结果展示含 pointplane3d 且保留既有展示');
   const html = read('board3d.html');

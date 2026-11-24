@@ -41,6 +41,7 @@ import { resolveDihedral3D } from './board3d-dihedral.js';
 import { resolveLineplane3D } from './board3d-lineplane.js';
 import { resolvePointplane3D } from './board3d-pointplane.js';
 import { resolveSkewline3D } from './board3d-skewline.js';
+import { resolveLineangle3D } from './board3d-lineangle.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -410,6 +411,16 @@ export const BOARD3D_SKEWLINE_OPS = Object.freeze(['skewline3d']);
 /** 含全部扩展命令的完整集（35 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE26_OPS = Object.freeze([
   ...BOARD3D_COMPLETE25_OPS, ...BOARD3D_SKEWLINE_OPS,
+]);
+
+// 2026-11-25 D36：lineangle3d 两空间直线夹角，给 from1/to1/from2/to2 生成
+// 两条直线 + 过 O 平行于 L2 的辅助线 + 两条射线 + 圆弧 + 角度读数。
+// 同样单独成组、不并入历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 /
+// COMPLETE2 11 / … / COMPLETE25 34 / COMPLETE26 35 条），历史常量逐字不变。
+export const BOARD3D_LINE_ANGLE_OPS = Object.freeze(['lineangle3d']);
+/** 含全部扩展命令的完整集（36 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE27_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE26_OPS, ...BOARD3D_LINE_ANGLE_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1502,6 +1513,36 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: slFailed.length === 0 && slCreated.length > 0,
             count: sr.items.length, created: slCreated, meta: sr.meta,
             ...(slFailed.length ? { failed: slFailed } : {}),
+          });
+          break;
+        }
+        case 'lineangle3d': {
+          // 2026-11-25 D36：3D 两空间直线夹角，给 from1/to1/from2/to2 生成
+          // 两条直线 + 过 O 平行于 L2 的辅助线 + 两条射线 + 圆弧 + 角度读数。
+          // 不需要源对象；从「当前」getState 读状态仅用于生成 id 时避让已有对象，getState 缺失 / 抛错
+          // 降级为空场景，整批不中断；id 冲突分项失败、api.add 返回 null/false 分项回报；2D 命令仍由
+          // default 拒绝。
+          let laState = {};
+          try { laState = (a.getState ? a.getState() : {}) || {}; } catch (_) { laState = {}; }
+          const lar = resolveLineangle3D(cmd, laState);
+          if (!lar.ok) {
+            results.push({ op, ok: false, error: lar.error });
+            break;
+          }
+          const laCreated = [];
+          const laFailed = [];
+          for (const item of lar.items) {
+            if (known.has(item.id)) { laFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { laFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            laCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: laFailed.length === 0 && laCreated.length > 0,
+            count: lar.items.length, created: laCreated, meta: lar.meta,
+            ...(laFailed.length ? { failed: laFailed } : {}),
           });
           break;
         }
