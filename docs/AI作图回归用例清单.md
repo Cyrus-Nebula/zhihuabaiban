@@ -782,6 +782,8 @@
 | 104 | 切点未落在采样网格 / 函数与 x 轴相切 | `inspect` kind:intersections of:[f1,g1]（如 y=x² 与 y=2.0274x−1.0276，切点≈(1.014,1.028)）→ 底层 Golden-section 回读切点，照抄数字写 1 条 point；变式 `inspect` kind:zeros expr:"(x-2)^2" → 1 个零点 x=2 → 只画 point(2,0) | ✅ | **切点不在网格就漏报**；**普通极小 x²+1 误判为零点**（底层已防护，AI 见"无数值零点"应如实告知）；**相切画两个重合点** |
 | 105 | 画 y=2sin(2x+π/3)，标五个关键点并验证振幅 | `function` f1 expr:"2*sin(2*x+1.047198)" from:-1 to:3.5 → `point` P1(-0.524,0)/P2(0.262,2)/P3(1.047,0)/P4(1.833,-2)/P5(2.618,0) → `verify` evaluate expr:"2*sin(2*x+1.047198)" x:0.262 expect:2 tol:0.05 + x:1.833 expect:-2 tol:0.05 → message 说明振幅 2、周期 π≈3.141593、左移 π/6 | ✅ | **φ 平移方向反**（写成右移 π/3）；**把 ω=2 当周期**（周期是 π）；**五点 x 忘除以 ω**；π/3 写表达式字符串；用五个 point 替代整条曲线；verify expect 写 ±1；见 `ai/board-prompt.js` 例46 |
 | 106 | 让 y=2sin(2x+φ) 的相位动起来（滑动条联动） | 先 `slider` t min:0 max:6.283 value:1.047198 step:0.01 → `function` f1 expr:"2*sin(2*x+t)" from:-1 to:3.5 → `animate` id:t → `verify` evaluate expr:"2*sin(2*x+t)" x:0.262 expect:2 tol:0.05（在初值 t=1.047198 下成立） | ✅ | **把 π/3 写进 expr**（必须用数值 1.047198）；滑动条定义在 function 之后（要先建后引用）；用多张静态图替代参数化动画；`animate` 遗漏导致不会自动播放 |
+| 107 | 点 P(1,3) 到直线 AB（A(0,0)、B(4,0)）的垂距，画垂线段并自检 | `point` A(0,0)/B(4,0)/P(1,3) → `line` l1 through:[A,B] → `perpendicular` m of:l1 through:P → `intersect` H of:[l1,m] → `segment` PH → `measure` distance of:[P,H] → `verify` perpendicular of:[P,H,A,B] expect:0 tol:0.5 + `verify` online of:[H,l1] expect:0 tol:0.05 | ✅ | **把 distance of:[P,A] 当垂距**（只是到线上某点）；**心算垂足直接写 point H(1,0)**；漏建 line 就引用 perpendicular/intersect；perpendicular 的 of/through 写反；见 `ai/board-prompt.js` 例47 |
+| 108 | 求两平行线 y=0 与 y=2 的距离（公垂线段） | `point` A(0,0)/B(4,0)/C(0,2)/D(4,2) → `line` l1/l2 → `verify` parallel of:[A,B,C,D] expect:0 tol:0.5 → `perpendicular` m of:l1 through:C → `intersect` H of:[l1,m] → `segment` C-H → `measure` distance of:[C,H] → `verify` perpendicular of:[C,H,A,B] expect:0 tol:0.5 | ✅ | **不先 verify parallel 就把相交线硬求距离**；用 distance of:[A,C]（斜线非公垂线）；垂足用 point 硬写；漏画公垂线段；见 `ai/board-prompt.js` 例47 变式 |
 
 ## TODO 交接更新（2026-11-23 第二十二轮）
 1. [本轮已完成] 相切重根/相切交点精确捕捉——例45 + 用例 103/104 + `numericRoots` Golden-section 精修 + zeros/intersections 两个 E2 节无头单测（11/11 脚本全通过）。
@@ -814,4 +816,28 @@
 ## 已知限制（第二十三轮追加）
 - 例46（用例 105/106）：φ、周期与五点坐标均四舍五入到 3 位小数，verify 用 tol:0.05，不是精确解析值；
   命令里的 π 相关数值必须写成小数（如 1.047198），不要写 "pi/3" 或 "π/3" 让执行器解析。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第二十四轮增量：点到直线距离 / 两平行线间距离 few-shot（2026-11-24）
+> 继续对标大角几何「易错构造范式」：点到直线距离、两平行线间距离是高中几何最易画错的构造之一——AI 常把
+> 「点到线上某点的距离」误当垂距、心算垂足坐标、把相交线硬当平行线求距离、漏建 line 就引用 perpendicular。
+> 本轮仅在 `ai/board-prompt.js` 例46 后纯追加例47，给出「point+line → perpendicular+intersect 求垂足 → segment
+> → measure distance → verify perpendicular/parallel/online」范式；docs 主表追加用例 107/108。
+> 全部复用现有 op（point/line/perpendicular/intersect/segment/measure/verify），`js/executor.js` 执行分支零改动、
+> 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 107 | 点 P(1,3) 到直线 AB 的垂距，画垂线段并自检 | 见上方用例表 107：line → perpendicular → intersect 垂足 H → segment → measure distance + verify perpendicular/online | ✅ | 见上方用例表 107；本表为轮次索引，不重复展开 |
+| 108 | 求两平行线 y=0 与 y=2 的距离 | 见上方用例表 108：先 verify parallel → perpendicular → intersect → measure distance | ✅ | 见上方用例表 108；本表为轮次索引，不重复展开 |
+
+## TODO 交接更新（2026-11-24 第二十四轮）
+1. [本轮已完成] 例47 点到直线距离 / 两平行线间距离 few-shot + docs 用例 107/108（纯提示词、纯追加、0 删除行）。
+2. [待办] intersections / zeros / roots / 相切 / 三角函数 / 垂距读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：圆与圆交点公共弦、三角形角平分线与内切圆半径）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第二十四轮追加）
+- 例47（用例 107/108）：垂距读数是执行器沿垂线回读的数值，AI 不应自行心算垂足坐标；命令里点/线 id 必须先在前面建好。
+- 两平行线距离用例必须先 `verify kind:parallel` 确认平行再量距；相交线不存在「线间距离」，AI 应如实说明而非硬画公垂线。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

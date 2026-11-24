@@ -466,6 +466,17 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数读数在真实 JSXGraph 落点目视确认；
  *   ② 继续补易错图形 few-shot（下一候选：点到直线距离/两平行线间距离、圆与圆交点公共弦）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-24 第二十四轮）：只追加 2D 作图主干（例47 点到直线距离 /
+ *   两平行线间距离 few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；
+ *   核心工作流 / 铁律 / 命令清单既有行 / 既有例1-46 逐字未动、无删除行。落实上一轮 TODO 交接项②
+ *   「继续补易错图形 few-shot」的下一候选——点到直线距离 / 两平行线间距离：AI 常把「点到线上某点的距离」
+ *   误当垂距、心算垂足坐标、把相交线硬当平行线求距离、漏建 line 就引用 perpendicular。
+ *   本文件在例46 后追加例47，给出「point+line → perpendicular+intersect 求垂足 → segment → measure distance
+ *   → verify perpendicular/parallel/online」范式；docs 追加用例 107/108。全部复用现有 op，js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距读数在真实 JSXGraph 落点目视确认；
+ *   ② 继续补易错图形 few-shot（下一候选：圆与圆交点公共弦、三角形角平分线与内切圆半径）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -1818,6 +1829,31 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 // 要点：① φ 写进表达式是 "+1.047198"（图像左移 π/6），别写成 "-1.047198" 或误说"右移 π/3"；
 //   ② 周期 T=2π/ω=π，别把 ω=2 当周期；③ 五点 x=(u−φ)/ω，务必除以 ω；④ π 相关一律写成数值小数；
 //   ⑤ 整条曲线只用一条 function，五个 point 是标定不是替代；⑥ verify expect 写 ±A（±2）不是 ±1，tol:0.05。
+
+== 例47：点到直线的距离 / 两平行线间距离（易错：把"到线上某点距离"当垂距、心算垂足、相交线硬求距离、漏建 line 就引用垂线） ==
+用户："点 P(1,3) 到直线 AB（A(0,0)、B(4,0)）的距离是多少？画出垂线段并自检。"
+思路：垂距必须沿垂线量——先建点/直线，再过 P 作已知直线的垂线，用 intersect 求垂足 H，最后量 |PH|。
+  不要心算垂足坐标（如直接写 point H(1,0)），让 perpendicular + intersect 替你算；也不要用 distance of:[P,A]（那只是到线上某点，不是垂距）。
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":4,"y":0}
+{"op":"point","id":"P","x":1,"y":3}
+{"op":"line","id":"l1","through":["A","B"]}
+{"op":"perpendicular","id":"m","of":"l1","through":"P"}
+{"op":"intersect","id":"H","of":["l1","m"]}
+{"op":"segment","id":"PH","from":"P","to":"H"}
+{"op":"measure","kind":"distance","of":["P","H"],"label":"点 P 到 l1 的距离"}
+{"op":"verify","kind":"perpendicular","of":["P","H","A","B"],"expect":0,"tol":0.5,"label":"PH⊥l1"}
+{"op":"verify","kind":"online","of":["H","l1"],"expect":0,"tol":0.05,"label":"垂足 H 在 l1 上"}
+// message："P 到直线 AB 的垂距 = |PH| = 3（即 P 的纵坐标绝对值），垂足 H=(1,0)，PH⊥AB。"
+// 变式（两平行线间距离）：用户说"求两平行线 l1:y=0 与 l2:y=2 的距离"→
+//   先 point C(0,2) D(4,2) + line l2 through:[C,D]；先 verify parallel of:[A,B,C,D] expect:0 tol:0.5 确认平行（排除相交线）；
+//   再 perpendicular m of:l1 through:C（过 l2 上一点 C 作 l1 的垂线）→ intersect H of:[l1,m] → segment C-H →
+//   measure distance of:[C,H] → verify perpendicular of:[C,H,A,B] expect:0 tol:0.5。距离=2。
+// 要点：① 先创建后引用——line l1 必须先于 perpendicular of:"l1"、intersect of:["l1","m"]；
+//   ② 垂线过"点"（through 填点 id），垂线所"of"的是直线/线段 id，别写反；
+//   ③ 垂足用 intersect 求，绝不手算坐标；④ 量距用 measure distance of:[P,H]（两端点），不要 of:[P,A]；
+//   ⑤ 两平行线距离必须先在一条线上取点、向另一条作垂线，且先 verify parallel 排除相交线；
+//   ⑥ verify perpendicular/online 残差≈0 即 pass（perpendicular tol:0.5、online tol:0.05）；坐标一律写数值。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
