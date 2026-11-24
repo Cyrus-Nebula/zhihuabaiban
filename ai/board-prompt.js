@@ -3020,3 +3020,43 @@ export const BOARD3D_POINT_PLANE_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；point/points/center/axis 非法、三点共线、points 与 center/axis 混用、width/height/rightAngleSize/normalLength/vertexSize/opacity 越界、开关非布尔、八开关全关、id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：measure3d 量的是两点 / 三点关系，不量点与平面的距离；plane3d 只画面片；lineplane3d 量线面角；dihedral3d 量二面角。要画「点到平面距离 / 垂足作图」用 pointplane3d。
 - 铁律：pointplane3d 是 3D 命令；2D 的距离 / 垂足命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-25 D35 追加段：skewline3d 两条空间直线的公垂线与距离（独立自主 3D 画板任务）
+ * 上方 POINT_PLANE 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'skewline3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** skewline3d 异面直线公垂线提示词段 */
+export const BOARD3D_SKEWLINE_PROMPT_OPS = Object.freeze(['skewline3d']);
+export const BOARD3D_SKEWLINE_PROMPT = `
+# 补充：skewline3d 两条空间直线的公垂线与距离（2026-11-25 追加）
+- 用途：给两条空间直线各两点，自动生成「异面直线距离 / 公垂线」的标准作图：两条直线（可两端延长）+ 公垂线段 MN（M 在 L1 上、N 在 L2 上）+ M/N 处直角符号 + 可选垂足小球 + 距离读数。内置 measure3d 只能量两点距离 / 三点夹角 / 中点，量不了两条直线的距离；pointplane3d 量点面距、lineplane3d 量线面角、dihedral3d 量二面角、vector3d 只画一条有向线段。skewline3d 直接服务「求异面直线距离 / 作公垂线 / 标出两个垂足」核心用例。
+- 命令格式：{"op":"skewline3d","id":"skl","from1":[0,0,0],"to1":[2,0,0],"from2":[1,1,-1],"to2":[1,1,2],"extend":0,"rightAngleSize":0.25,"asLines":true,"asCommon":true,"asPoints":false,"asRightAngle":true,"labelDistance":true,"labelFeet":false,"vertexSize":0.1}
+  · from1/to1：第一条直线上的两点；from2/to2：第二条直线上的两点（各为 [x,y,z]，同一直线两点不得重合）。四条全缺省时给出一组公垂距为 1 的异面直线。
+  · extend：直线两端延长长度（默认 0，区间 0~1000），用于画成「直线」而非有限线段。
+  · rightAngleSize：直角符号边长（默认 0.25，区间 0.05~100），M 处两边分别平行 L1 与公垂线，N 处分别平行 L2 与公垂线。
+  · asLines / asCommon / asRightAngle：是否画两条直线 / 公垂线段 MN / 两处直角符号（默认均 true）。
+  · asPoints：是否在 M / N 放小球（默认 false）。labelDistance：是否标注距离读数如「d=1」（默认 true）。labelFeet：是否标注垂足 M / N 名称（默认 false）。
+  · vertexSize：小球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。六个输出开关至少开一个。
+- 几何守恒（画对了应满足）：M 必在 L1 上、N 必在 L2 上；公垂线段 MN 同时垂直两条直线（(N−M)·u=(N−M)·v=0）；单位法向 n 取 M→N 方向且 |n|=1；距离 d=|N−M|。两直线异面时 d>0；相交时 d=0、M=N 为交点；平行时 d 为两平行线间距、M 取 from1；共线时 d=0。这些退化情形都合法、不报错。
+- 示例：
+  · 默认（x 轴与过 (1,1,*) 的 z 轴异面，d=1）：{"op":"skewline3d"}
+  · 指定两条异面直线并标注垂足：{"op":"skewline3d","from1":[0,0,0],"to1":[2,0,0],"from2":[1,1,-1],"to2":[1,1,2],"labelFeet":true,"asPoints":true}
+  · 画成正真的「直线」（两端延长 2）：{"op":"skewline3d","extend":2}
+  · 只要距离读数与公垂线：{"op":"skewline3d","asLines":false,"asRightAngle":false,"labelDistance":true}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；四点非法、同一直线两点重合、extend/rightAngleSize/vertexSize/opacity 越界、开关非布尔、六开关全关、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：measure3d 量两点 / 三点，不量两直线；pointplane3d 量点面距；lineplane3d 量线面角；dihedral3d 量二面角。要画「异面直线距离 / 公垂线 / 垂足标注」用 skewline3d。
+- 铁律：skewline3d 是 3D 命令；2D 的距离 / 垂线命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-25 D35 追加：立体专属词意图识别扩展（纯追加，不改上方 BOARD3D_INTENT_RE）。
+ * 「异面直线 / 公垂线 / 空间直线 / 点面距 / 线面角 / 二面角」几乎不会出现在平面作图需求里，
+ * 因此 detect3d:true 时允许这些词命中 3D 命令集；不含「直线 / 距离 / 角」等 2D 通用词。
+ */
+/** D35 立体专属词正则（与上方历史 BOARD3D_INTENT_RE 并存、逐字不动） */
+export const BOARD3D_SKEWLINE_INTENT_RE = /(异面直线|公垂线|空间直线|点到平面的?距离|点面距|线面角|二面角)/;
+
+/** 判断自然语言是否含 D35 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isSkewline3DIntent(text) {
+  return BOARD3D_SKEWLINE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}

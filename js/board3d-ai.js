@@ -417,6 +417,22 @@ async function send() {
         const footDesc = m.foot && m.foot.length ? `[${m.foot.join(',')}]` : '?';
         appendLog('ai', `已生成点面距（d=${m.distance != null ? m.distance : '?'}，垂足 ${footDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-25 D35：skewline3d 展示异面直线距离、公垂线两端与直角符号读数（数值以画板返回为准）。
+      for (const sk of results) {
+        if (!sk.ok || sk.op !== 'skewline3d') continue;
+        const m = sk.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.lineCount) parts.push('两条直线');
+        if (m.commonCount) parts.push('公垂线段');
+        if (m.rightAngleCount) parts.push('两处直角符号');
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push('距离/垂足标注');
+        const mDesc = m.footM && m.footM.length ? `[${m.footM.join(',')}]` : '?';
+        const nDesc = m.footN && m.footN.length ? `[${m.footN.join(',')}]` : '?';
+        const kindDesc = m.kind === 'skew' ? '异面' : m.kind === 'parallel' ? '平行' : m.kind === 'intersect' ? '相交' : m.kind === 'collinear' ? '共线' : (m.kind || '?');
+        appendLog('ai', `已生成${kindDesc}直线公垂线（d=${m.distance != null ? m.distance : '?'}，垂足 M ${mDesc} / N ${nDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
