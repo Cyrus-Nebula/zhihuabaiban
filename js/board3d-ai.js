@@ -450,6 +450,21 @@ async function send() {
         const kindDesc = m.kind === 'intersect' ? '相交' : m.kind === 'skew' ? '异面' : m.kind === 'parallel' ? '平行' : m.kind === 'collinear' ? '共线' : (m.kind || '?');
         appendLog('ai', `已生成${kindDesc}直线夹角（θ=${m.angleDeg != null ? m.angleDeg : '?'}°，顶点 O ${oDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-25 D37：pointline3d 展示点到直线距离、垂足坐标与各输出项读数（数值以画板返回为准）。
+      for (const pl of results) {
+        if (!pl.ok || pl.op !== 'pointline3d') continue;
+        const m = pl.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.lineCount) parts.push('空间直线');
+        if (m.perpCount) parts.push('垂线段');
+        if (m.rightAngleCount) parts.push('直角符号');
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push('距离/顶点标注');
+        const hDesc = m.foot && m.foot.length ? `[${m.foot.join(',')}]` : '?';
+        const clampDesc = m.clamped ? '（垂足已钳制到线段，直角符号省略）' : '';
+        appendLog('ai', `已生成点到直线距离（d=${m.distance != null ? m.distance : '?'}，垂足 H ${hDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}${clampDesc}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

@@ -3092,3 +3092,36 @@ export const BOARD3D_LINEANGLE_INTENT_RE = /(异面直线.{0,6}(夹角|所成角
 export function isLineangle3DIntent(text) {
   return BOARD3D_LINEANGLE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-25 D37 追加（仅在文件最末尾追加，上方 D1~D36 一切内容逐字未动）：点到空间直线的距离。
+export const BOARD3D_POINT_LINE_PROMPT = `
+- 用途：给空间一点 P 与一条直线两点 from/to，自动生成「点到直线距离 / 从点向直线作垂线」标准作图：空间直线（可 extend 延长）+ 垂线段 PH + H 处直角符号 + 可选 P/H/A/B 小球与名称 + 距离读数。measure3d 只能量两点/三点，给不出点与直线的距离与垂足；pointplane3d 量点面距、skewline3d 量两线公垂线、lineangle3d 量两线夹角、lineplane3d 量线面角、dihedral3d 量二面角，都量不了点到一条空间直线的距离。
+- 命令格式：{"op":"pointline3d","id":"ptln","point":[1,2,0],"from":[0,0,0],"to":[2,0,0],"extend":0,"clampToSegment":false,"rightAngleSize":0.25,"asLine":true,"asPerp":true,"asRightAngle":true,"asPoints":false,"labelDistance":true,"labelPoint":false,"labelFoot":false,"labelLine":false,"vertexSize":0.1}
+  · point：给定点 P [x,y,z]（默认 [1,2,0]）。
+  · from/to：直线两点 [x,y,z]（默认 x 轴 [0,0,0]→[2,0,0]），两点不得重合。
+  · extend：直线两端延长长度（默认 0，0~1000）。clampToSegment：是否把垂足钳制在线段 from→to 上（默认 false，即无限直线）；钳制且投影落在端点外时垂线不再垂直直线，自动省略直角符号。
+  · rightAngleSize：直角符号边长（默认 0.25，0.05~100）；仅在垂足未钳制且点不落直线上时真正画出。
+  · asLine / asPerp / asRightAngle / asPoints / labelDistance / labelPoint / labelFoot / labelLine：输出开关，至少开一个。
+  · vertexSize / color / labelColor / opacity：样式。任一数值只要在命令里出现就必须是合法有限数（支持数字字符串）。
+- 几何守恒：eu=(to−from)/|·|；t=(P−from)·eu（沿无限直线的带符号投影），钳制时 t'=clamp(t,0,|to−from|)；垂足 H=from+t'·eu；未钳制时 d=|P−H|=|(P−from)×eu|、PH⊥直线、H 恒在直线上；perp=(P−H)/d ⊥ eu，直角符号两边分别 ∥ eu 与 ∥ perp。点落直线上时 d=0、垂线退化为点不画，直角符号省略。
+- 示例：
+  · 默认点到 x 轴距离（d=2，垂足 [1,0,0]）：{"op":"pointline3d"}
+  · 空间点 [0,3,4] 到 x 轴（d=5）：{"op":"pointline3d","point":[0,3,4]}
+  · 垂足钳制在线段上并标 P/H/A/B：{"op":"pointline3d","point":[5,2,0],"clampToSegment":true,"labelPoint":true,"labelFoot":true,"labelLine":true}
+  · 只要距离读数（不画直线与直角）：{"op":"pointline3d","asLine":false,"asRightAngle":false}
+- 约束：point/from/to 非法 / from 与 to 重合 / 数值越界 / 开关非布尔 / 八开关全关 / id 非法 —— 整条原子拒绝、零副作用。
+- 铁律：pointline3d 是 3D 命令；2D 的「点到直线距离 / 垂线」命令在本分支依旧不认识，不要输出。`;
+
+export const BOARD3D_POINT_LINE_PROMPT_OPS = Object.freeze(['pointline3d']);
+
+/**
+ * D37 立体专属词意图识别扩展（纯追加，不改 BOARD3D_INTENT_RE / BOARD3D_SKEWLINE_INTENT_RE /
+ * BOARD3D_LINEANGLE_INTENT_RE）：必须带「空间 / 立体 / 三维 / 异面」等 3D 专属词，
+ * 避免把 2D 常见的「点到直线的距离」误切到 3D 分支。
+ */
+export const BOARD3D_POINTLINE_INTENT_RE = /(空间.{0,8}点到(直线|线).{0,6}距离|点到空间(直线|线).{0,6}距离|立体.{0,8}点到(直线|线)|三维.{0,8}点到(直线|线)|异面直线.{0,8}点.{0,4}距离|空间.{0,8}作垂线到(直线|线))/;
+
+/** 判断自然语言是否含 D37 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isPointline3DIntent(text) {
+  return BOARD3D_POINTLINE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}

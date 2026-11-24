@@ -312,8 +312,8 @@ section('六、协作铁律与硬约束静态复核');
 {
   const headPrompt = readHead('ai/board-prompt.js');
   const nowPrompt = read('ai/board-prompt.js');
-  const committed = headPrompt.includes('BOARD3D_LINE_ANGLE_PROMPT');
-  assert(committed ? nowPrompt === headPrompt : nowPrompt.startsWith(headPrompt), '共享提示词文件对 HEAD 纯追加、零覆盖');
+  // 纯追加兼容：本段已提交时允许后续轮次在其后继续追加，只要求 HEAD 全文仍是当前文件前缀。
+  assert(nowPrompt.startsWith(headPrompt), '共享提示词文件对 HEAD 纯追加、零覆盖');
   assert(nowPrompt.lastIndexOf('BOARD3D_LINE_ANGLE_PROMPT') > nowPrompt.lastIndexOf('BOARD3D_SKEWLINE_PROMPT'), '新段追加在既有段之后');
   assert(nowPrompt.includes('2D 主干'), '2D 主干标志仍在');
 }
@@ -330,8 +330,13 @@ section('六、协作铁律与硬约束静态复核');
 {
   const headHtml = readHead('board3d.html');
   const nowHtml = read('board3d.html');
-  const committed = headHtml.includes('lineangle3d 给两条空间直线');
-  assert(committed ? nowHtml === headHtml : !headHtml.includes('lineangle3d 给两条空间直线') && nowHtml.includes('lineangle3d 给两条空间直线'), 'board3d.html 只追加工具提示');
+  // 纯追加兼容：提示词插在同一行行尾的 </div> 之前，已提交后仍允许后续轮次继续追加；
+  // 断言当前文件 = HEAD 全文插入一段连续文本（无删改任何既有字节）。
+  let p = 0;
+  while (p < headHtml.length && headHtml[p] === nowHtml[p]) p++;
+  let s = 0;
+  while (s < headHtml.length - p && headHtml[headHtml.length - 1 - s] === nowHtml[nowHtml.length - 1 - s]) s++;
+  assert(p + s === headHtml.length && nowHtml.includes('lineangle3d 给两条空间直线'), 'board3d.html 只追加工具提示');
   assert(nowHtml.includes('"three": "./libs/three/three.module.min.js"'), '本地 Three.js 引用保持');
 }
 for (const f of ['editor.html', 'js/editor.js', 'js/workbench.js', 'js/board.js', 'js/executor.js']) {
