@@ -863,3 +863,29 @@
 - 例48（用例 109/110）：交点由 intersect 数值求出，公共弦长读数四舍五入到 3 位，verify 用 tol:0.05/0.5，不是解析精确值。
 - `select` 取点依赖方位：连心线近似水平用 top/bottom、近似竖直用 left/right；拿不准直接用 index:0/1。相切只有一个交点，不存在公共弦。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第二十六轮增量：一般三角形的内切圆与切点 few-shot（2026-11-24）
+> 承接第二十五轮 TODO②「继续补易错图形 few-shot」的下一候选。例38 只覆盖直角三角形四心特例
+> （内心=(r,r)），面对一般三角形时 AI 常心算角平分线交点、把切点当边中点、把内切圆半径 r 误当内心到顶点
+> 距离。本轮仅在 `ai/board-prompt.js` 例48 后纯追加例49，复用既有 op
+> （point/polygon/line/perpendicular/intersect/segment/circle/measure/verify/inspect），
+> `js/executor.js` 执行分支 / 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 111 | 三角形 A(0,0) B(8,0) C(2,6)，画内切圆并标出 AB 边切点 D，验证 | 第1轮：`point` A/B/C → `polygon` tri → `inspect` kind:center of:[A,B,C]（只读，不写依赖 I/r 的命令）；回【查询读数】内心I(2.92,2.104) r=2.104 → 第2轮：`point` I(2.920,2.104) → `circle` inc center:I radius:2.104 → `line` lAB through:[A,B] → `perpendicular` m of:lAB through:I → `intersect` D of:[lAB,m] → `segment` ID → `verify` oncircle [D,inc] + perpendicular [I,D,A,B] + online [D,lAB] → message 说明 D≈(2.920,0) 不是中点 (4,0) | ✅ | 心算角平分线交点；切点当边中点；r 当内心到顶点距离；第1轮就写依赖 I/r 的命令；第2轮重复发 inspect |
+| 112 | 一般三角形内切圆变式：改切 BC 边 / 三点未画直接查 / 三点共线退化 | 切 BC：`line` lBC through:[B,C] 替换 lAB，其余 111 命令照抄（每条边需独立的 perpendicular+intersect+segment）；未画点：`inspect` kind:center points:[[0,0],[8,0],[2,6]] 读数相同；共线退化：读数提示外心/垂心「无意义」→ 不画内切圆、message 如实说明 | ✅ | 三条边共用同一垂足；共线硬画内切圆；把直角三角形内心=(r,r) 当一般通法 |
+
+## TODO 交接更新（2026-11-24 第二十六轮）
+1. [本轮已完成] 例49 一般三角形内切圆与切点 few-shot + docs 用例 111/112（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：圆内接正方形/正多边形、相似三角形与平行线分线段成比例）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第二十六轮追加）
+- 例49（用例 111/112）：内心 I 与 r 是 inspect center 的数值回读，保留三位小数；切点 D 由垂足数值求出，
+  verify 用 tol:0.05/0.5，不是解析精确值。
+- `inspect kind:center` 是 inspect 专用派生量，measure / verify 均不认该 kind；核构造结果须用 oncircle /
+  perpendicular / online 关系断言，不要尝试 `verify kind:center`。
+- 例38 的直角三角形内心=(r,r) 是特例，不能推广到一般三角形；一般三角形必须用 center 回读。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

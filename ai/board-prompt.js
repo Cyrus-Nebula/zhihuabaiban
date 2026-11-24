@@ -489,6 +489,19 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦读数在真实 JSXGraph 落点目视确认；
  *   ② 继续补易错图形 few-shot（下一候选：三角形角平分线与内切圆半径、圆内接正方形/正多边形）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-24 第二十六轮）：只追加 2D 作图主干（例49 一般三角形内切圆与
+ *   切点 few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；核心工作流 /
+ *   铁律 / 命令清单既有行 / 既有例1-48 逐字未动、无删除行。落实上一轮 TODO 交接项②
+ *   「继续补易错图形 few-shot」的下一候选——一般三角形内切圆与切点：例38 只覆盖直角三角形四心特例
+ *   （内心=(r,r)），AI 面对一般三角形仍会心算角平分线交点、把切点当边中点、把内切圆半径 r 误当内心到顶点距离。
+ *   本文件在例48 后追加例49，给出「inspect kind:center 符号读内心 I 与半径 r →（两阶段回读）→
+ *   circle 内切圆 → perpendicular+intersect 求垂足切点 → verify oncircle/perpendicular/online」范式；
+ *   docs 追加用例 111/112。全部复用现有 op（point/polygon/line/perpendicular/intersect/segment/circle/
+ *   measure/verify/inspect），js/executor.js 执行分支零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点读数在真实 JSXGraph 落点目视确认；
+ *   ② 继续补易错图形 few-shot（下一候选：圆内接正方形/正多边形、相似三角形与平行线分线段成比例）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -1897,6 +1910,39 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ④ measure distance of:[P,Q] 回读弦长交给系统【自检回读】核对，别自己写死长度；
 //   ⑤ verify oncircle 四点核交点归属、verify perpendicular of:[P,Q,O1,O2] 核弦⊥连心线（残差≈0 pass）；
 //   ⑥ 坐标 / 半径一律写数值，不给 "r1-r2" 这类表达式。
+
+== 例49：一般三角形的内切圆与切点（inspect center 读内心+r 两阶段回读；易错：切点当边中点、r 当内心到顶点距离、心算角平分线交点） ==
+用户："三角形 A(0,0) B(8,0) C(2,6)，画出它的内切圆，标出它在 AB 边上的切点 D 并验证。"
+思路：内切圆圆心 = 内心 I、半径 = 内切圆半径 r，都由 inspect kind:center 符号算出，绝不心算三条角平分线交点；
+  切点 = 内心到边的垂足（不是边的中点！），用 perpendicular + intersect 数值求。分两阶段：
+第一轮：先建三点 + 三角形，末尾发一条 center 查询（只读、不画图），本轮不写任何依赖 I/r 的命令：
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":8,"y":0}
+{"op":"point","id":"C","x":2,"y":6}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"inspect","kind":"center","of":["A","B","C"]}
+系统回【查询读数】：「center(A,B,C): 重心G(3.333,2); 内心I(2.92,2.104) r=2.104; 外心O(4,2) R=4.472; 垂心H(2,2); 面积=24」。
+第二轮：只用读数里的精确数值落图元（I/r 写成数字），再作垂足求切点并自检：
+{"op":"point","id":"I","x":2.920,"y":2.104}
+{"op":"circle","id":"inc","center":"I","radius":2.104}
+{"op":"line","id":"lAB","through":["A","B"]}
+{"op":"perpendicular","id":"m","of":"lAB","through":"I"}
+{"op":"intersect","id":"D","of":["lAB","m"]}
+{"op":"segment","id":"ID","from":"I","to":"D"}
+{"op":"verify","kind":"oncircle","of":["D","inc"],"expect":0,"tol":0.05,"label":"切点 D 在内切圆上"}
+{"op":"verify","kind":"perpendicular","of":["I","D","A","B"],"expect":0,"tol":0.5,"label":"半径 ID⊥AB"}
+{"op":"verify","kind":"online","of":["D","lAB"],"expect":0,"tol":0.05,"label":"切点 D 在 AB 上"}
+// message："内切圆圆心 I≈(2.920,2.104)、半径 r≈2.104；AB 边切点 D≈(2.920,0)（不是中点 (4,0)），ID⊥AB 且 D 在圆上。"
+// 变式 A（切 BC / CA 边）：把 lAB 换成 line lBC through:["B","C"]（或 lCA），其余命令照抄，切点随之改到该边；
+//   每条边都要求切点就写三组 line+perpendicular+intersect+segment（三条垂足互不共用）。
+// 变式 B（三点还没画也能算）：{"op":"inspect","kind":"center","points":[[0,0],[8,0],[2,6]]}，读数相同。
+// 退化情形：三点共线不能构成三角形，读数会提示外心/垂心「无意义」，此时不画内切圆，message 如实说明。
+// 要点：① 内心 I 与 r 一律来自 inspect center 回读，不心算角平分线交点（一般三角形内心≠重心/外心）；
+//   ② r 是内心到边的垂距，不是内心到顶点的距离，circle radius 写 r 不写 |IA|；
+//   ③ 切点 = 内心到边的垂足，用 perpendicular of:lAB through:I + intersect 求，绝不写成边中点（本例 AB 中点 (4,0) 是错的）；
+//   ④ 严格遵守两阶段回读：第 1 轮只发 center 查询，收到【查询读数】后第 2 轮才落 I 与 r，第 2 轮不再发 inspect；
+//   ⑤ verify oncircle 核切点在圆上、perpendicular 核半径⊥边、online 核切点在边上（残差≈0 pass）；
+//   ⑥ 坐标/半径写数值不写表达式；例38 的直角三角形是内心=(r,r) 特例，别把它当一般三角形通法。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
