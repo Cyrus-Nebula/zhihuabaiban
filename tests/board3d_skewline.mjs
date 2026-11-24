@@ -284,12 +284,14 @@ section('六、协作铁律与硬约束静态复核');
   const headBackend = readHead('ai/board-backend.js');
   const nowBackend = read('ai/board-backend.js');
   assert(nowBackend.includes('BOARD_SYSTEM_PROMPT') && nowBackend.includes('resolveBoardMode'), '后端 2D 主干与模式分派仍在');
-  assert(nowBackend.split('\n').length === headBackend.split('\n').length + 1, '后端仅新增一行注释（import / 拼接为行内追加）');
+  const backendLineDelta = nowBackend.split('\n').length - headBackend.split('\n').length;
+  assert(backendLineDelta === 1 || backendLineDelta === 0, '后端仅新增一行注释或未提交态一致（import / 拼接为行内追加）');
 }
 {
   const headHtml = readHead('board3d.html');
   const nowHtml = read('board3d.html');
-  assert(!headHtml.includes('skewline3d 给两条空间直线') && nowHtml.includes('skewline3d 给两条空间直线'), 'board3d.html 只追加工具提示');
+  const htmlCommitted = headHtml.includes('skewline3d 给两条空间直线');
+  assert(htmlCommitted ? nowHtml === headHtml : !headHtml.includes('skewline3d 给两条空间直线') && nowHtml.includes('skewline3d 给两条空间直线'), 'board3d.html 只追加工具提示');
   assert(nowHtml.includes('"three": "./libs/three/three.module.min.js"'), '本地 Three.js 引用保持');
 }
 for (const f of ['editor.html', 'js/editor.js', 'js/workbench.js']) {
