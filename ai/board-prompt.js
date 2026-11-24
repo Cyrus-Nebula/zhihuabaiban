@@ -2831,3 +2831,35 @@ export const BOARD3D_LINEPLANE_PROMPT = `
 - 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；line/points/center/axis 非法、三点共线、points 与 center/axis 混用、rayLength/arcRadius/vertexSize/opacity/width/height 越界、segments 非整数或越界、开关非布尔、八开关全关、id 非法 —— 整条原子拒绝、零副作用。
 - 与既有命令的区别：measure3d 量三点夹角、dihedral3d 量两半平面二面角，都不量线面角；plane3d 只画面片、arc3d 需给定圆心。要画「直线与平面所成角 / 线面角标注」用 lineplane3d。
 - 铁律：lineplane3d 是 3D 命令；2D 的角 / 夹角命令在本分支依旧不认识，不要输出。`;
+
+/**
+ * 2026-11-24 D34 追加段：pointplane3d 点到平面的距离（独立自主 3D 画板任务）
+ * 上方 LINEPLANE 段及此前一切内容逐字未动；既有全部 *_PROMPT_OPS 契约保持不变。
+ * 本段新增 op 'pointplane3d'，仅由 ai/board-backend.js 在 mode 为 '3d' 时拼到提示词末尾。
+ */
+/** pointplane3d 点到平面距离提示词段 */
+export const BOARD3D_POINT_PLANE_PROMPT_OPS = Object.freeze(['pointplane3d']);
+export const BOARD3D_POINT_PLANE_PROMPT = `
+# 补充：pointplane3d 点到平面的距离（2026-11-24 追加）
+- 用途：给一点 P 与一个平面（三点 points，或 center+axis），自动生成「点到平面距离」的标准作图：平面面片 + 垂线段 PH（H 为 P 在平面内的正投影）+ H 处直角符号 + 可选法向量杆 + 可选 P/H 小球 + 距离读数。内置 measure3d 只能量两点距离 / 三点夹角 / 中点，给不出点与平面的距离与垂足作图；plane3d 只画平面、lineplane3d 量直线与平面的夹角、dihedral3d 量二面角。pointplane3d 直接服务「点到平面距离 / 过点向平面作垂线 / 正方体顶点到底面的距离 / 标注垂足 H」核心用例。
+- 命令格式：{"op":"pointplane3d","id":"ptpl","point":[0,0,1],"points":[[-1,-1,0],[1,-1,0],[0,1,0]],"width":2,"height":2,"rightAngleSize":0.25,"normalLength":0.5,"asPlane":true,"asPerp":true,"asPoints":false,"asRightAngle":true,"asNormal":false,"labelDistance":true,"labelPoint":false,"labelFoot":false,"vertexSize":0.1}
+  · point：给定点 P [x,y,z]（默认 [0,0,1]，即 xy 面正上方 1 单位）。
+  · points：平面三点 [[x,y,z]×3]（默认 xy 面）；与 center+axis 互斥，给了 points 就忽略 center/axis。
+  · center + axis：另一种定面方式，center 为面内一点、axis 为平面法向轴 [x,y,z]（非零向量）。points 与 center/axis 都缺省时用默认 xy 面。
+  · width / height：平面面片宽 / 高（默认 2/2，区间 0.01~10000），面片以垂足 H 为中心。
+  · rightAngleSize：直角符号边长（默认 0.25，区间 0.05~100），两边分别平行面内 e1 与法向。
+  · normalLength：法向量杆长度（默认 0.5，区间 0.01~10000），从 H 沿指向 P 的法向画出。
+  · asPlane / asPerp / asRightAngle：是否画平面面片 / 垂线段 PH / 直角符号（默认均 true）。
+  · asPoints：是否在 P / H 放小球（默认 false）。asNormal：是否画法向量杆（默认 false）。
+  · labelDistance：是否标注距离读数如「d=1」（默认 true）。labelPoint / labelFoot：是否标注 P / H 名称（均默认 false）。
+  · vertexSize：小球半径（默认 0.1，区间 0.01~1）。color / labelColor / opacity：样式。八个输出开关至少开一个。
+- 几何守恒（画对了应满足）：|nh|=|e1|=|e2|=1；nh·e1=nh·e2=0；垂足 H 恒在平面内；垂线段 PH 平行法向、垂直平面；|PH|=d=|(P−planePts[0])·nh|；面片四角恒共面且垂直法向；直角符号两边互相垂直。P 落在平面上时 d=0、H=P（退化但合法），法向杆与直角符号朝向按 P 所在侧 sign 自动翻转。
+- 示例：
+  · 默认（点 [0,0,1] 到 xy 面，d=1）：{"op":"pointplane3d"}
+  · 指定点与平面三点：{"op":"pointplane3d","point":[2,3,4],"points":[[0,0,0],[1,0,0],[0,1,0]],"labelDistance":true}
+  · 用 center+axis 定面：{"op":"pointplane3d","point":[1,2,3],"center":[0,0,0],"axis":[0,0,1]}
+  · 正方体顶点到底面（标垂足与法向）：{"op":"pointplane3d","point":[1,1,2],"center":[0,0,0],"axis":[0,0,1],"asNormal":true,"labelFoot":true,"labelPoint":true}
+  · 只要距离读数与垂线：{"op":"pointplane3d","asPlane":false,"asRightAngle":false,"labelDistance":true}
+- 约束：任一数值参数只要在命令里出现就必须是合法有限数（支持数字字符串）；point/points/center/axis 非法、三点共线、points 与 center/axis 混用、width/height/rightAngleSize/normalLength/vertexSize/opacity 越界、开关非布尔、八开关全关、id 非法 —— 整条原子拒绝、零副作用。
+- 与既有命令的区别：measure3d 量的是两点 / 三点关系，不量点与平面的距离；plane3d 只画面片；lineplane3d 量线面角；dihedral3d 量二面角。要画「点到平面距离 / 垂足作图」用 pointplane3d。
+- 铁律：pointplane3d 是 3D 命令；2D 的距离 / 垂足命令在本分支依旧不认识，不要输出。`;

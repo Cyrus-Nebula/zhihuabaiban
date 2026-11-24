@@ -402,6 +402,21 @@ async function send() {
         const perpDesc = m.perpFoot && m.perpFoot.length ? `[${m.perpFoot.join(',')}]` : '?';
         appendLog('ai', `已生成线面角（${m.angleDeg != null ? m.angleDeg : '?'}°，斜足 ${footDesc}、垂足 ${perpDesc}，斜线长 ${m.rayLength != null ? m.rayLength : '?'} / 弧半径 ${m.arcRadius != null ? m.arcRadius : '?'}${m.arcRadiusClamped ? '（已钳制）' : ''}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-24 D34：pointplane3d 展示点面距、垂足与垂线 / 直角符号 / 法向杆读数（数值以画板返回为准）。
+      for (const pp of results) {
+        if (!pp.ok || pp.op !== 'pointplane3d') continue;
+        const m = pp.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.planeCount) parts.push('平面面片');
+        if (m.perpCount) parts.push('垂线段');
+        if (m.rightAngleCount) parts.push('直角符号');
+        if (m.normalCount) parts.push('法向量杆');
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push('距离/名称标注');
+        const footDesc = m.foot && m.foot.length ? `[${m.foot.join(',')}]` : '?';
+        appendLog('ai', `已生成点面距（d=${m.distance != null ? m.distance : '?'}，垂足 ${footDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

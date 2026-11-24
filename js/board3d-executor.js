@@ -39,6 +39,7 @@ import { resolvePlane3D } from './board3d-plane.js';
 import { resolveConefrustum3D } from './board3d-conefrustum.js';
 import { resolveDihedral3D } from './board3d-dihedral.js';
 import { resolveLineplane3D } from './board3d-lineplane.js';
+import { resolvePointplane3D } from './board3d-pointplane.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -388,6 +389,16 @@ export const BOARD3D_LINEPLANE_OPS = Object.freeze(['lineplane3d']);
 /** 含全部扩展命令的完整集（33 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE24_OPS = Object.freeze([
   ...BOARD3D_COMPLETE23_OPS, ...BOARD3D_LINEPLANE_OPS,
+]);
+
+// 2026-11-24 D34：pointplane3d 点到平面的距离，给 point + 平面三点 points
+// （或 center+axis）生成平面面片 + 垂线段 PH + 直角符号 + 可选法向量杆 + 小球 + 距离读数。
+// 单独成组、不并入任何历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 /
+// COMPLETE2 11 / … / COMPLETE23 32 / COMPLETE24 33 条），按协作铁律逐字不变。
+export const BOARD3D_POINT_PLANE_OPS = Object.freeze(['pointplane3d']);
+/** 含全部扩展命令的完整集（34 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE25_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE24_OPS, ...BOARD3D_POINT_PLANE_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1420,6 +1431,36 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: lpFailed.length === 0 && lpCreated.length > 0,
             count: lr.items.length, created: lpCreated, meta: lr.meta,
             ...(lpFailed.length ? { failed: lpFailed } : {}),
+          });
+          break;
+        }
+        case 'pointplane3d': {
+          // 2026-11-24 D34：3D 点到平面的距离，给 point + points（或 center+axis）生成
+          // 平面面片 + 垂线段 PH + 直角符号 + 可选法向量杆 / 小球 / 距离读数。
+          // 不需要源对象；从「当前」getState 读状态仅用于生成 id 时避让已有对象，getState 缺失 / 抛错
+          // 降级为空场景，整批不中断；id 冲突分项失败、api.add 返回 null/false 分项回报；2D 命令仍由
+          // default 拒绝。
+          let ppState = {};
+          try { ppState = (a.getState ? a.getState() : {}) || {}; } catch (_) { ppState = {}; }
+          const pr = resolvePointplane3D(cmd, ppState);
+          if (!pr.ok) {
+            results.push({ op, ok: false, error: pr.error });
+            break;
+          }
+          const ppCreated = [];
+          const ppFailed = [];
+          for (const item of pr.items) {
+            if (known.has(item.id)) { ppFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { ppFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            ppCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: ppFailed.length === 0 && ppCreated.length > 0,
+            count: pr.items.length, created: ppCreated, meta: pr.meta,
+            ...(ppFailed.length ? { failed: ppFailed } : {}),
           });
           break;
         }
