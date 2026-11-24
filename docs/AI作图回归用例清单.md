@@ -841,3 +841,25 @@
 - 例47（用例 107/108）：垂距读数是执行器沿垂线回读的数值，AI 不应自行心算垂足坐标；命令里点/线 id 必须先在前面建好。
 - 两平行线距离用例必须先 `verify kind:parallel` 确认平行再量距；相交线不存在「线间距离」，AI 应如实说明而非硬画公垂线。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第二十五轮增量：两圆相交的公共弦 few-shot（2026-11-24）
+> 承接第二十四轮 TODO②「继续补易错图形 few-shot」的下一候选。两圆公共弦是高频易错题：AI 常把连心线当
+> 公共弦、只求一个交点就连线、硬猜交点坐标、漏用不同 select、不验证弦⊥连心线。本轮仅在
+> `ai/board-prompt.js` 例47 后纯追加例48，复用既有 op（point/circle/intersect/segment/line/measure/verify），
+> `js/executor.js` 执行分支 / 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 109 | 两圆 O1(0,0) r=3 与 O2(2,0) r=2.5 相交，画公共弦并验证 | `point` O1/O2 → `circle` c1/c2 → `intersect` P select:top → `intersect` Q select:bottom → `segment` PQ → `line` lO through:[O1,O2] → `measure` distance of:[P,Q] → `verify` oncircle P/Q×c1/c2 + perpendicular of:[P,Q,O1,O2] → message 说明弦长≈4.961 且 PQ⊥O1O2 | ✅ | 连心线冒充公共弦；只写一条 intersect；硬猜交点；漏不同 select；不核弦⊥连心线；见 `ai/board-prompt.js` 例48 |
+| 110 | 连心线竖直的两圆求公共弦 / 相切相离退化处理 | 两交点 y 几乎相等时两条 `intersect` 改用 `select:left` / `select:right`（或 `index:0`/`index:1`）→ 其余同 109；相切只回 1 个交点 → 如实说明无公共弦；相离 intersect 报错 → 不画弦 | ✅ | top/bottom 在竖直连心线下取到同一个点；相切硬凑两点；相离硬画弦 |
+
+## TODO 交接更新（2026-11-24 第二十五轮）
+1. [本轮已完成] 例48 两圆公共弦 few-shot + docs 用例 109/110（纯提示词、纯追加、0 删除行）。
+2. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：三角形角平分线与内切圆半径、圆内接正方形/正多边形）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第二十五轮追加）
+- 例48（用例 109/110）：交点由 intersect 数值求出，公共弦长读数四舍五入到 3 位，verify 用 tol:0.05/0.5，不是解析精确值。
+- `select` 取点依赖方位：连心线近似水平用 top/bottom、近似竖直用 left/right；拿不准直接用 index:0/1。相切只有一个交点，不存在公共弦。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

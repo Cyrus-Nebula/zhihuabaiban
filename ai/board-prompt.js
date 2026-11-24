@@ -477,6 +477,18 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距读数在真实 JSXGraph 落点目视确认；
  *   ② 继续补易错图形 few-shot（下一候选：圆与圆交点公共弦、三角形角平分线与内切圆半径）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-24 第二十五轮）：只追加 2D 作图主干（例48 两圆相交的公共弦 few-shot），
+ *   3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；核心工作流 / 铁律 /
+ *   命令清单既有行 / 既有例1-47 逐字未动、无删除行。落实上一轮 TODO 交接项②
+ *   「继续补易错图形 few-shot」的下一候选——两圆交点公共弦：AI 常把连心线当公共弦、只求一个交点就连线、
+ *   硬猜交点坐标、漏用 select 取两个不同交点、不验证公共弦⊥连心线。本文件在例47 后追加例48，
+ *   给出「两圆 → 两条不同 select 的 intersect → segment 公共弦 → measure 弦长 → verify oncircle/perpendicular」
+ *   范式；docs 追加用例 109/110。全部复用现有 op（point/circle/intersect/segment/line/measure/verify），
+ *   js/executor.js 执行分支零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦读数在真实 JSXGraph 落点目视确认；
+ *   ② 继续补易错图形 few-shot（下一候选：三角形角平分线与内切圆半径、圆内接正方形/正多边形）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -1854,6 +1866,37 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ③ 垂足用 intersect 求，绝不手算坐标；④ 量距用 measure distance of:[P,H]（两端点），不要 of:[P,A]；
 //   ⑤ 两平行线距离必须先在一条线上取点、向另一条作垂线，且先 verify parallel 排除相交线；
 //   ⑥ verify perpendicular/online 残差≈0 即 pass（perpendicular tol:0.5、online tol:0.05）；坐标一律写数值。
+
+== 例48：两圆相交的公共弦（易错：只求一个交点、把连心线当公共弦、硬猜交点、漏验证垂直连心线） ==
+用户："两圆 c1（圆心 O1(0,0)、半径 3）与 c2（圆心 O2(2,0)、半径 2.5）相交，画出公共弦并验证。"
+思路：公共弦 = 两个交点的连线；两圆各画一条，交点用两条 intersect 分别取 top/bottom，再连成 segment；
+  自检核四个交点归属（都在两圆上）与「公共弦⊥连心线」。不要心算交点坐标，更不要把连心线 O1O2 当公共弦
+  （连心线是公共弦的中垂线，不是弦本身）。
+{"op":"point","id":"O1","x":0,"y":0}
+{"op":"point","id":"O2","x":2,"y":0}
+{"op":"circle","id":"c1","center":"O1","radius":3}
+{"op":"circle","id":"c2","center":"O2","radius":2.5}
+{"op":"intersect","id":"P","of":["c1","c2"],"select":"top"}
+{"op":"intersect","id":"Q","of":["c1","c2"],"select":"bottom"}
+{"op":"segment","id":"PQ","from":"P","to":"Q"}
+{"op":"line","id":"lO","through":["O1","O2"]}
+{"op":"measure","kind":"distance","of":["P","Q"],"label":"公共弦长"}
+{"op":"verify","kind":"oncircle","of":["P","c1"],"expect":0,"tol":0.05,"label":"P 在 c1 上"}
+{"op":"verify","kind":"oncircle","of":["Q","c1"],"expect":0,"tol":0.05,"label":"Q 在 c1 上"}
+{"op":"verify","kind":"oncircle","of":["P","c2"],"expect":0,"tol":0.05,"label":"P 在 c2 上"}
+{"op":"verify","kind":"oncircle","of":["Q","c2"],"expect":0,"tol":0.05,"label":"Q 在 c2 上"}
+{"op":"verify","kind":"perpendicular","of":["P","Q","O1","O2"],"expect":0,"tol":0.5,"label":"公共弦⊥连心线"}
+// message："公共弦 PQ 长≈4.961，两交点分别在两圆上，且 PQ 垂直连心线 O1O2。"
+// 变式（连心线近似竖直）：两个交点的 y 几乎相等，top/bottom 会取到同一个点——改用两条 intersect，
+//   一条 select:"left"、另一条 select:"right"（或 index:0 / index:1 保险），其余命令不变。
+// 退化情形：相切（d=r1+r2 外切或 d=|r1−r2| 内切）只回 1 个交点，不存在公共弦，如实说明、别硬凑两点；
+//   相离（d>r1+r2 或 d<|r1−r2|）intersect 报「没有交点」，此时不画弦，message 如实告知。
+// 要点：① 先创建后引用——两圆与圆心 ids 要先建好，intersect of:["c1","c2"] 才能引用；
+//   ② 两条 intersect 必须用不同 select（连心线水平用 top/bottom、竖直用 left/right，或 index:0/1），
+//   只写一条只有一个交点；③ 公共弦是交点连线 segment，不是连心线 line，也不是过圆心的任意弦；
+//   ④ measure distance of:[P,Q] 回读弦长交给系统【自检回读】核对，别自己写死长度；
+//   ⑤ verify oncircle 四点核交点归属、verify perpendicular of:[P,Q,O1,O2] 核弦⊥连心线（残差≈0 pass）；
+//   ⑥ 坐标 / 半径一律写数值，不给 "r1-r2" 这类表达式。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
