@@ -481,6 +481,19 @@ async function send() {
         const relDesc = m.relation === 'parallel' ? '∥ 平行' : m.relation === 'perpendicular' ? '⊥ 垂直' : (m.relation || '?');
         appendLog('ai', `已标注${kindDesc}${relDesc}（|dot|=${m.absDot != null ? m.absDot : '?'}，锚点 ${oDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-26 D39：circumsphere3d 展示四点外接球心 / 半径与输出项读数（数值以画板返回为准）。
+      for (const cs of results) {
+        if (!cs.ok || cs.op !== 'circumsphere3d') continue;
+        const m = cs.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.greatCircleCount) parts.push(`${m.greatCircleCount} 正交大圆`);
+        if (m.radiusCount) parts.push(`${m.radiusCount} 半径线段`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 标注`);
+        const oDesc = m.center && m.center.length ? `[${m.center.join(',')}]` : '?';
+        appendLog('ai', `已生成四点外接球（球心 ${oDesc}，半径 R=${m.radius != null ? m.radius : '?'}，轴 ${m.axis || '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

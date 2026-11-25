@@ -3359,3 +3359,35 @@ export const BOARD3D_RELATION_INTENT_RE = /(空间.{0,10}(平行|垂直|⊥|∥)
 export function isRelation3DIntent(text) {
   return BOARD3D_RELATION_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-26 D39 追加（仅在文件最末尾追加，上方 D1~D38 一切内容逐字未动）：四点外接球。
+export const BOARD3D_CIRCUMSPHERE_PROMPT = `
++- 用途：给四个不共面点 points，自动反求唯一的外接球心 O 与半径 R（|O−Pi| 对四点全相等），生成三个正交大圆线框 + 球心到四顶点半径线段 + 球心/顶点/半径标注。ellipsoid3d 需先给半轴 a/b/c、capsule3d 需先给球心与两球心距、polyhedron3d 只画多面体线框不求球，都给不出「给定四点反求外接球」；measure3d 量两点距离 / 三点夹角 / 中点，也求不了外接球。
++- 命令格式：{"op":"circumsphere3d","id":"csph","points":[[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]],"axis":"z","segments":48,"asGreatCircles":true,"asRadii":true,"asPoints":false,"labelCenter":true,"labelVertices":false,"labelRadius":true,"vertexSize":0.1}
++  · points：四个不共面点 [[x,y,z]×4]（默认单位立方体交错顶点构成的正四面体，球心原点、半径 √3）。四点共面或重合时整条拒绝，绝不画假球。
++  · axis：大圆基准轴 'x'/'y'/'z' 或非零向量（默认 z）；以此轴法向画赤道大圆，另画两个与之正交的经线大圆。
++  · segments：每个大圆采样段数（默认 48，8~512 整数）；三个大圆共 3×segments 段。
++  · asGreatCircles / asRadii / asPoints / labelCenter / labelVertices / labelRadius：输出开关，至少开一个。asRadii 画球心到四顶点半径线段；labelRadius 标出 R 读数；labelVertices 依次标顶点 A/B/C/D。
++  · vertexSize / color / labelColor / opacity：样式。任一数值只要在命令里出现就必须是合法有限数（支持数字字符串）。
++- 几何守恒：球心 O 由 O·(Pi−P0)=(|Pi|²−|P0|²)/2 (i=1,2,3) 解得；R=|O−P0|；四顶点到 O 距离恒为 R；每个大圆采样点到球心距离恒为 R；三个大圆平面法向两两正交；半径线段一端为球心、另一端恰为顶点。
++- 示例：
++  · 默认正四面体外接球：{"op":"circumsphere3d"}
++  · 三棱锥 ABCD 外接球并标顶点：{"op":"circumsphere3d","points":[[0,0,0],[2,0,0],[0,2,0],[0,0,2]],"labelVertices":true}
++  · 长方体一角四点的外接球、只画大圆：{"op":"circumsphere3d","points":[[0,0,0],[3,0,0],[0,4,0],[0,0,5]],"asRadii":false,"asPoints":true}
++  · 沿 x 轴取向的大圆、加密采样：{"op":"circumsphere3d","axis":"x","segments":96}
++  · 只要球心与半径读数（不画线框）：{"op":"circumsphere3d","asGreatCircles":false,"asRadii":false}
++- 约束：points 非四个合法点 / 四点共面或重合 / axis 非法 / segments 越界非整数 / vertexSize 越界 / 开关非布尔 / 六开关全关 / id 非法 —— 整条原子拒绝、零副作用。
++- 铁律：circumsphere3d 是 3D 命令；2D 的外接圆 / 圆心命令在本分支依旧不认识，不要输出。`;
+
+export const BOARD3D_CIRCUMSPHERE_PROMPT_OPS = Object.freeze(['circumsphere3d']);
+
+/**
+ * D39 立体专属词意图识别扩展（纯追加，不改 D1~D38 的任何意图正则）：
+ * 必须带「外接球 / 外接球面 / 四点共球」等专属词，避免把 2D 的「外接圆 / 三角形外接圆」误切到 3D 分支。
+ */
+export const BOARD3D_CIRCUMSPHERE_INTENT_RE = /(外接球|外接球面|四点共球|四面体.{0,6}球|三棱锥.{0,6}球|长方体.{0,8}外接|正方体.{0,8}外接|空间四点.{0,8}球)/;
+
+/** 判断自然语言是否含 D39 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isCircumsphere3DIntent(text) {
+  return BOARD3D_CIRCUMSPHERE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}
