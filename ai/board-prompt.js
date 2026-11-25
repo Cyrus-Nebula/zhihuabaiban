@@ -515,6 +515,19 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点读数在真实 JSXGraph
  *   落点目视确认；② 继续补易错图形 few-shot（下一候选：相似三角形与平行线分线段成比例）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-25 第二十八轮）：只追加 2D 作图主干（例51 平行线分线段成比例定理
+ *   few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；核心工作流 / 铁律 /
+ *   命令清单既有行 / 既有例1-50 逐字未动、无删除行。落实上一轮 TODO 交接项②「相似三角形与平行线分线段成比例」
+ *   的后半项——平行线分线段成比例定理：例22 只覆盖"过中点作平行线得相似三角形、核相似比 AD/AB=1/2"，
+ *   面对 D 不是中点（如 AD:DB=3:5）时 AI 常把【分线段比】AD:DB 误当【相似比】AD:AB、把 D 坐标抄成中点
+ *   或比例另一端、试图写协议里根本不存在的 verify kind:ratio。本文件在例50 后追加例51，给出
+ *   「按定比算 D → line lBC → parallel lDE through D → line lAC → intersect E →
+ *   verify parallel/online + distance 核 AD/DB 与 AE/EC」范式；docs 追加用例 115/116。
+ *   全部复用现有 op（point/polygon/line/parallel/intersect/verify），js/executor.js 执行分支零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比读数在真实
+ *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：角平分线定理分对边成比例、梯形中位线）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -1994,6 +2007,44 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ⑤ 内接正方形边长 = R√2≈4.243、对角线 = 2R=6；内接正三角形边长 = R√3≈5.196，别把 R 当边长；
 //   ⑥ vertexIds 长度分别=4/3、互不重复且不与已有 id 或主 id 撞名；verify 的 oncircle 逐顶点 + distance
 //   核对角线/边长，pass:false 时按例6/例10 只重发对应的 regularPolygon（改 mode/rotate），不要 clear 整板。
+
+== 例51：平行线分线段成比例定理（DE∥BC ⇒ AD/DB=AE/EC；易错：把分线段比当相似比、D 坐标抄错、求交漏 select、心算 E 点） ==
+用户："画 △ABC（A(0,0) B(8,0) C(2,6)），D 是 AB 上一点且 AD:DB=3:5（不是中点），过 D 作 DE∥BC 交 AC 于 E，验证 AD/DB=AE/EC。"
+思路：这是「平行线分线段成比例」定理，不是例22 的「相似比」——务必分清两个比值：
+      · 分线段比 AD:DB=AE:EC=3:5（本例要验证的）；· 相似比 AD:AB=AE:AC=DE:BC=3:8（例22 核的那个）。
+      最易错就是把 AD:DB=3:5 当成相似比去核对 AE:AC，或在 AB=8 上把 D 取成中点 (4,0)、或写成 (5,0) 弄反内外分。
+      正确算法：AD = AB·(3/(3+5)) = 8·3/8 = 3 ⇒ D(3,0)（DB=5）；比例 3:5 是 AD 占整条 AB 的 3/8，别把 3/8 当成 D 的 x 坐标。
+      E 由平行线 lDE 与 lAC 求交得出，intersect 必须显式取 E（两条线在 A 附近可能还有别的交点方向，用 select/index 定准），
+      不要心算 E 坐标写 point。末尾 verify：parallel 核 DE∥BC、online 核 D∈AB/E∈AC、distance 核 AD=3/DB=5，
+      并用 distance 核 AE 与 EC（理论 AE=√(40)·3/8≈2.372、EC=√40·5/8≈3.953，比值=3/5）——协议没有 verify kind:ratio，
+      比值核对靠分别读两段长度在 message 里说明，别写 kind:ratio。
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":8,"y":0}
+{"op":"point","id":"C","x":2,"y":6}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"point","id":"D","x":3,"y":0}                  // AD=3、DB=5：AB·3/(3+5)=3，不是中点 (4,0)、也不是 (5,0)
+{"op":"line","id":"lAB","through":["A","B"]}
+{"op":"line","id":"lBC","through":["B","C"]}
+{"op":"line","id":"lAC","through":["A","C"]}
+{"op":"parallel","id":"lDE","of":"lBC","through":"D"}  // 过 D 作 BC 的平行线（先建 lBC 再引用）
+{"op":"intersect","id":"E","of":["lDE","lAC"],"select":"first"}  // DE 与 AC 的交点；取落在边 AC 上的那个，别心算 E 坐标
+{"op":"verify","kind":"parallel","of":["D","E","B","C"],"expect":0,"tol":0.5}    // DE ∥ BC（残差≈0）
+{"op":"verify","kind":"online","of":["D","A","B"],"expect":0,"tol":0.05}         // D 在 AB 上
+{"op":"verify","kind":"online","of":["E","A","C"],"expect":0,"tol":0.05}         // E 在 AC 上
+{"op":"verify","kind":"distance","of":["A","D"],"expect":3,"tol":0.05}           // AD=3
+{"op":"verify","kind":"distance","of":["D","B"],"expect":5,"tol":0.05}           // DB=5
+{"op":"verify","kind":"distance","of":["A","E"],"expect":2.372,"tol":0.05}       // AE≈2.372
+{"op":"verify","kind":"distance","of":["E","C"],"expect":3.953,"tol":0.05}       // EC≈3.953
+// message："在 AB 上取 AD:DB=3:5 的分点 D(3,0)，过 D 作 DE∥BC 交 AC 于 E；读得 AD=3、DB=5、AE≈2.372、EC≈3.953，AD/DB=AE/EC=3/5，平行线分线段成比例成立。"
+// 变式 A（比例换成 AD:DB=1:2）：D 坐标 = AB·1/(1+2)=8/3≈2.667 → D(2.667,0)，AE:EC=1:2（别再沿用 3/8）；
+//   变式 B（已知 AE:EC 反求分点）：读到 AE:EC=1:3 则由 AD/AB=AE/(AE+EC)=1/4 反推 D=AB/4=2 → D(2,0)。
+// 要点：① 分线段比（AD:DB=AE:EC）与相似比（AD:AB=AE:AC）是两个不同的比值，别混用分母——题目问 AD/DB 就别去核 AE/AC；
+//   ② D 是按定比算出的坐标：AD=AB·m/(m+n)，3:5 得 AD=8·3/8=3 → D(3,0)，3/8 是占比不是坐标；
+//   ③ 与例22 互补：例22 取中点（相似比 1/2、分线段比 1:1），本例 D 非中点（相似比 3/8、分线段比 3:5），
+//      当 D 恰为中点时两个比才在数值上"看起来不同但都对"（AD:DB=1:1、AD:AB=1:2），别因此以为两者等价；
+//   ④ parallel/intersect 都要先建被引用对象（lBC、lAC）；intersect 用 select/index 取落在目标边上的交点；
+//   ⑤ 协议无 verify kind:ratio：比值靠分别 distance 读两段长度、在 message 说明，或写 expect 区间断言近似比；
+//   ⑥ 全部 verify pass 即停；pass:false 时按例6/例10 只重发对应命令（多为 D 坐标或 select 取错），不要 clear 整板。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

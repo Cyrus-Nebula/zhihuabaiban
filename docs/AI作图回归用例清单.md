@@ -914,3 +914,26 @@
 - `circle` 与 `vertex` 同时给时执行器走 circle 分支，`vertex` 被忽略且不报错——指定首顶点请用 `center`+`vertex` 或显式 `rotate`。
 - `center`+`vertex` 算出的半径是当时定值，不能跟随滑动条驱动的圆半径变化；动态场景统一用 `circle`+`rotate`。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第二十八轮增量：平行线分线段成比例定理 few-shot（2026-11-25）
+> 承接第二十七轮 TODO②「继续补易错图形 few-shot」的下一候选。例22 只覆盖「过中点作平行线得相似三角形、核相似比
+> AD/AB=1/2」，面对 D 不是中点（如 AD:DB=3:5）时 AI 常把【分线段比】AD:DB 误当【相似比】AD:AB、把 D 坐标抄成
+> 中点或比例另一端、试图写协议里不存在的 verify kind:ratio。本轮仅在 `ai/board-prompt.js` 例50 后纯追加例51，
+> 复用既有 op（point/polygon/line/parallel/intersect/verify），`js/executor.js` 执行分支 /
+> 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 115 | △ABC A(0,0) B(8,0) C(2,6)，D 是 AB 上一点且 AD:DB=3:5（非中点），过 D 作 DE∥BC 交 AC 于 E，验证 AD/DB=AE/EC | `point` A/B/C → `polygon` tri → `point` D(3,0)（=8·3/8，不是中点4、也不是5）→ `line` lAB/lBC/lAC → `parallel` lDE of:lBC through:D → `intersect` E of:[lDE,lAC] select:first → `verify` parallel [D,E,B,C] + online [D,A,B]/[E,A,C] + distance AD=3/DB=5/AE≈2.372/EC≈3.953 → message 说明 AD/DB=AE/EC=3/5 | ✅ | 把分线段比当相似比去核 AE/AC；D 取中点(4,0)或(5,0)；把占比3/8当 D 的 x 坐标；E 心算写 point；写不存在的 verify kind:ratio；漏建 lBC 就引用 |
+| 116 | 变式：AD:DB=1:2 反求 D 坐标 / 已知 AE:EC=1:3 反推分点 | 1:2 → D=8·1/3≈2.667 → D(2.667,0)，AE:EC=1:2（verify expect 相应改为 AE≈2.108/EC≈4.216，别再沿用3/8）；已知 AE:EC=1:3 → AD/AB=1/4 → D(2,0)，其余命令照抄 | ✅ | 沿用上一例的 3:5 比例；反推时把 AE/(AE+EC) 写成 AE/EC；心算 E 点坐标 |
+
+## TODO 交接更新（2026-11-25 第二十八轮）
+1. [本轮已完成] 例51 平行线分线段成比例定理 few-shot + docs 用例 115/116（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：角平分线定理分对边成比例、梯形中位线）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第二十八轮追加）
+- 例51（用例 115/116）：交点 E 由 intersect 数值求出，AE/EC 读数保留三位小数，verify tol:0.05/0.5，非解析精确值。
+- 协议无 `verify kind:ratio`：比值核对靠分别 distance 读两段长度后在 message 里说明（或写成对两段长度各自的 expect 断言）。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
