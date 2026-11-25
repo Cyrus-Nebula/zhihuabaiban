@@ -508,6 +508,22 @@ async function send() {
         const iDesc = m.center && m.center.length ? `[${m.center.join(',')}]` : '?';
         appendLog('ai', `已生成四面体内切球（内心 ${iDesc}，半径 r=${m.radius != null ? m.radius : '?'}，体积 V=${m.volume != null ? m.volume : '?'}，轴 ${m.axis || '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-26 D41：euler3d 展示外接球 / 内切球心、R/r/d 与不等式守恒读数（数值以画板返回为准）。
+      for (const eu of results) {
+        if (!eu.ok || eu.op !== 'euler3d') continue;
+        const m = eu.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.edgeCount) parts.push(`${m.edgeCount} 棱`);
+        if (m.circumCircleCount) parts.push(`${m.circumCircleCount} 外接大圆`);
+        if (m.inCircleCount) parts.push(`${m.inCircleCount} 内切大圆`);
+        if (m.radiusCount) parts.push(`${m.radiusCount} 半径线段`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 标注`);
+        const oDesc = m.center && m.center.length ? `[${m.center.join(',')}]` : '?';
+        const iDesc = m.incenter && m.incenter.length ? `[${m.incenter.join(',')}]` : '?';
+        appendLog('ai', `已生成四面体双球与欧拉不等式（外心 ${oDesc}，内心 ${iDesc}，R=${m.radius != null ? m.radius : '?'}，r=${m.inradius != null ? m.inradius : '?'}，d=${m.centerDistance != null ? m.centerDistance : '?'}，R/r=${m.ratio != null ? m.ratio : '?'}，余量 ${m.margin != null ? m.margin : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

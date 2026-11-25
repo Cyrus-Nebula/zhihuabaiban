@@ -3423,3 +3423,37 @@ export const BOARD3D_INSPHERE_INTENT_RE = /(内切球|内接球|内切球面|四
 export function isInsphere3DIntent(text) {
   return BOARD3D_INSPHERE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-26 D41 追加（仅在文件最末尾追加，上方 D1~D40 一切内容逐字未动）：四面体外接球/内切球与欧拉不等式。
+export const BOARD3D_EULER_PROMPT = `
++- 用途：给四个不共面点 points，一次画出四面体的外接球（球心 O、半径 R）与内切球（内心 I、半径 r）并标出球心距 d=|OI| 与欧拉不等式 R≥3r（强化式 d²≤(R+r)(R−3r)）。circumsphere3d 只画外接球、insphere3d 只画内切球，本命令把两者和不等式验证合成一条；正四面体 O=I、d=0、R/r=3 取等号。
++- 命令格式：{"op":"euler3d","id":"eul","points":[[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]],"axis":"z","segments":48,"asTetra":true,"asCircum":true,"asIn":true,"asCenters":true,"asRadii":false,"asPoints":false,"labelCenters":true,"labelRadii":true,"labelDistance":true,"labelInequality":true,"vertexSize":0.1}
++  · points：四个不共面点 [[x,y,z]×4]（默认单位立方体交错顶点构成的正四面体）。共面、重合、面退化或不等式不成立时整条拒绝，绝不画假图。
++  · axis：两个球共用的大圆基准轴 'x'/'y'/'z' 或非零向量（默认 z）；每个球各画一个赤道大圆与两个正交经线大圆。
++  · segments：每个大圆采样段数（默认 48，8~512 整数）；两球共 6×segments 段。
++  · asTetra / asCircum / asIn / asCenters / asRadii / asPoints：输出开关，至少开一个。asTetra 画六棱；asCircum/asIn 画对应球三正交大圆；asCenters 画球心连线 OI；asRadii 画 O→四顶点与 I→四切点半径线段；asPoints 放 O/I/四顶点/四切点小球。
++  · labelCenters / labelRadii / labelDistance / labelInequality：标注开关，分别标 O/I、R/r、d、不等式结论（默认全开）。
++  · vertexSize / color / circumColor / inColor / centerColor / labelColor / opacity：样式；数值只要在命令里出现就必须是合法有限数（支持数字字符串）。
++- 几何守恒：O 解线性方程 O·(Pi−P0)=(|Pi|²−|P0|²)/2、R=|O−P0|，四顶点到 O 等距；I 为四面面积加权质心、r=3V/S_total，I 到四个切点等距且切点落在对应面内；大圆采样点到各自球心距离恒为对应半径；R≥3r 且 d²≤(R+r)(R−3r)，正四面体等号成立。
++- 示例：
++  · 默认正四面体双球与欧拉不等式（等号）：{"op":"euler3d"}
++  · 直角三棱锥双球、标出球心距与四顶点：{"op":"euler3d","points":[[0,0,0],[2,0,0],[0,2,0],[0,0,2]],"asPoints":true}
++  · 长方体一角四点、只看两个球与不等式：{"op":"euler3d","points":[[0,0,0],[3,0,0],[0,4,0],[0,0,5]],"asTetra":false,"asRadii":false}
++  · 加密采样并沿 x 轴取向：{"op":"euler3d","axis":"x","segments":96}
++  · 只标球心与不等式、不画线框：{"op":"euler3d","asTetra":false,"asCircum":false,"asIn":false,"asCenters":false}
++- 约束：points 非四个合法点 / 四点共面或重合 / 面退化 / axis 非法 / segments 越界非整数 / vertexSize 越界 / 开关非布尔 / 六输出开关全关 / id 非法 —— 整条原子拒绝、零副作用。
++- 铁律：euler3d 是 3D 命令；2D 的「欧拉线 / 三角形五心」在本分支依旧不认识，不要输出；只有明确提到「四面体/三棱锥/空间四点」+「外接球/内切球/欧拉不等式」才用本命令。`;
+
+export const BOARD3D_EULER_PROMPT_OPS = Object.freeze(['euler3d']);
+
+/**
+ * D41 立体专属词意图识别扩展（纯追加，不改 D1~D40 的任何意图正则）：
+ * 必须带「欧拉不等式 / 外接球与内切球 / 球心距」等专属词，
+ * 避免把 2D 的「欧拉线 / 三角形内心外心」误切到 3D 分支。
+ */
+export const BOARD3D_EULER_INTENT_RE = /(欧拉不等式|四面体.{0,10}(欧拉|外接球.{0,6}内切球|内切球.{0,6}外接球)|三棱锥.{0,10}(欧拉|外接球.{0,6}内切球|内切球.{0,6}外接球)|(外接球|内切球).{0,8}球心距|空间四点.{0,12}(欧拉不等式|外接球.{0,6}内切球)|R≥3r|R>=3r|grace.{0,4}danielsson)/i;
+
+/** 判断自然语言是否含 D41 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isEuler3DIntent(text) {
+  return BOARD3D_EULER_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}

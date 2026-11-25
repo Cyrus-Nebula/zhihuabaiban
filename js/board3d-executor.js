@@ -46,6 +46,7 @@ import { resolvePointline3D } from './board3d-pointline.js';
 import { resolveRelation3D } from './board3d-relation.js';
 import { resolveCircumsphere3D } from './board3d-circumsphere.js';
 import { resolveInsphere3D } from './board3d-insphere.js';
+import { resolveEuler3D } from './board3d-euler.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -465,6 +466,15 @@ export const BOARD3D_INSPHERE_OPS = Object.freeze(['insphere3d']);
 /** 含全部扩展命令的完整集（40 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE31_OPS = Object.freeze([
   ...BOARD3D_COMPLETE30_OPS, ...BOARD3D_INSPHERE_OPS,
+]);
+
+// 2026-11-26 D41：euler3d 四面体外接球 / 内切球与欧拉不等式（R≥3r、Grace–Danielsson）。
+// 组合复用 D39/D40 的纯几何求解，生成六棱 + 两球各三大圆 + 球心连线 + 不等式标注。
+// 同样单独成组、不并入历史契约常量，历史常量逐字不变。
+export const BOARD3D_EULER_OPS = Object.freeze(['euler3d']);
+/** 含全部扩展命令的完整集（41 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE32_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE31_OPS, ...BOARD3D_EULER_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1702,6 +1712,34 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: isFailed.length === 0 && isCreated.length > 0,
             count: isr.items.length, created: isCreated, meta: isr.meta,
             ...(isFailed.length ? { failed: isFailed } : {}),
+          });
+          break;
+        }
+        case 'euler3d': {
+          // 2026-11-26 D41：四面体外接球 / 内切球与欧拉不等式标注。
+          // getState 仅供 id 避让、缺失/抛错降级为空场景整批不中断；id 冲突分项失败、
+          // api.add 返回 null/false 分项回报；2D 命令仍由 default 拒绝。
+          let euState = {};
+          try { euState = (a.getState ? a.getState() : {}) || {}; } catch (_) { euState = {}; }
+          const eur = resolveEuler3D(cmd, euState);
+          if (!eur.ok) {
+            results.push({ op, ok: false, error: eur.error });
+            break;
+          }
+          const euCreated = [];
+          const euFailed = [];
+          for (const item of eur.items) {
+            if (known.has(item.id)) { euFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { euFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            euCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: euFailed.length === 0 && euCreated.length > 0,
+            count: eur.items.length, created: euCreated, meta: eur.meta,
+            ...(euFailed.length ? { failed: euFailed } : {}),
           });
           break;
         }
