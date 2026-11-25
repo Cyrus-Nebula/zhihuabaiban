@@ -502,6 +502,19 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点读数在真实 JSXGraph 落点目视确认；
  *   ② 继续补易错图形 few-shot（下一候选：圆内接正方形/正多边形、相似三角形与平行线分线段成比例）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-25 第二十七轮）：只追加 2D 作图主干（例50 圆内接正方形 /
+ *   正多边形 few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；
+ *   核心工作流 / 铁律 / 命令清单既有行 / 既有例1-49 逐字未动、无删除行。落实上一轮 TODO 交接项②
+ *   的下一候选——圆内接正方形/正多边形：圆心不在原点时 AI 常手算 cos/sin 把顶点抄错、把外接圆半径 R
+ *   误当正方形边长（内接正方形边长是 R√2、对角线才是 2R）、把 circle+vertex 混写以为能对齐指定顶点
+ *   （执行器 circle 分支优先、vertex 会被忽略）、把 inscribed/circumscribed 写反。本文件在例49 后追加
+ *   例50，给出「读快照圆心半径 → center+vertex 定首顶点 / circle+rotate 定朝向 →
+ *   verify oncircle + distance 核对角线/边长」范式；docs 追加用例 113/114。
+ *   全部复用现有 op（point/circle/regularPolygon/verify），js/executor.js 执行分支零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点读数在真实 JSXGraph
+ *   落点目视确认；② 继续补易错图形 few-shot（下一候选：相似三角形与平行线分线段成比例）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -1943,6 +1956,44 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ④ 严格遵守两阶段回读：第 1 轮只发 center 查询，收到【查询读数】后第 2 轮才落 I 与 r，第 2 轮不再发 inspect；
 //   ⑤ verify oncircle 核切点在圆上、perpendicular 核半径⊥边、online 核切点在边上（残差≈0 pass）；
 //   ⑥ 坐标/半径写数值不写表达式；例38 的直角三角形是内心=(r,r) 特例，别把它当一般三角形通法。
+
+== 例50：圆内接正方形 / 正三角形（center+vertex 定首顶点 + circle+rotate 定朝向；易错：圆心不在原点手算顶点、把 R 当边长、circle+vertex 混写、内接外切写反） ==
+用户："圆心 O(1,2)、半径 3 的圆 c1 已经画好了，在里面内接一个正方形，让一个顶点正好落在圆的最右端；
+       再内接一个正三角形，让它的一个顶点落在圆的正上方。验证所有顶点都在圆上。"
+思路：先读状态快照拿到 c1 的圆心 O(1,2) 与 r=3，最右端 P=(1+3,2)=(4,2)、正上方对应从圆心起算 90°。
+      内接正方形用 regularPolygon 的 center:"O" + vertex:"P" 定半径和首顶点（执行器精算其余 3 个顶点），
+      内接正三角形直接引用已有圆 circle:"c1" + rotate:90 定朝向（不抄圆心坐标）；
+      最后 verify：四个/三个顶点 oncircle、首顶点与 P 重合、对角线=直径 6、边长=R√2≈4.243、
+      正三角形边长=R√3≈5.196。绝不逐个 point 手算 cos/sin。
+{"op":"point","id":"P","x":4,"y":2}
+{"op":"regularPolygon","id":"sq","center":"O","vertex":"P","sides":4,"vertexIds":["S0","S1","S2","S3"]}
+{"op":"regularPolygon","id":"tri","circle":"c1","sides":3,"rotate":90,"vertexIds":["T0","T1","T2"]}
+{"op":"verify","kind":"oncircle","of":["S0","c1"],"expect":0,"tol":0.05,"label":"S0 在圆上"}
+{"op":"verify","kind":"oncircle","of":["S1","c1"],"expect":0,"tol":0.05,"label":"S1 在圆上"}
+{"op":"verify","kind":"oncircle","of":["S2","c1"],"expect":0,"tol":0.05,"label":"S2 在圆上"}
+{"op":"verify","kind":"oncircle","of":["S3","c1"],"expect":0,"tol":0.05,"label":"S3 在圆上"}
+{"op":"verify","kind":"oncircle","of":["T0","c1"],"expect":0,"tol":0.05,"label":"T0 在圆上"}
+{"op":"verify","kind":"distance","of":["S0","P"],"expect":0,"tol":0.05,"label":"首顶点落在圆最右端"}
+{"op":"verify","kind":"distance","of":["S0","S2"],"expect":6,"tol":0.05,"label":"对角线=直径 2R"}
+{"op":"verify","kind":"distance","of":["S0","S1"],"expect":4.243,"tol":0.05,"label":"内接正方形边长=R√2"}
+{"op":"verify","kind":"distance","of":["T0","T1"],"expect":5.196,"tol":0.05,"label":"内接正三角形边长=R√3"}
+// message："已在圆 c1 上内接顶点过最右端 P 的正方形 S0S1S2S3（边长≈4.243、对角线=6）与顶点朝正上方的正三角形 T0T1T2，全部顶点共圆。"
+// 变式 A（状态快照里只有圆、没有独立的圆心点 id）：正方形改用 center:[1,2] + vertex:[4,2] + sides:4
+//   （center / vertex 都可直接写 [x,y] 数值，不再新建 O/P 点）；正三角形仍用 circle:"c1" + rotate:90。
+// 变式 B（圆半径由滑动条 r 驱动、要跟着动）：两条 regularPolygon 都用 circle:"c1" + rotate 数值角度
+//   （如正方形 rotate:0、正三角形 rotate:90），拖条时顶点随圆实时重算；不要 center+vertex——vertex 算出的
+//   半径是当时的定值 |center→vertex|，不会跟随 r 变化。想让正方形恰好从 P 出发的动态版，把 P 也做成
+//   circle 上的 glider 并接受首顶点由 rotate 决定，或只画静态版（用户明确要"固定"时）。
+// 退化情形：用户说"外切正方形"须写 mode:"circumscribed"（顶点到圆心 R/cos45°≈4.243、边与圆相切），
+//   此时再 verify oncircle 顶点必然失败——应改核边中点（切点）在圆上，别把内接断言留着不删。
+// 要点：① 圆心不在原点也别手算 cos/sin 顶点，|OP|=3 交给执行器算，P 坐标由快照圆心+半径数值推出；
+//   ② circle 与 vertex 同时给不会报错但【vertex 被忽略】（执行器 circle 分支优先、首顶点仍是 0°），
+//   要指定顶点落在某点只能用 center+vertex（本例）或显式 rotate，circle+vertex 混写是静默失败；
+//   ③ mode 省略即 inscribed 内接（顶点在圆上）；circumscribed 是外切（边与圆相切），两者断言不同；
+//   ④ rotate 是"度"的数字（正上方=90，不写 "π/2" 或表达式）；center+vertex 版不需要 rotate（首顶点由 vertex 定）；
+//   ⑤ 内接正方形边长 = R√2≈4.243、对角线 = 2R=6；内接正三角形边长 = R√3≈5.196，别把 R 当边长；
+//   ⑥ vertexIds 长度分别=4/3、互不重复且不与已有 id 或主 id 撞名；verify 的 oncircle 逐顶点 + distance
+//   核对角线/边长，pass:false 时按例6/例10 只重发对应的 regularPolygon（改 mode/rotate），不要 clear 整板。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

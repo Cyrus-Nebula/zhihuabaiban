@@ -889,3 +889,28 @@
   perpendicular / online 关系断言，不要尝试 `verify kind:center`。
 - 例38 的直角三角形内心=(r,r) 是特例，不能推广到一般三角形；一般三角形必须用 center 回读。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第二十七轮增量：圆内接正方形 / 正多边形 few-shot（2026-11-25）
+> 承接第二十六轮 TODO②「继续补易错图形 few-shot」的下一候选。例26 只覆盖圆心在原点的内接正六边形，
+> 遇到圆心不在原点的圆、指定顶点落在圆上某点时，AI 常手算 cos/sin 抄错顶点、把外接圆半径 R 当边长、
+> 把 `circle`+`vertex` 混写以为能对齐指定顶点（执行器 circle 分支优先、vertex 会被静默忽略）、
+> 把内接 inscribed 与外切 circumscribed 写反。本轮仅在 `ai/board-prompt.js` 例49 后纯追加例50，
+> 复用既有 op（point/circle/regularPolygon/verify），`js/executor.js` 执行分支 /
+> 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 113 | 圆心 O(1,2)、半径 3 的圆 c1 上内接正方形（一个顶点过圆最右端 P(4,2)）+ 内接正三角形（一个顶点朝正上方），验证 | 读快照 c1@O(1,2),r=3 → `point` P(4,2) → `regularPolygon` sq center:"O" vertex:"P" sides:4 vertexIds:[S0,S1,S2,S3] → `regularPolygon` tri circle:"c1" sides:3 rotate:90 vertexIds:[T0,T1,T2] → `verify` oncircle S0~S3 + T0 → `verify` distance S0,P=0 / S0,S2=6 / S0,S1=4.243 / T0,T1=5.196 | ✅ | 手算 cos/sin 抄错顶点；把 R=3 当正方形边长（正确是 R√2≈4.243，对角线才是 2R=6）；`circle`+`vertex` 混写导致首顶点不在 P；rotate 写 "π/2"；vertexIds 长度错 |
+| 114 | 变式：快照只有圆没有圆心点 id / 半径由滑动条 r 驱动 / 改说"外切正方形" | 无圆心点：`regularPolygon` center:[1,2] vertex:[4,2] sides:4（数值数组，不新建点）；动态圆：两条都改 circle:"c1" + rotate:0/90（顶点随 r 实时重算，不用 center+vertex 的定值半径）；外切：mode:"circumscribed"，顶点到圆心=R/cos45°≈4.243，改核切点（边中点）在圆上而不是顶点 oncircle | ✅ | 动态圆用 center+vertex 导致半径冻结；外切仍留顶点 oncircle 断言必失败；把 mode 写反；给 circle 版又叠 vertex 造成静默忽略 |
+
+## TODO 交接更新（2026-11-25 第二十七轮）
+1. [本轮已完成] 例50 圆内接正方形 / 正多边形 few-shot + docs 用例 113/114（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：相似三角形与平行线分线段成比例）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第二十七轮追加）
+- 例50（用例 113/114）：顶点由 `regularPolygonSpec` 数值生成，边长/角线断言保留三位小数，verify tol:0.05，非解析精确值。
+- `circle` 与 `vertex` 同时给时执行器走 circle 分支，`vertex` 被忽略且不报错——指定首顶点请用 `center`+`vertex` 或显式 `rotate`。
+- `center`+`vertex` 算出的半径是当时定值，不能跟随滑动条驱动的圆半径变化；动态场景统一用 `circle`+`rotate`。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
