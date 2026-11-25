@@ -961,3 +961,27 @@
 - 协议无原生 `angleBisector` op，也无 `verify kind:ratio`：平分线靠等距 glider + midpoint + line 构造，比值靠四个 distance 读数在 message 中说明。
 - 定理比值只取角顶点两邻边：B 顶点用 AB:BC，A 顶点用 AB:AC，C 顶点用 CA:CB；换顶点必须重算，不能沿用上一例的比值。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第三十轮增量：梯形中位线 few-shot（2026-11-25）
+> 承接第二十九轮 TODO②「继续补易错图形 few-shot」的首项。例13 只覆盖三角形中位线（两边中点连线），
+> 遇到梯形时 AI 常把中位线取成【两底中点】连线（那是高方向，不是中位线）、取成对角线中点连线，
+> 或把 (上底+下底)/2 误写成 (下底−上底)/2。本轮仅在 `ai/board-prompt.js` 例52 后纯追加例53，
+> 复用既有 op（point/polygon/segment/midpoint/verify），`js/executor.js` 执行分支 /
+> 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 119 | 梯形 ABCD A(0,0) B(6,0) C(4,3) D(1,3)（AB∥CD），取两腰中点 M、N 连成中位线，验证 MN∥两底且 MN=(AB+CD)/2 | 读快照确认 A/B/C/D（已有则复用 id）→ `point` A/B/C/D（新画时）→ `polygon` trap → `segment` sAD(A,D)/sBC(B,C) → `midpoint` M of:[A,D]=(0.5,1.5)、N of:[B,C]=(5,1.5) → `segment` mid M,N → `verify` parallel [M,N,A,B]/[M,N,D,C] + distance AB=6/CD=3/MN=4.5 → message 说明 MN=(6+3)/2 | ✅ | 取两底中点 (3,0)/(2.5,3) 冒充中位线；取对角线 AC/BD 中点；MN 连到顶点；把 4.5 写成 (6−3)/2=1.5；verify parallel 残差断言漏写 expect:0 |
+| 120 | 变式：倒梯形 A(2,0) B(4,0) C(6,3) D(0,3)（上底 CD=6 长于下底 AB=2）/ 快照已有梯形只补中位线 | 倒梯形：两腰仍取 AD/BC → M(1,1.5)、N(5,1.5)、MN=4=(2+6)/2 ∥ 两底；只补作：不重发 point/polygon，直接 `midpoint` M/N → `segment` mid → 同样 5 条 verify；滑动条驱动时只用 midpoint 引用、不硬写坐标 | ✅ | 上底更长就把腰错当 AB/CD；沿用上一例的 6/3/4.5；重发 point 造成重复顶点；把动态坐标写死 |
+
+## TODO 交接更新（2026-11-25 第三十轮）
+1. [本轮已完成] 例53 梯形中位线 few-shot + docs 用例 119/120（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：直角三角形斜边中线、圆内接四边形对角互补）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第三十轮追加）
+- 例53（用例 119/120）：M/N 是 midpoint 派生点，读数保留三位小数，verify distance tol:0.05、parallel tol:0.5，非解析精确值。
+- 协议无原生 `midline` op，也无 `verify kind:midline`：中位线靠两腰 midpoint + segment 构造，性质靠 parallel/distance 回读说明。
+- 顶点被滑动条驱动时，中位线必须始终用 midpoint 引用两腰端点；不要照抄示例中的定值坐标点。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

@@ -539,6 +539,17 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角读数在真实
  *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：梯形中位线、直角三角形斜边中线）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-25 第三十轮）：只追加 2D 作图主干（例53 梯形中位线 few-shot），
+ *   3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；核心工作流 / 铁律 /
+ *   命令清单既有行 / 既有例1-52 逐字未动、无删除行。落实上一轮 TODO 交接项②的首项——梯形中位线：
+ *   例13 只覆盖三角形中位线（两边中点连线），遇到梯形时 AI 常把中位线取成【两底中点】连线（那是高）、
+ *   取成对角线中点连线，或把上底+下底的和/2 误写成差/2。本文件在例52 后追加例53，给出
+ *   「读状态确认顶点 → 两腰 AD/BC 上 midpoint → segment MN → verify parallel + distance 回读」范式；
+ *   docs 追加用例 119/120。全部复用现有 op（point/polygon/segment/midpoint/verify），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线读数在真实
+ *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：直角三角形斜边中线、圆内接四边形对角互补）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2092,6 +2103,42 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ③ 协议无原生 angleBisector / verify kind:ratio：平分线靠等距 glider+midpoint+line 构造，比值靠四个 distance 读数说明；
 //   ④ glider 要先有 segment，line/intersect 要先有 M/lAC；D/E 用 intersect 数值求出，不写死坐标 point；
 //   ⑤ verify angle 的 of 顶点在中间（如 [A,B,D] 表示 ∠ABD）；pass:false 多为等距点取错或比值分母用错，按例6/例10 只补发修正命令，不要 clear 整板。
+
+== 例53：梯形中位线（两腰中点连线 ∥ 两底且 = (上底+下底)/2；易错：连成两底中点、取对角线中点、写成差的一半） ==
+用户："画梯形 ABCD（A(0,0) B(6,0) C(4,3) D(1,3)，AB∥CD），取两腰中点 M、N 连成中位线，验证 MN∥AB 且 MN=(AB+CD)/2。"
+思路：先读当前画板快照确认 A/B/C/D 是否已存在：已存在就复用旧 id、只补中点与中位线，不重复 point；
+      不存在再按边界顺序 A→B→C→D 建点（AB 下底、CD 上底）。梯形中位线的两端是【两腰】AD 与 BC 的中点，
+      不是两底 AB/CD 的中点（那两点连线垂直于底，是被误画最多的"假中位线"），也不是对角线 AC/BD 的中点。
+      数值规划：M=mid(A,D)=(0.5,1.5)、N=mid(B,C)=(5,1.5)，MN=4.5=(6+3)/2，MN 水平 ∥ AB ∥ CD。
+      自检：verify parallel [M,N,A,B] / [M,N,D,C]（残差≈0）+ distance AB=6 / CD=3 / MN=4.5；
+      协议无 verify kind:midline / ratio，中位线长度公式靠三个 distance 读数在 message 里说明。
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":6,"y":0}
+{"op":"point","id":"C","x":4,"y":3}
+{"op":"point","id":"D","x":1,"y":3}
+{"op":"polygon","id":"trap","points":["A","B","C","D"]}
+{"op":"segment","id":"sAD","from":"A","to":"D"}       // 腰 AD：先建线段再引用其端点求中点
+{"op":"segment","id":"sBC","from":"B","to":"C"}       // 腰 BC：两腰不能写成两底 AB/CD
+{"op":"midpoint","id":"M","of":["A","D"]}             // M(0.5,1.5)，腰 AD 的中点
+{"op":"midpoint","id":"N","of":["B","C"]}             // N(5,1.5)，腰 BC 的中点
+{"op":"segment","id":"mid","from":"M","to":"N"}       // MN 才是中位线，别连到顶点
+{"op":"verify","kind":"parallel","of":["M","N","A","B"],"expect":0,"tol":0.5}   // MN∥AB
+{"op":"verify","kind":"parallel","of":["M","N","D","C"],"expect":0,"tol":0.5}   // MN∥CD
+{"op":"verify","kind":"distance","of":["A","B"],"expect":6,"tol":0.05}          // 下底=6
+{"op":"verify","kind":"distance","of":["D","C"],"expect":3,"tol":0.05}          // 上底=3
+{"op":"verify","kind":"distance","of":["M","N"],"expect":4.5,"tol":0.05}        // 中位线=(6+3)/2=4.5
+// message："取两腰 AD、BC 的中点 M(0.5,1.5)、N(5,1.5) 连成中位线 MN；读得 AB=6、CD=3、MN=4.5，MN∥AB∥CD，MN=(AB+CD)/2=4.5，梯形中位线定理成立。"
+// 变式 A（上底比下底长的倒梯形 A(2,0) B(4,0) C(6,3) D(0,3)）：下底 AB=2、上底 CD=6，
+//   两腰仍取 AD/BC：M(1,1.5)、N(5,1.5)，MN=4=(2+6)/2，仍 ∥ 两底；别因为"上长下短"就把腰换成 AB/CD。
+// 变式 B（快照已有 A/B/C/D 和梯形，只补作中位线）：不重发 point/polygon，直接
+//   midpoint M of:[A,D] → midpoint N of:[B,C] → segment mid → 上面 5 条 verify；坐标若被滑动条驱动，
+//   一律用 midpoint 引用，别把 (0.5,1.5)/(5,1.5) 硬写进 point。
+// 要点：① 梯形中位线=【两腰】中点连线，三角形中位线=【两边】中点连线（例13），别把两者的中点取法混用；
+//   ② 两底中点连线（如 (3,0)→(2.5,3)）不是中位线：它可能垂直于底、长度也不是半和，verify parallel 会直接失败；
+//   ③ 长度是 (上底+下底)/2，不是差的一半、更不是任意一底的一半；先 distance 回读两底再算预期值写 expect；
+//   ④ 命令顺序：先 point 建顶点 → polygon/segment 建边 → midpoint → segment MN → verify；引用不存在的边会整条拒绝；
+//   ⑤ 协议无原生 midline op / verify kind:midline：平行靠 parallel 残差，长度关系靠三个 distance + message 说明；
+//   ⑥ verify pass:false 多为取错中点（对角线/两底）或 expect 抄错，按例6/例10 只重发中点与中位线命令，不要 clear 整板。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
