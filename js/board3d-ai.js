@@ -465,6 +465,22 @@ async function send() {
         const clampDesc = m.clamped ? '（垂足已钳制到线段，直角符号省略）' : '';
         appendLog('ai', `已生成点到直线距离（d=${m.distance != null ? m.distance : '?'}，垂足 H ${hDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}${clampDesc}。`);
       }
+      // 2026-11-25 D38：relation3d 展示空间平行 / 垂直关系、锚点与符号读数（数值以画板返回为准）。
+      for (const rl of results) {
+        if (!rl.ok || rl.op !== 'relation3d') continue;
+        const m = rl.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.lineCount) parts.push('主体线框');
+        if (m.helperDrawn) parts.push('平行辅助线');
+        if (m.markCount) parts.push(m.relation === 'parallel' ? '平行记号' : '直角符号');
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push('关系/名称标注');
+        const oDesc = m.origin && m.origin.length ? `[${m.origin.join(',')}]` : '?';
+        const kindDesc = m.kind === 'line-plane' ? '线面' : '两直线';
+        const relDesc = m.relation === 'parallel' ? '∥ 平行' : m.relation === 'perpendicular' ? '⊥ 垂直' : (m.relation || '?');
+        appendLog('ai', `已标注${kindDesc}${relDesc}（|dot|=${m.absDot != null ? m.absDot : '?'}，锚点 ${oDesc}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

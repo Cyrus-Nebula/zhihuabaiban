@@ -3125,3 +3125,41 @@ export const BOARD3D_POINTLINE_INTENT_RE = /(空间.{0,8}点到(直线|线).{0,6
 export function isPointline3DIntent(text) {
   return BOARD3D_POINTLINE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-25 D38 追加（仅在文件最末尾追加，上方 D1~D37 一切内容逐字未动）：空间平行 / 垂直关系标注。
+export const BOARD3D_RELATION_PROMPT = `
+- 用途：给两条空间直线（line-line）或一条直线与一个平面（line-plane），自动判定并标注「∥ 平行 / ⊥ 垂直」关系：line-line 产出两条直线 + 平行记号（各一短杠）或垂直记号（交点处直角符号，异面时补平行辅助线）+ 关系文字；line-plane 产出直线 + 平面面片 + 平行记号（线上一杠 + 面内一杠）或垂直记号（交点处直角符号）+ 关系文字。measure3d 量两点距离 / 三点夹角 / 中点，不判定关系；lineangle3d 画两线方向夹角但不画平行记号、不处理线面；dihedral3d / lineplane3d / pointplane3d / skewline3d / pointline3d 都给不出「∥ / ⊥」关系标注。
+- 命令格式：{"op":"relation3d","id":"rel","kind":"line-line","relation":"auto","tol":0.02,"line1":[[0,0,0],[2,0,0]],"line2":[[0,0,0],[0,2,0]],"line":[[0,0,0],[2,0,0]],"center":[0,0,0],"axis":"z","width":4,"height":3,"extend":0,"markSize":0.25,"asLines":true,"asMark":true,"asPoints":false,"labelRelation":true,"labelNames":false,"vertexSize":0.1}
+  · kind：'line-line'（默认，两直线）或 'line-plane'（直线与平面）；其它值拒绝。
+  · relation：'auto'（默认，几何自动判定）、'parallel' 或 'perpendicular'；显式指定但几何实测不符时整条拒绝，绝不画假关系。
+  · line1 / line2：line-line 模式下两条直线各两点 [x,y,z]（同一直线两点不得重合）；line2 缺省为 y 轴、与默认 x 轴的 line1 垂直相交。
+  · line：line-plane 模式下直线两点 [x,y,z]（默认 x 轴）；平面用 points 三点（不共线）或 center + axis 定面（'x'/'y'/'z' 或任意非零向量，默认 xy 面），两者互斥。
+  · tol：关系判定容差（默认 0.02，0~0.2）；|dot| ≥ 1−tol 判平行，|dot| ≤ tol 判垂直，其余拒绝。
+  · extend：主体直线两端延长长度（默认 0，0~1000）。markSize：平行短杠 / 直角符号边长（默认 0.25，0.05~100）。
+  · width / height：line-plane 模式平面面片宽高（默认 4 / 3，0.1~1000）。
+  · asLines / asMark / asPoints / labelRelation / labelNames：输出开关，至少开一个。
+  · vertexSize / color / labelColor / opacity：样式。任一数值只要在命令里出现就必须是合法有限数（支持数字字符串）。
+- 几何守恒：line-line 时 eu=(line1[1]−line1[0])/|·|、ev=(line2[1]−line2[0])/|·|、c=|eu·ev|；line-plane 时 eu=(line[1]−line[0])/|·|、nh=平面单位法向、c=|eu·nh|。平行记号恒垂直对应主体且两记号方向一致；垂直时直角符号两边分别沿两条垂直方向且互相垂直；相交直线取真实交点 O，异面垂直线把 L2 方向平移到 L1 上再画直角符号；平面面片四角恒共面、对边平行等长、对角中点为 center。
+- 示例：
+  · 默认两垂直相交直线 + ⊥ 标注：{"op":"relation3d"}
+  · 正方体对棱平行（两条 x 向直线错开）：{"op":"relation3d","line1":[[0,0,0],[2,0,0]],"line2":[[0,2,0],[2,2,0]],"relation":"parallel"}
+  · 侧棱垂直底面（line-plane）：{"op":"relation3d","kind":"line-plane","line":[[0,0,0],[0,0,3]],"center":[0,0,0],"axis":"z","labelNames":true}
+  · 异面直线垂直（补平行辅助线）：{"op":"relation3d","line1":[[0,0,0],[2,0,0]],"line2":[[0,1,-1],[0,1,1]]}
+  · 只要关系文字（不画线框与记号）：{"op":"relation3d","asLines":false,"asMark":false}
+- 约束：直线两点非法或重合 / points 三点共线 / kind 或 relation 非法 / 指定关系与实测不符 / 数值越界 / 开关非布尔 / 五开关全关 / id 非法 —— 整条原子拒绝、零副作用。
+- 铁律：relation3d 是 3D 命令；2D 的平行 / 垂直标注命令在本分支依旧不认识，不要输出。`;
+
+export const BOARD3D_RELATION_PROMPT_OPS = Object.freeze(['relation3d']);
+
+/**
+ * D38 立体专属词意图识别扩展（纯追加，不改 BOARD3D_INTENT_RE /
+ * BOARD3D_SKEWLINE_INTENT_RE / BOARD3D_LINEANGLE_INTENT_RE / BOARD3D_POINTLINE_INTENT_RE）：
+ * 必须带「空间 / 立体 / 三维 / 正方体 / 棱 / 线面」等 3D 专属词，避免把 2D 常见的
+ * 「两直线平行 / 垂直」误切到 3D 分支。
+ */
+export const BOARD3D_RELATION_INTENT_RE = /(空间.{0,10}(平行|垂直|⊥|∥)|立体.{0,10}(平行|垂直|⊥|∥)|三维.{0,10}(平行|垂直|⊥|∥)|异面直线.{0,8}(垂直|平行)|(正方体|棱柱|棱锥|长方体).{0,12}(平行|垂直)|(侧棱|对棱|相邻棱).{0,8}(平行|垂直)|(线面|面面).{0,4}(垂直|平行)|(直线|棱).{0,8}垂直.{0,4}(平面|底面|面))/;
+
+/** 判断自然语言是否含 D38 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isRelation3DIntent(text) {
+  return BOARD3D_RELATION_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}

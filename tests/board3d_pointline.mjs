@@ -303,11 +303,22 @@ section('六、协作铁律与硬约束静态复核');
   const headBackend = readHead('ai/board-backend.js');
   const nowBackend = read('ai/board-backend.js');
   assert(nowBackend.includes('BOARD_SYSTEM_PROMPT') && nowBackend.includes('resolveBoardMode'), '后端 2D 主干与模式分派仍在');
-  const delta = nowBackend.split('\n').length - headBackend.split('\n').length;
-  assert(delta === 0 || delta === 1, '后端仅行内追加与一行注释（delta=' + delta + '）');
-  const inlineEdited = ['BOARD3D_LINE_ANGLE_PROMPT, isBoard3DIntent', 'isLineangle3DIntent(message)) ?', '+ BOARD3D_LINE_ANGLE_PROMPT'];
-  const historical = headBackend.split('\n').filter((line) => !inlineEdited.some((frag) => line.includes(frag)));
-  assert(historical.every((line) => nowBackend.includes(line)), '后端历史行未被删除（仅行内追加）');
+  // 通用「逐行仅行内追加」检查：当前每一行都必须是 HEAD 对应行插入一段连续文本的结果，
+  // 兼容后续轮次继续在 import / 拼接串 / 意图分支行内追加，不再写死片段。
+  const h = headBackend.split('\n');
+  const n = nowBackend.split('\n');
+  assert(n.length === h.length, '后端行数未变（delta=' + (n.length - h.length) + '）');
+  const inlineOnly = h.every((line, i) => {
+    const now = n[i];
+    if (line === now) return true;
+    // 允许同一行多处插入：HEAD 行必须是 NOW 行的子序列（顺序、字符均保留）。
+    let j = 0;
+    for (let k = 0; k < now.length && j < line.length; k++) {
+      if (now[k] === line[j]) j++;
+    }
+    return j === line.length;
+  });
+  assert(inlineOnly, '后端历史行未被删除或改写（仅行内追加）');
 }
 {
   const headHtml = readHead('board3d.html');

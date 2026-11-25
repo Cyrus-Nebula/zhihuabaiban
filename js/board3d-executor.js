@@ -43,6 +43,7 @@ import { resolvePointplane3D } from './board3d-pointplane.js';
 import { resolveSkewline3D } from './board3d-skewline.js';
 import { resolveLineangle3D } from './board3d-lineangle.js';
 import { resolvePointline3D } from './board3d-pointline.js';
+import { resolveRelation3D } from './board3d-relation.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -432,6 +433,16 @@ export const BOARD3D_POINT_LINE_OPS = Object.freeze(['pointline3d']);
 /** 含全部扩展命令的完整集（37 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE28_OPS = Object.freeze([
   ...BOARD3D_COMPLETE27_OPS, ...BOARD3D_POINT_LINE_OPS,
+]);
+
+// 2026-11-25 D38：relation3d 空间平行 / 垂直关系标注，给 line1/line2 或 line+平面
+// 生成 ∥ 记号 / ⊥ 直角符号 + 关系文字。同样单独成组、不并入历史契约常量
+// （BOARD3D_OPS 7 / ALL 8 / FULL 9 / COMPLETE 10 / … / COMPLETE27 36 / COMPLETE28 37 条），
+// 历史常量逐字不变。
+export const BOARD3D_RELATION_OPS = Object.freeze(['relation3d']);
+/** 含全部扩展命令的完整集（38 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE29_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE28_OPS, ...BOARD3D_RELATION_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1582,6 +1593,35 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: plFailed.length === 0 && plCreated.length > 0,
             count: plr.items.length, created: plCreated, meta: plr.meta,
             ...(plFailed.length ? { failed: plFailed } : {}),
+          });
+          break;
+        }
+        case 'relation3d': {
+          // 2026-11-25 D38：3D 平行 / 垂直关系标注，给 line1/line2 或 line+平面
+          // 生成 ∥ 记号或 ⊥ 直角符号 + 关系文字。getState 仅供 id 避让、缺失/抛错降级为
+          // 空场景整批不中断；id 冲突分项失败、api.add 返回 null/false 分项回报；
+          // 2D 命令仍由 default 拒绝。
+          let relState = {};
+          try { relState = (a.getState ? a.getState() : {}) || {}; } catch (_) { relState = {}; }
+          const relr = resolveRelation3D(cmd, relState);
+          if (!relr.ok) {
+            results.push({ op, ok: false, error: relr.error });
+            break;
+          }
+          const relCreated = [];
+          const relFailed = [];
+          for (const item of relr.items) {
+            if (known.has(item.id)) { relFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { relFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            relCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: relFailed.length === 0 && relCreated.length > 0,
+            count: relr.items.length, created: relCreated, meta: relr.meta,
+            ...(relFailed.length ? { failed: relFailed } : {}),
           });
           break;
         }
