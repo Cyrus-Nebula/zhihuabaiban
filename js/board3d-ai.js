@@ -494,6 +494,20 @@ async function send() {
         const oDesc = m.center && m.center.length ? `[${m.center.join(',')}]` : '?';
         appendLog('ai', `已生成四点外接球（球心 ${oDesc}，半径 R=${m.radius != null ? m.radius : '?'}，轴 ${m.axis || '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-26 D40：insphere3d 展示四面体内切球的内心 / 半径 / 体积与输出项读数（数值以画板返回为准）。
+      for (const is of results) {
+        if (!is.ok || is.op !== 'insphere3d') continue;
+        const m = is.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.sphereCount) parts.push(`${m.sphereCount} 正交大圆`);
+        if (m.edgeCount) parts.push(`${m.edgeCount} 棱`);
+        if (m.radiusCount) parts.push(`${m.radiusCount} 半径线段`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 标注`);
+        const iDesc = m.center && m.center.length ? `[${m.center.join(',')}]` : '?';
+        appendLog('ai', `已生成四面体内切球（内心 ${iDesc}，半径 r=${m.radius != null ? m.radius : '?'}，体积 V=${m.volume != null ? m.volume : '?'}，轴 ${m.axis || '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

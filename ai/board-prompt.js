@@ -3391,3 +3391,35 @@ export const BOARD3D_CIRCUMSPHERE_INTENT_RE = /(外接球|外接球面|四点共
 export function isCircumsphere3DIntent(text) {
   return BOARD3D_CIRCUMSPHERE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-26 D40 追加（仅在文件最末尾追加，上方 D1~D39 一切内容逐字未动）：四面体内切球。
+export const BOARD3D_INSPHERE_PROMPT = `
++- 用途：给四个不共面点 points，自动反求唯一的内切球心 I 与半径 r（球心到四面距离全相等，|I−Ti|=r，r=3V/S_total），生成三个正交大圆线框（内切球）+ 四面体六条棱 + 内心到四个切点的半径线段（垂直对应面）+ 内心/顶点/切点小球 + 内心 I/顶点 A-D/切点 T0-T3/半径 r 标注。circumsphere3d 求的是「外接」球（球心到四顶点等距），本命令求「内切」球（球心到四面等距、与四面相切于切点）；ellipsoid3d 需先给半轴、capsule3d 需先给球心与球心距、pointplane3d 只量点到面距离、measure3d 只量距离夹角，都画不出「给定四点反求内切球」。
++- 命令格式：{"op":"insphere3d","id":"insph","points":[[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]],"axis":"z","segments":48,"asSphere":true,"asEdges":true,"asRadii":true,"asPoints":false,"labelCenter":true,"labelVertices":false,"labelFeet":false,"labelRadius":true,"vertexSize":0.1}
++  · points：四个不共面点 [[x,y,z]×4]（默认单位立方体交错顶点构成的正四面体，内心原点、内切球半径 1/√3）。四点共面、重合或某面退化时整条拒绝，绝不画假球。
++  · axis：内切球大圆基准轴 'x'/'y'/'z' 或非零向量（默认 z）；以此轴法向画赤道大圆，另画两个与之正交的经线大圆。
++  · segments：每个大圆采样段数（默认 48，8~512 整数）；三个大圆共 3×segments 段。
++  · asSphere / asEdges / asRadii / asPoints / labelCenter / labelVertices / labelFeet / labelRadius：输出开关，至少开一个。asSphere 画三个正交大圆表示内切球；asEdges 画四面体六条棱；asRadii 画内心到四个切点的半径线段（垂直对应面）；labelVertices 依次标顶点 A-D；labelFeet 标四个切点 T0-T3；labelRadius 标出 r 读数。
++  · vertexSize / color / labelColor / opacity：样式。任一数值只要在命令里出现就必须是合法有限数（支持数字字符串）。
++- 几何守恒：面 Fi 是顶点 Pi 的对面，面积 Si=|两边叉积|/2；体积 V=|det(P1−P0,P2−P0,P3−P0)|/6；内心 I=(S0·P0+S1·P1+S2·P2+S3·P3)/(S0+S1+S2+S3)（面积加权质心）；r=3V/S_total；切点 Ti=I−r·nhi（nhi 为面 Fi 背离 Pi 的单位法向），恒落在面内；内心到四个面距离恒为 r、|I−Ti| 恒为 r；每个大圆采样点到内心距离恒为 r；半径线段一端为内心、另一端恰为切点。
++- 示例：
++  · 默认正四面体内切球：{"op":"insphere3d"}
++  · 三棱锥 ABCD 内切球并标顶点与切点：{"op":"insphere3d","points":[[0,0,0],[2,0,0],[0,2,0],[0,0,2]],"labelVertices":true,"labelFeet":true}
++  · 长方体一角四点内切球、只画球与棱：{"op":"insphere3d","points":[[0,0,0],[3,0,0],[0,4,0],[0,0,5]],"asRadii":false,"asPoints":true}
++  · 沿 x 轴取向的大圆、加密采样：{"op":"insphere3d","axis":"x","segments":96}
++  · 只要内心与半径读数（不画线框）：{"op":"insphere3d","asSphere":false,"asEdges":false,"asRadii":false}
++- 约束：points 非四个合法点 / 四点共面或重合 / 某面退化 / axis 非法 / segments 越界非整数 / vertexSize 越界 / 开关非布尔 / 八开关全关 / id 非法 —— 整条原子拒绝、零副作用。
++- 铁律：insphere3d 是 3D 命令；2D 的内切圆 / 内心命令在本分支依旧不认识，不要输出。`;
+
+export const BOARD3D_INSPHERE_PROMPT_OPS = Object.freeze(['insphere3d']);
+
+/**
+ * D40 立体专属词意图识别扩展（纯追加，不改 D1~D39 的任何意图正则）：
+ * 必须带「内切球 / 内接球 / 四面体球 / 三棱锥球」等专属词，避免把 2D 的「内切圆 / 三角形内切圆」误切到 3D 分支。
+ */
+export const BOARD3D_INSPHERE_INTENT_RE = /(内切球|内接球|内切球面|四面体.{0,6}内切|三棱锥.{0,6}内切|长方体.{0,8}内切|正方体.{0,8}内切|空间四点.{0,8}内切球)/;
+
+/** 判断自然语言是否含 D40 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isInsphere3DIntent(text) {
+  return BOARD3D_INSPHERE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}
