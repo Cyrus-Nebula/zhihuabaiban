@@ -937,3 +937,27 @@
 - 例51（用例 115/116）：交点 E 由 intersect 数值求出，AE/EC 读数保留三位小数，verify tol:0.05/0.5，非解析精确值。
 - 协议无 `verify kind:ratio`：比值核对靠分别 distance 读两段长度后在 message 里说明（或写成对两段长度各自的 expect 断言）。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第二十九轮增量：角平分线定理分对边成比例 few-shot（2026-11-25）
+> 承接第二十八轮 TODO②「继续补易错图形 few-shot」的首项。例2 只覆盖「作一条角平分线」，未覆盖「平分线分对边成比例」：
+> AI 常把角平分线当中线（D 取 AC 中点）、拿错比值分母（B 顶点却用 AC:BC）、心算 D 落点写成 point，
+> 或试图写协议里不存在的 verify kind:ratio。本轮仅在 `ai/board-prompt.js` 例51 后纯追加例52，
+> 复用既有 op（point/polygon/segment/glider/midpoint/line/intersect/verify），
+> `js/executor.js` 执行分支 / 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 117 | △ABC A(0,0) B(0,3) C(4,0)，从 B 作 ∠ABC 平分线交 AC 于 D，验证 AD/DC=AB/BC | `point` A/B/C → `polygon` tri → `segment` sBA/sBC → `glider` P(0,1.5) on sBA、Q(1.2,2.1) on sBC（BP=BQ=1.5）→ `midpoint` M of:[P,Q] → `line` bis through:[B,M] → `line` lAC → `intersect` D of:[bis,lAC] select:first → `verify` angle [A,B,D]=26.565° / [D,B,C]=26.565° + distance AB=3/BC=5/AD=1.5/DC=2.5 → message 说明 AD/DC=AB/BC=3/5 | ✅ | D 取 AC 中点 (2,0)；比值误用 AC:BC=4:5；D 心算写 point；没有 segment 就 glider；verify angle 顶点没放中间；写 kind:ratio |
+| 118 | 变式：同一三角形改从 A 作平分线交 BC 于 E / 换顶点必须重算比值 | 从 A 作：比值改 AB:AC=3:4（不是 AB:BC=3:5）；`glider` P(0,1) on sAB、Q(1,0) on sAC → `midpoint` → `line` AE → `intersect` E with lBC → `verify` angle [B,A,E]=45° / [E,A,C]=45° + distance BE≈2.143/EC≈2.857（BC·3/7、BC·4/7）；若改从 C 作则用 CA:CB=4:5 | ✅ | 沿用 B 顶点的 3:5；把 BE/BC 当成 BE/EC；把角平分线当高线或中线；E 直接写 point 坐标 |
+
+## TODO 交接更新（2026-11-25 第二十九轮）
+1. [本轮已完成] 例52 角平分线定理分对边成比例 few-shot + docs 用例 117/118（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：梯形中位线、直角三角形斜边中线）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第二十九轮追加）
+- 例52（用例 117/118）：D/E 均由 intersect 数值求出，AD/DC、BE/EC 与等角读数保留三位小数，verify tol:0.05，非解析精确值。
+- 协议无原生 `angleBisector` op，也无 `verify kind:ratio`：平分线靠等距 glider + midpoint + line 构造，比值靠四个 distance 读数在 message 中说明。
+- 定理比值只取角顶点两邻边：B 顶点用 AB:BC，A 顶点用 AB:AC，C 顶点用 CA:CB；换顶点必须重算，不能沿用上一例的比值。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

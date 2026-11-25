@@ -528,6 +528,17 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比读数在真实
  *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：角平分线定理分对边成比例、梯形中位线）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-25 第二十九轮）：只追加 2D 作图主干（例52 角平分线定理分对边
+ *   成比例 few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；核心工作流 /
+ *   铁律 / 命令清单既有行 / 既有例1-51 逐字未动、无删除行。落实上一轮 TODO 交接项②的首项——角平分线定理：
+ *   AI 常把角平分线当中线（D 取 AC 中点）、拿错比值分母（B 顶点却用 AC:BC）、或心算 D 落点写 point；
+ *   协议无原生 angleBisector / verify kind:ratio。本文件在例51 后追加例52，给出「等距 glider → midpoint →
+ *   line 作真实平分线 → intersect 求 D → verify angle 等角 + 四个 distance 回读」范式；docs 追加用例 117/118。
+ *   全部复用现有 op（point/polygon/segment/glider/midpoint/line/intersect/verify），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角读数在真实
+ *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：梯形中位线、直角三角形斜边中线）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2045,6 +2056,42 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ④ parallel/intersect 都要先建被引用对象（lBC、lAC）；intersect 用 select/index 取落在目标边上的交点；
 //   ⑤ 协议无 verify kind:ratio：比值靠分别 distance 读两段长度、在 message 说明，或写 expect 区间断言近似比；
 //   ⑥ 全部 verify pass 即停；pass:false 时按例6/例10 只重发对应命令（多为 D 坐标或 select 取错），不要 clear 整板。
+
+== 例52：角平分线定理（BD 平分 ∠ABC ⇒ AD/DC=AB/BC；易错：把角平分线当中线、拿错顶点比、心算 D 落点、写不存在的 ratio 断言） ==
+用户："画 △ABC（A(0,0) B(0,3) C(4,0)），从 B 作 ∠ABC 的平分线交 AC 于 D，验证 AD/DC=AB/BC。"
+思路：角平分线定理的比值只由【角顶点两邻边】决定：BD 平分 ∠ABC ⇒ AD/DC=AB/BC=3/5
+      （不是 AC/BC=4/5，也不是 1:1 中线），所以 AD=AC·AB/(AB+BC)=4·3/8=1.5 ⇒ D(1.5,0)、DC=2.5。
+      协议没有原生 angleBisector op，沿用例2 的「等距 glider + midpoint + line」作出真实平分线，
+      再用 intersect 求 D；不要因为算出了 D(1.5,0) 就直接写 point，也不要把 D 取成 AC 中点 (2,0)。
+      自检：verify angle 核 ∠ABD=∠DBC≈26.565°，verify distance 核 AB=3 / BC=5 / AD=1.5 / DC=2.5；
+      协议无 verify kind:ratio，比值靠四个距离读数在 message 里说明，别写 kind:ratio。
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":0,"y":3}
+{"op":"point","id":"C","x":4,"y":0}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"segment","id":"sBA","from":"B","to":"A"}
+{"op":"segment","id":"sBC","from":"B","to":"C"}
+{"op":"glider","id":"P","on":"sBA","x":0,"y":1.5}       // BP=1.5，落在 BA 边上
+{"op":"glider","id":"Q","on":"sBC","x":1.2,"y":2.1}     // BQ=1.5：BC 方向单位向量 (0.8,-0.6)，与 P 等距
+{"op":"midpoint","id":"M","of":["P","Q"]}
+{"op":"line","id":"bis","through":["B","M"]}            // 先建 M 再引用；BM 才是角平分线
+{"op":"line","id":"lAC","through":["A","C"]}
+{"op":"intersect","id":"D","of":["bis","lAC"],"select":"first"}  // 平分线与 AC 的交点，别心算 D(1.5,0) 写 point
+{"op":"verify","kind":"angle","of":["A","B","D"],"expect":26.565,"tol":0.05}   // ∠ABD≈26.565°
+{"op":"verify","kind":"angle","of":["D","B","C"],"expect":26.565,"tol":0.05}   // ∠DBC≈26.565°
+{"op":"verify","kind":"distance","of":["A","B"],"expect":3,"tol":0.05}         // AB=3
+{"op":"verify","kind":"distance","of":["B","C"],"expect":5,"tol":0.05}         // BC=5
+{"op":"verify","kind":"distance","of":["A","D"],"expect":1.5,"tol":0.05}       // AD=1.5
+{"op":"verify","kind":"distance","of":["D","C"],"expect":2.5,"tol":0.05}       // DC=2.5
+// message："从 B 作角平分线交 AC 于 D(1.5,0)；读得 AB=3、BC=5、AD=1.5、DC=2.5，AD/DC=AB/BC=3/5，∠ABD=∠DBC≈26.565°，角平分线定理成立。"
+// 变式（同一三角形改从 A 作平分线交 BC 于 E）：比值换成 AB:AC=3:4（别再沿用 B 顶点的 AB:BC=3:5），
+//   BE=BC·AB/(AB+AC)=5·3/7≈2.143、EC≈2.857；P/Q 分别取在 AB/AC 上距 A 等距（如 (0,1)/(1,0)），
+//   midpoint → line AE → intersect E with lBC；verify ∠BAE=∠EAC=45° + BE≈2.143 / EC≈2.857。
+// 要点：① 定理比值只取【角顶点两邻边】：B 顶点用 AB:BC，A 顶点用 AB:AC，C 顶点用 CA:CB，换顶点必须重算；
+//   ② AD/DC=AB/BC 是【分对边两段之比】，不是 AD/AC，也不是相似比；AC=4、AB:BC=3:5 时 AD=1.5 而非中点 2；
+//   ③ 协议无原生 angleBisector / verify kind:ratio：平分线靠等距 glider+midpoint+line 构造，比值靠四个 distance 读数说明；
+//   ④ glider 要先有 segment，line/intersect 要先有 M/lAC；D/E 用 intersect 数值求出，不写死坐标 point；
+//   ⑤ verify angle 的 of 顶点在中间（如 [A,B,D] 表示 ∠ABD）；pass:false 多为等距点取错或比值分母用错，按例6/例10 只补发修正命令，不要 clear 整板。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
