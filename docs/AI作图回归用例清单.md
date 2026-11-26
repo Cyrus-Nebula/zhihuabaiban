@@ -1032,3 +1032,26 @@
 - 协议无原生 `altitude` op，也无 `verify kind:projection`：AH²=BH·CH 等平方关系靠 distance 读数 + message 说明，真实垂直/在线靠关系断言机器判定。
 - 斜边高（垂足 (3.84,2.88)）与斜边中线（中点 (3,4)，例54）仅在等腰直角三角形重合；一般直角三角形两者落点不同，切勿互相顶替。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第三十三轮增量：圆内接四边形对角互补 few-shot（2026-11-26）
+> 承接第三十二轮 TODO②「继续补易错图形 few-shot」的下一候选。例54/55 覆盖直角三角形斜边中线/高，
+> 本例覆盖圆内接四边形：AI 常把不共圆的四点硬套对角互补、把相邻角当对角、polygon 顶点顺序交叉自交、
+> 或照搬矩形写死两角 90°。本轮仅在 `ai/board-prompt.js` 例55 后纯追加例56，
+> 复用既有 op（point/circle/polygon/angle/verify），`js/executor.js` 执行分支 / 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 125 | 圆 O(0,0) 半径 5 上的四边形 ABCD：A(5,0) B(3,4) C(-4,3) D(0,-5)，验证圆内接四边形对角互补 | 读快照确认 O/A/B/C/D → `point` O → `circle` c1 center:O radius:5 → `point` A/B/C/D → `polygon` quad 按圆周顺序 [A,B,C,D] → `angle` angA [D,A,B] / angC [B,C,D] → `verify` oncircle 四点 + angle [D,A,B]=108.43/[B,C,D]=71.57/[A,B,C]=108.43/[C,D,A]=71.57 → message 说明两组对角和均≈180° | ✅ | 四点不共圆就套定理（先 oncircle）；把 ∠A+∠B 当对角和；polygon 顺序 A-B-D-C 自交；照搬矩形写死 90°/90°；verify angle 顶点没放中间 |
+| 126 | 变式：快照已有圆与部分顶点 / 顶点被滑动条驱动时的对角互补自检 | 先按快照数值确认四点共圆（oncircle 全过）再 `polygon`+`angle`+`verify`；只补作时不重发 point/circle；新点用 `glider` 约束到 c1 上；动态点具体角变化但互补恒成立，expect 按快照重算或用 `expectRange` + `inspect kind:angle` 回读，不沿用 108.43/71.57；某点离圆则 message 说明不适用 | ✅ | 沿用旧角 expect；把随意坐标点当圆上点；重发 point 造成重复顶点；点离圆仍硬说互补；verify angle 漏顶点在中间 |
+
+## TODO 交接更新（2026-11-26 第三十三轮）
+1. [本轮已完成] 例56 圆内接四边形对角互补 few-shot + docs 用例 125/126（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高/圆内接对角读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：直角三角形内切圆半径与面积关系、圆内接四边形托勒密定理）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第三十三轮追加）
+- 例56（用例 125/126）：四角读数保留两位小数（108.43°/71.57°），verify angle 用 tol:0.5，非解析精确值；oncircle 用 tol:0.05。
+- 协议无原生 `cyclicQuadrilateral` op，也无 `verify kind:supplementary`：共圆靠 oncircle 四回读，"和=180°"靠 angle 读数 + message 说明。
+- 圆内接四边形仅在四点共圆时对角互补；一般四边形/点被拖离圆时不适用，AI 不得硬套定理。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

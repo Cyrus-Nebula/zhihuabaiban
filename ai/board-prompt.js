@@ -573,6 +573,17 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高读数在真实
  *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：圆内接四边形对角互补、直角三角形内切圆半径与面积关系）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-26 第三十三轮）：只追加 2D 作图主干（例56 圆内接四边形对角互补 few-shot），
+ *   3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；核心工作流 / 铁律 /
+ *   命令清单既有行 / 既有例1-55 逐字未动、无删除行。落实上一轮 TODO 交接项②的下一候选——圆内接四边形：
+ *   AI 常把不共圆的四点硬套对角互补、把相邻角当对角、polygon 顶点顺序交叉自交、或照搬矩形写死两角 90°。
+ *   本文件在例55 后追加例56，给出「先 oncircle 确认四点共圆 → 按圆周顺序 polygon → 标两组对角 →
+ *   verify 四角回读 + message 说明和为 180°」范式；docs 追加用例 125/126。全部复用现有 op
+ *   （point/circle/polygon/angle/verify），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高/圆内接对角读数在真实
+ *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：直角三角形内切圆半径与面积关系、圆内接四边形托勒密定理）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2240,6 +2251,44 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ⑤ 命令顺序：point → polygon → line 斜边 → perpendicular → intersect → segment 高 → style 隐藏垂线 → verify；引用未定义 id 会整条拒绝；
 //   ⑥ 协议无原生 altitude op / verify kind:projection：平方关系靠 distance 读数 + message，垂直/在线靠关系断言机器判定；
 //   ⑦ verify pass:false 多为把中线当高/垂足取错/expect 沿用旧值，按例6/例10 只重发错的垂足、高、verify，不要 clear 整板。
+
+== 例56：圆内接四边形对角互补（四点共圆⇒∠A+∠C=∠B+∠D=180°；易错：四点不共圆硬套、邻角当对角、顶点顺序交叉） ==
+用户："画圆 O（圆心 (0,0)、半径 5）上的四边形 ABCD：A(5,0) B(3,4) C(-4,3) D(0,-5)，验证圆内接四边形对角互补。"
+思路：先读当前画板快照确认 O/A/B/C/D 是否已存在：已存在就复用旧 id、只补四边形与自检；不存在再按 point 建点。
+      数值规划：OA=OB=OC=OD=5，四点同圆；polygon 必须按【圆周顺序 A→B→C→D】连，顺序写成 A→B→D→C 会自交、对角关系全错。
+      对角是 A↔C、B↔D（不相邻）；预读四角：∠DAB≈108.43°、∠BCD≈71.57°（和 180°），∠ABC≈108.43°、∠CDA≈71.57°（和 180°）。
+      本例四点不是两组对径点，故角不是 90°；不要照搬矩形写死 ∠A=∠C=90°。
+      自检：先 verify oncircle 四点确认真的共圆（不共圆就别谈定理），再 verify angle 四角回读；
+      协议无 verify kind:supplementary，"和=180°"靠四角读数在 message 中说明（也可 inspect 两角读数相加）。
+{"op":"point","id":"O","x":0,"y":0}
+{"op":"circle","id":"c1","center":"O","radius":5}
+{"op":"point","id":"A","x":5,"y":0}
+{"op":"point","id":"B","x":3,"y":4}
+{"op":"point","id":"C","x":-4,"y":3}
+{"op":"point","id":"D","x":0,"y":-5}
+{"op":"polygon","id":"quad","points":["A","B","C","D"]}    // 按圆周顺序；A-B-D-C 会交叉自交
+{"op":"angle","id":"angA","points":["D","A","B"]}          // ∠DAB，顶点 A 在中间
+{"op":"angle","id":"angC","points":["B","C","D"]}          // ∠BCD，与 ∠DAB 互为对角
+{"op":"verify","kind":"oncircle","of":["A","c1"],"expect":0,"tol":0.05,"label":"A 在圆上"}
+{"op":"verify","kind":"oncircle","of":["B","c1"],"expect":0,"tol":0.05,"label":"B 在圆上"}
+{"op":"verify","kind":"oncircle","of":["C","c1"],"expect":0,"tol":0.05,"label":"C 在圆上"}
+{"op":"verify","kind":"oncircle","of":["D","c1"],"expect":0,"tol":0.05,"label":"D 在圆上"}
+{"op":"verify","kind":"angle","of":["D","A","B"],"expect":108.43,"tol":0.5,"label":"∠DAB≈108.43°"}
+{"op":"verify","kind":"angle","of":["B","C","D"],"expect":71.57,"tol":0.5,"label":"∠BCD≈71.57°"}
+{"op":"verify","kind":"angle","of":["A","B","C"],"expect":108.43,"tol":0.5,"label":"∠ABC≈108.43°"}
+{"op":"verify","kind":"angle","of":["C","D","A"],"expect":71.57,"tol":0.5,"label":"∠CDA≈71.57°"}
+// message："四点均在圆 O 上，∠DAB+∠BCD≈180°、∠ABC+∠CDA≈180°，圆内接四边形对角互补成立。"
+// 变式 A（顶点换组/滑动条驱动）：四点仍在圆上但具体角变了，互补关系仍成立；expect 按快照重算或用 expectRange + inspect kind:angle 回读，
+//   不要沿用 108.43/71.57；若某点被拖离圆，oncircle 会 pass:false，message 说明"该点不在圆上，对角互补不适用"，不要硬套定理。
+// 变式 B（快照已有圆与顶点，只补四边形）：不重发 point/circle，先按快照数值确认四点共圆 → polygon → angle → verify；
+//   若快照只有部分点，用 glider 把新点约束到 c1 上再连，别用随意坐标点冒充圆上点。
+// 要点：① 对角是 A↔C、B↔D（不相邻），别把 ∠A+∠B 当对角和；
+//   ② 先 oncircle 确认四点共圆，再谈对角互补；不共圆就直说不适用；
+//   ③ polygon 必须按圆周顺序，交叉顺序会自交且角关系错乱；
+//   ④ 别把圆内接四边形当矩形/等腰梯形写死两角 90°，本例 ∠DAB≈108.43° 不是直角；
+//   ⑤ 命令顺序：point O → circle c1 → point A/B/C/D → polygon → angle → verify；引用的 id 必须先定义；
+//   ⑥ 协议无 verify kind:supplementary，"和=180°"靠四个 angle 读数 + message；动态顶点 expect 要按快照重算；
+//   ⑦ verify pass:false 多为点不在圆上/顶点顺序交叉/expect 沿用旧值，按例6/例10 只重发错的点、polygon、verify，不要 clear 整板。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
