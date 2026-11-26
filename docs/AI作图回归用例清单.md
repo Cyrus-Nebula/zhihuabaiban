@@ -1009,3 +1009,26 @@
 - 协议无原生 `median` op，也无 `verify kind:median/hypotenuse`：AM=BC/2 靠 distance 读数 + message 说明，外心身份靠三点 oncircle 回读。
 - 斜边中线仅在等腰直角三角形时才与斜边高重合；一般直角三角形两者落点不同，切勿把垂足当作斜边中点。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第三十二轮增量：直角三角形斜边高与射影定理 few-shot（2026-11-26）
+> 承接第三十一轮 TODO②「继续补易错图形 few-shot」的下一候选。例54 覆盖斜边中线（中点 (3,4)），本例覆盖斜边高（垂足 (3.84,2.88)），
+> AI 常把二者混淆、心算垂足写死 point、把射影定理写成 AH=BH·CH / AH²=BH·BC、换直角顶点沿用旧斜边。
+> 本轮仅在 `ai/board-prompt.js` 例54 后纯追加例55，复用既有 op（point/polygon/line/perpendicular/intersect/segment/style/verify），
+> `js/executor.js` 执行分支 / 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 123 | Rt△ABC A(0,0) B(6,0) C(0,8)（∠A=90°），作斜边 BC 上的高 AH，验证 AH²=BH·CH、AB²=BH·BC、AC²=CH·BC | 读快照确认 A/B/C → `point` A/B/C → `polygon` tri → `line` lBC through:[B,C] → `perpendicular` h of:lBC through:A → `intersect` H of:[h,lBC]≈(3.84,2.88) → `segment` alt A→H → `style` h hidden → `verify` angle [B,A,C]=90 + perpendicular [A,H,B,C] + online [H,B,C] + distance BC=10/AH=4.8/BH=3.6/CH=6.4 → message 说明三式成立 | ✅ | 把中点 (3,4) 当垂足（例54 中线端点）；心算 H 坐标写死 point；射影式写成 AH=BH·CH / AH²=BH·BC / AB²=BH·CH；忘隐藏全长垂线 h；把高画成直角边 |
+| 124 | 变式：直角换到 B(0,6) 的 A(0,0) B(0,6) C(8,6) / 快照已有直角三角形只补斜边高 | 直角在 B ⇒ 斜边 AC=10、高从 B 作：`line` lAC → `perpendicular` 过 B → `intersect` H；BH=4.8、AH=3.6、CH=6.4，射影式改 BH²=AH·CH / AB²=AH·AC / BC²=CH·AC；只补作时不重发 point/polygon；滑动条驱动时只引用 line/H，不写死 (3.84,2.88) | ✅ | 沿用上例 BC/垂足/expect；把高从 A 作；射影式沿用 AH²=BH·CH；重发 point 造成重复顶点；换直角顶点不重算射影比 |
+
+## TODO 交接更新（2026-11-26 第三十二轮）
+1. [本轮已完成] 例55 直角三角形斜边高与射影定理 few-shot + docs 用例 123/124（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：圆内接四边形对角互补、直角三角形内切圆半径与面积关系）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第三十二轮追加）
+- 例55（用例 123/124）：H 是 perpendicular+intersect 派生点，AH/BH/CH 读数保留三位小数；verify distance/angle/perpendicular/online 用 tol:0.05/0.5，非解析精确值。
+- 协议无原生 `altitude` op，也无 `verify kind:projection`：AH²=BH·CH 等平方关系靠 distance 读数 + message 说明，真实垂直/在线靠关系断言机器判定。
+- 斜边高（垂足 (3.84,2.88)）与斜边中线（中点 (3,4)，例54）仅在等腰直角三角形重合；一般直角三角形两者落点不同，切勿互相顶替。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

@@ -561,6 +561,18 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线读数在真实
  *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：圆内接四边形对角互补、直角三角形斜边高与射影定理）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-26 第三十二轮）：只追加 2D 作图主干（例55 直角三角形斜边高与射影定理 few-shot），
+ *   3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；核心工作流 / 铁律 /
+ *   命令清单既有行 / 既有例1-54 逐字未动、无删除行。落实上一轮 TODO 交接项②的下一候选——斜边高与射影定理：
+ *   例54 已覆盖斜边中线（斜边中点），本例覆盖斜边高（垂足），AI 常把二者混淆、把垂足心算写死 point、
+ *   把射影定理写成 AH=BH·CH / AH²=BH·BC、换直角顶点仍沿用旧斜边。本文件在例54 后追加例55，给出
+ *   「读状态判直角顶点 → line 斜边 → perpendicular+intersect 实求垂足 → segment 高 → style 隐藏垂线 →
+ *   verify 直角/垂直/在线/四段距离回读」范式；docs 追加用例 123/124。全部复用现有 op
+ *   （point/polygon/line/perpendicular/intersect/segment/style/verify），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高读数在真实
+ *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：圆内接四边形对角互补、直角三角形内切圆半径与面积关系）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2187,6 +2199,47 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ④ 命令顺序：point → polygon → segment 斜边 → midpoint → segment 中线 →（可选 circle）→ verify；引用未定义 id 会整条拒绝；
 //   ⑤ 协议无原生 median op / verify kind:median：半斜边关系靠 distance 读数 + message，外心身份靠 oncircle 三点；
 //   ⑥ verify pass:false 多为直角顶点判错/中点取在直角边/expect 沿用旧值，按例6/例10 只重发中点、中线、verify，不要 clear 整板。
+
+== 例55：直角三角形斜边高与射影定理（AH⊥BC；AH²=BH·CH、AB²=BH·BC、AC²=CH·BC；易错：把高当中线、心算垂足、射影式漏平方） ==
+用户："画直角三角形 ABC（A(0,0) B(6,0) C(0,8)，∠A=90°），作斜边 BC 上的高 AH，验证射影定理 AH²=BH·CH、AB²=BH·BC、AC²=CH·BC。"
+思路：先读当前画板快照确认 A/B/C 是否已存在：已存在就复用旧 id、只补高与垂足；不存在再按 point 建三点。
+      先判直角顶点：本例 ∠A=90°（AB 水平、AC 竖直），故【斜边是 BC】=√(6²+8²)=10，高从直角顶点 A 作向 BC。
+      【关键：垂足 H 不等于斜边中点】——中点是 (3,4)（例54），垂足是过 A 作 BC 垂线得到的交点 H≈(3.84,2.88)，两者仅等腰直角时重合。
+      垂足必须用「line 斜边 → perpendicular 过直角顶点 → intersect 求交」实求，不要心算 H 坐标写死 point。
+      数值规划（射影定理）：AH=AB·AC/BC=6·8/10=4.8，BH=AB²/BC=36/10=3.6，CH=AC²/BC=64/10=6.4；
+      BH+CH=10=BC；AH²=23.04=BH·CH(3.6×6.4)，AB²=36=BH·BC(3.6×10)，AC²=64=CH·BC(6.4×10)。
+      自检：verify angle [B,A,C]=90 + perpendicular [A,H,B,C] 核 AH⊥BC + online H 在 BC 上 +
+      distance BC=10 / AH=4.8 / BH=3.6 / CH=6.4；协议无 verify kind:projection，三个射影等式靠 distance 读数在 message 里说明。
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":6,"y":0}
+{"op":"point","id":"C","x":0,"y":8}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"line","id":"lBC","through":["B","C"]}                    // 斜边所在直线：先建，再过 A 作垂线
+{"op":"perpendicular","id":"h","of":"lBC","through":"A"}         // 过直角顶点 A 作斜边 BC 的垂线
+{"op":"intersect","id":"H","of":["h","lBC"]}                      // H≈(3.84,2.88) 是真实垂足，不是中点 (3,4)、更不是直角边上的点
+{"op":"segment","id":"alt","from":"A","to":"H"}                   // AH 才是斜边高
+{"op":"style","target":"h","hidden":true}                         // 隐藏全长垂线，只留高 AH（照例1）
+{"op":"verify","kind":"angle","of":["B","A","C"],"expect":90,"tol":0.5}
+{"op":"verify","kind":"perpendicular","of":["A","H","B","C"],"expect":0,"tol":0.5,"label":"AH⊥BC"}
+{"op":"verify","kind":"online","of":["H","B","C"],"expect":0,"tol":0.05,"label":"垂足 H 在斜边 BC 上"}
+{"op":"verify","kind":"distance","of":["B","C"],"expect":10,"tol":0.05}    // 斜边
+{"op":"verify","kind":"distance","of":["A","H"],"expect":4.8,"tol":0.05}   // 高 AH=ab/c
+{"op":"verify","kind":"distance","of":["B","H"],"expect":3.6,"tol":0.05}   // BH=a²/c
+{"op":"verify","kind":"distance","of":["C","H"],"expect":6.4,"tol":0.05}   // CH=b²/c
+// message："∠A=90°，斜边 BC=10；作斜边高 AH⊥BC，垂足 H≈(3.84,2.88)。读得 AH=4.8、BH=3.6、CH=6.4（BH+CH=BC=10），
+//   故 AH²=23.04=BH·CH，AB²=36=BH·BC，AC²=64=CH·BC，射影定理成立。"
+// 变式 A（直角换到 B：A(0,0) B(0,6) C(8,6)）：此时斜边是 AC=10，高从 B 作向 AC：line lAC → perpendicular 过 B →
+//   intersect 得垂足 H；BH=AB·BC/AC=4.8、AH=AB²/AC=3.6、CH=BC²/AC=6.4，射影式改为 BH²=AH·CH、AB²=AH·AC、BC²=CH·AC；
+//   千万别沿用上一例的 BC/垂足(3.84,2.88)/expect。
+// 变式 B（快照已有直角三角形，只补斜边高）：不重发 point/polygon，按快照确认直角顶点 → 建斜边所在 line →
+//   perpendicular+intersect 求垂足 → segment 高 → style 隐藏垂线 → verify；顶点被滑动条驱动时只引用 line/H，不写死坐标。
+// 要点：① 先判直角顶点再定斜边：直角在 A ⇒ 斜边 BC、高从 A 作；直角在 B ⇒ 斜边 AC、高从 B 作；别把直角边当斜边；
+//   ② 斜边高 ≠ 斜边中线：高端点=垂足（本例 (3.84,2.88)），中线端点=中点 (3,4)（例54），仅等腰直角重合；
+//   ③ 垂足必须 perpendicular+intersect 实求，禁止心算写死 point；先建 line 斜边、perpendicular 后 intersect 才不违反引用顺序；
+//   ④ 射影定理别写错：AH²=BH·CH、AB²=BH·BC、AC²=CH·BC（左边都是平方，右边一条射影×整条斜边），不是 AH=BH·CH；
+//   ⑤ 命令顺序：point → polygon → line 斜边 → perpendicular → intersect → segment 高 → style 隐藏垂线 → verify；引用未定义 id 会整条拒绝；
+//   ⑥ 协议无原生 altitude op / verify kind:projection：平方关系靠 distance 读数 + message，垂直/在线靠关系断言机器判定；
+//   ⑦ verify pass:false 多为把中线当高/垂足取错/expect 沿用旧值，按例6/例10 只重发错的垂足、高、verify，不要 clear 整板。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
