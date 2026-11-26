@@ -49,6 +49,7 @@ import { resolveInsphere3D } from './board3d-insphere.js';
 import { resolveEuler3D } from './board3d-euler.js';
 import { resolveCentroid3D } from './board3d-centroid.js';
 import { resolveSolidmetrics3D } from './board3d-solidmetrics.js';
+import { resolveSectionsphere3D } from './board3d-sectionsphere.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -493,6 +494,15 @@ export const BOARD3D_SOLIDMETRICS_OPS = Object.freeze(['solidmetrics3d']);
 /** 含全部扩展命令的完整集（43 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE34_OPS = Object.freeze([
   ...BOARD3D_COMPLETE33_OPS, ...BOARD3D_SOLIDMETRICS_OPS,
+]);
+
+// 2026-11-27 D44：sectionsphere3d 平面截球截面圆（球 + 截面圆 + OO' 垂线 + r²+d²=R² 验证）。
+// 同样单独成组、不并入历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / … / COMPLETE34 43 条），
+// 历史常量逐字不变。
+export const BOARD3D_SECTIONSPHERE_OPS = Object.freeze(['sectionsphere3d']);
+/** 含全部扩展命令的完整集（44 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE35_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE34_OPS, ...BOARD3D_SECTIONSPHERE_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1814,6 +1824,35 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: smFailed.length === 0 && smCreated.length > 0,
             count: smr.items.length, created: smCreated, meta: smr.meta,
             ...(smFailed.length ? { failed: smFailed } : {}),
+          });
+          break;
+        }
+        case 'sectionsphere3d': {
+          // 2026-11-27 D44：平面截球截面圆（球三正交大圆 + 截面平面面片 + 截面圆 +
+          // 球心到截面圆心垂线 + 直角符号 + O/O'/R/r/d/关系式标注，r²+d²=R²）。
+          // getState 仅供 id 避让、缺失/抛错降级为空场景整批不中断；id 冲突分项失败、
+          // api.add 返回 null/false 分项回报；2D 命令仍由 default 拒绝。
+          let ssState = {};
+          try { ssState = (a.getState ? a.getState() : {}) || {}; } catch (_) { ssState = {}; }
+          const ssr = resolveSectionsphere3D(cmd, ssState);
+          if (!ssr.ok) {
+            results.push({ op, ok: false, error: ssr.error });
+            break;
+          }
+          const ssCreated = [];
+          const ssFailed = [];
+          for (const item of ssr.items) {
+            if (known.has(item.id)) { ssFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { ssFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            ssCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: ssFailed.length === 0 && ssCreated.length > 0,
+            count: ssr.items.length, created: ssCreated, meta: ssr.meta,
+            ...(ssFailed.length ? { failed: ssFailed } : {}),
           });
           break;
         }

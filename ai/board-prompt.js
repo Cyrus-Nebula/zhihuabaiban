@@ -3734,3 +3734,38 @@ export const BOARD3D_SOLIDMETRICS_INTENT_RE = /(正多面体|柏拉图立体|正
 export function isSolidmetrics3DIntent(text) {
   return BOARD3D_SOLIDMETRICS_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-27 D44 追加（仅在文件最末尾追加，上方 D1~D43 一切内容逐字未动）：平面截球截面圆。
+export const BOARD3D_SECTIONSPHERE_PROMPT = `
++- 用途：给一个球（球心 center + 半径 radius）与一个平面（三点 points 定面，或 axis + height 有向距离），一次画出球（三个正交大圆线框）+ 截面平面面片 + 截面圆（小圆）+ 球心 O 到截面圆心 O' 的垂线段 + 垂足 O' 处直角符号，并标出球半径 R、截面半径 r、球心到截面距离 d 与关系式 r²+d²=R²。circumsphere3d / insphere3d / euler3d 只处理「四点反求球」、plane3d 只画平面面片、sphere/circle 内置图元画不出「任意朝向平面截任意球的截面圆」，本命令补齐这个缺口。
++- 命令格式：{"op":"sectionsphere3d","id":"sec","center":[0,0,0],"radius":2,"axis":"z","height":1,"segments":48,"width":4,"heightSpan":4,"rightAngleSize":0.25,"asSphere":true,"asPlane":true,"asCircle":true,"asPerp":true,"asPoints":false,"asRightAngle":true,"labelCenter":true,"labelFoot":true,"labelRadii":true,"labelRelation":true,"vertexSize":0.1}
++  · center：球心 [x,y,z]（默认原点）；radius：球半径（默认 2，0.01~1000）。
++  · 平面二选一：给 points 三点 [p1,p2,p3] 定面（优先，法向=normalize((p2−p1)×(p3−p1))，此时 height 仅供校验、不参与定位）；否则用 axis 法向（'x'/'y'/'z' 或 3D 向量，默认 'z'）+ height 有向距离 h（默认 0，|h|<radius 才相交）。
++  · 截面圆心 O'=O+h·n（球心在平面上的正投影，三点定面时 h=(p1−O)·n），d=|h|，截面半径 r=√(R²−d²)。d≥radius（相切或不相交）整条拒绝。
++  · width / heightSpan：截面平面面片沿正交标架 u/v 方向的宽高（默认 4/4，0.01~10000）。注意 height 已被「球心到平面有向距离」占用，面片高度用 heightSpan 指定。
++  · segments：每个圆采样段数（默认 48，8~512 整数）；rightAngleSize：垂足直角符号边长（默认 0.25，0.01~10）。
++  · asSphere / asPlane / asCircle / asPerp / asPoints / asRightAngle / labelCenter / labelFoot / labelRadii / labelRelation：输出开关，其中前五个（线框类）至少开一个。asSphere 画球三正交大圆；asPlane 画截面面片边界；asCircle 画截面圆；asPerp 画 OO' 垂线段；asPoints 在 O/O'/截面圆采样点放小球；asRightAngle 画垂足直角符号（需 asPerp）；labelCenter 标 O、labelFoot 标 O'、labelRadii 标 R/r、labelRelation 标 d 与 r²+d²=R²。
++  · vertexSize / color / planeColor / perpColor / labelColor / opacity：样式；数值只要在命令里出现就必须是合法有限数（支持数字字符串）。
++- 几何守恒：截面圆上任一采样点 Q 满足 |Q−O|=R（恒在球面）、(Q−O')·n=0（恒在截面内）、|Q−O'|=r（恒为截面半径）；r²+d²=R²；球三大圆采样点到球心恒为 R；OO'=d 且 OO'⊥截面平面。任一守恒失败整条拒绝，绝不画假截面。
++- 示例：
++  · 默认球被过球心水平面截得的大圆（d=0，r=R）：{"op":"sectionsphere3d"}
++  · 半径 2 的球被 z=1 平面截得的小圆（d=1，r=√3）：{"op":"sectionsphere3d","radius":2,"axis":"z","height":1}
++  · 三点定面截球、只保留截面圆与半径标注：{"op":"sectionsphere3d","radius":3,"points":[[0,0,1],[3,0,1],[0,3,1]],"asSphere":false,"asPlane":false}
++  · 加密采样、沿 x 轴取向、放采样点小球：{"op":"sectionsphere3d","axis":"x","height":0.5,"segments":96,"asPoints":true}
++  · 只画球与截面圆、不画垂线与标注：{"op":"sectionsphere3d","asPerp":false,"asRightAngle":false,"labelCenter":false,"labelFoot":false,"labelRadii":false,"labelRelation":false}
++- 约束：center 非三元组 / radius 越界 / points 非三点或共线 / axis 非法 / height 使 d≥radius 或越界 / segments 越界非整数 / width·heightSpan·rightAngleSize·vertexSize 越界 / 开关非布尔 / 五线框开关全关 / id 非法 —— 整条原子拒绝、零副作用。
++- 铁律：sectionsphere3d 是 3D 命令；2D 的「圆与直线相交 / 圆内弦」在本分支依旧不认识，只有明确提到「球 / 截球 / 截面圆 / 球的截面」+「平面 / 小圆 / 球心到平面距离」才用本命令。`;
+
+export const BOARD3D_SECTIONSPHERE_PROMPT_OPS = Object.freeze(['sectionsphere3d']);
+
+/**
+ * D44 立体专属词意图识别扩展（纯追加，不改 D1~D43 的任何意图正则）：
+ * 必须带「球 / 截球 / 球面」等立体词 + 「截面圆 / 平面截 / 小圆 / 球心到平面距离」，
+ * 避免把 2D 的「圆被直线所截 / 圆内弦」误切到 3D 分支。
+ */
+export const BOARD3D_SECTIONSPHERE_INTENT_RE = /(球|球面|球体|截球).{0,14}(截面圆|平面截|截得|小圆|截线|截面|被.{0,4}平面)|(截面圆|平面截球|球截面|截球|球心到平面).{0,12}(半径|距离|圆|平面|截面)/i;
+
+/** 判断自然语言是否含 D44 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isSectionsphere3DIntent(text) {
+  return BOARD3D_SECTIONSPHERE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}

@@ -551,6 +551,13 @@ async function send() {
         if (m.labelCount) parts.push(`${m.labelCount} 标注`);
         appendLog('ai', `已生成${m.name || '正多面体'}双球与欧拉公式（R=${m.radius != null ? m.radius : '?'}，r=${m.inRadius != null ? m.inRadius : '?'}，a=${m.edgeLength != null ? m.edgeLength : '?'}，${m.eulerText || 'V−E+F=2'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-27 D44：sectionsphere3d 展示平面截球截面圆读数（数值以画板返回为准）。
+      for (const ss of results) {
+        if (!ss.ok || ss.op !== 'sectionsphere3d') continue;
+        const m = ss.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        appendLog('ai', `已生成平面截球截面圆（球心 [${(m.center || []).join(',')}]，R=${m.radius != null ? m.radius : '?'}，d=${m.distance != null ? m.distance : '?'}，r=${m.sectionRadius != null ? m.sectionRadius : '?'}，r²+d²=R²）：${seg} 段。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
