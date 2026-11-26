@@ -3701,3 +3701,36 @@ export const BOARD3D_CENTROID_INTENT_RE = /(四面体|三棱锥|空间四点|四
 export function isCentroid3DIntent(text) {
   return BOARD3D_CENTROID_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-27 D43 追加（仅在文件最末尾追加，上方 D1~D42 一切内容逐字未动）：正多面体内外接球与欧拉公式。
+export const BOARD3D_SOLIDMETRICS_PROMPT = `
++- 用途：给一种正多面体（tetra/cube/octa/dodeca/icosa），一次画出它的外接球与内切球（各三个正交大圆线框），并标出棱长 a、外接半径 R、内切半径 r 与欧拉公式 V−E+F=2。polyhedron3d 只画线框与顶点、circumsphere3d/insphere3d/euler3d 只处理四面体（四个不共面点），都不覆盖正方体/正八面体/正十二面体/正二十面体的双球与欧拉守恒。
++- 命令格式：{"op":"solidmetrics3d","id":"sm","kind":"cube","center":[0,0,0],"radius":1.5,"axis":"z","segments":48,"asEdges":true,"asCircumcircle":true,"asIncircle":true,"asVertices":false,"labelVertices":false,"labelKind":true,"labelRadii":true,"labelEuler":true,"vertexSize":0.1}
++  · kind / solid：必填一种正多面体规范名 tetra/cube/octa/dodeca/icosa，也接受中文别名（正四面体/正方体/立方体/正八面体/正十二面体/正二十面体）。默认 cube。
++  · center：立体中心 [x,y,z]（默认原点）；radius：外接球半径（默认 1.5，0.01~1000），所有顶点到 center 恒等于 radius。
++  · axis：大圆基准轴 'x'/'y'/'z' 或非零向量（默认 z）；每个球各画赤道大圆与两个正交经线大圆。segments：每段大圆采样段数（默认 48，8~512 整数），两球共 6×segments 段。
++  · asEdges / asCircumcircle / asIncircle / asVertices / labelVertices / labelKind / labelRadii / labelEuler：八个输出开关，至少开一个。asEdges 画全部棱；asCircumcircle/asIncircle 画对应球三正交大圆；asVertices 在顶点放小球；labelVertices 依次标顶点 A/B/C…；labelKind 标立体名；labelRadii 标 R/r/a 三个读数；labelEuler 标 V−E+F=2。
++  · vertexSize / color / circumColor / inColor / labelColor / opacity：样式；数值只要在命令里出现就必须是合法有限数（支持数字字符串）。
++- 几何守恒：顶点用标准直角坐标（含黄金比 φ），棱长 a 为最小顶点间距且各棱等长；外接半径 R=radius；内切半径 r=各面到 center 的距离且各面相等；V/E/F 分别等于该立体的顶点数/棱数/面数，欧拉示性数 V−E+F=2（tetra 4/6/4、cube 8/12/6、octa 6/12/8、dodeca 20/30/12、icosa 12/30/20）。任一守恒失败整条拒绝，绝不画假图。
++- 示例：
++  · 默认正方体双球与欧拉公式：{"op":"solidmetrics3d"}
++  · 半径 2 的正四面体双球、标出四个顶点：{"op":"solidmetrics3d","kind":"tetra","radius":2,"labelVertices":true}
++  · 正十二面体只要线框与棱长、不画球：{"op":"solidmetrics3d","kind":"dodeca","asCircumcircle":false,"asIncircle":false,"labelRadii":true}
++  · 正二十面体加密采样并沿 x 轴取向：{"op":"solidmetrics3d","kind":"icosa","axis":"x","segments":96}
++  · 只标欧拉公式与 R/r/a 读数、不画线框：{"op":"solidmetrics3d","asEdges":false,"asCircumcircle":false,"asIncircle":false}
++- 约束：kind 非法 / center 非三元组 / radius 越界 / axis 非法 / segments 越界非整数 / vertexSize 越界 / 开关非布尔 / 八开关全关 / id 非法 —— 整条原子拒绝、零副作用。
++- 铁律：solidmetrics3d 是 3D 命令；2D 的「正多边形外接圆 / 三角形内切圆」在本分支依旧不认识，只有明确提到「正多面体 / 正方体 / 正四面体 / 正八面体 / 正十二面体 / 正二十面体 / 柏拉图立体」+「外接球 / 内切球 / 棱长 / 欧拉公式」才用本命令。`;
+
+export const BOARD3D_SOLIDMETRICS_PROMPT_OPS = Object.freeze(['solidmetrics3d']);
+
+/**
+ * D43 立体专属词意图识别扩展（纯追加，不改 D1~D42 的任何意图正则）：
+ * 必须带「正多面体 / 柏拉图立体 / 正方体 / 正四面体 …」等立体词 + 「外接球 / 内切球 / 棱长 / 欧拉公式」，
+ * 避免把 2D 的「正多边形 / 三角形外接圆」误切到 3D 分支。
+ */
+export const BOARD3D_SOLIDMETRICS_INTENT_RE = /(正多面体|柏拉图立体|正四面体|正方体|立方体|正六面体|正八面体|正十二面体|正二十面体).{0,14}(外接球|内切球|内接球|棱长|欧拉公式|V.?E.?F)|(外接球|内切球|内接球|棱长|欧拉公式|V.?E.?F).{0,10}(正多面体|柏拉图立体|正四面体|正方体|立方体|正六面体|正八面体|正十二面体|正二十面体)/i;
+
+/** 判断自然语言是否含 D43 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isSolidmetrics3DIntent(text) {
+  return BOARD3D_SOLIDMETRICS_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}

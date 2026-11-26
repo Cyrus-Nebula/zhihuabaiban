@@ -538,6 +538,19 @@ async function send() {
         const gDesc = m.center && m.center.length ? `[${m.center.join(',')}]` : '?';
         appendLog('ai', `已生成四面体重心与四条中线（重心 ${gDesc}，体积 V=${m.volume != null ? m.volume : '?'}，${m.ratioText || 'P₀G:GG₀=3:1'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-27 D43：solidmetrics3d 展示正多面体双球、棱长与欧拉公式读数（数值以画板返回为准）。
+      for (const sm of results) {
+        if (!sm.ok || sm.op !== 'solidmetrics3d') continue;
+        const m = sm.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.edgeLineCount) parts.push(`${m.edgeLineCount} 棱`);
+        if (m.circumCircleCount) parts.push(`${m.circumCircleCount} 外接大圆`);
+        if (m.inCircleCount) parts.push(`${m.inCircleCount} 内切大圆`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 标注`);
+        appendLog('ai', `已生成${m.name || '正多面体'}双球与欧拉公式（R=${m.radius != null ? m.radius : '?'}，r=${m.inRadius != null ? m.inRadius : '?'}，a=${m.edgeLength != null ? m.edgeLength : '?'}，${m.eulerText || 'V−E+F=2'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
