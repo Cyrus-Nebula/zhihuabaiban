@@ -524,6 +524,20 @@ async function send() {
         const iDesc = m.incenter && m.incenter.length ? `[${m.incenter.join(',')}]` : '?';
         appendLog('ai', `已生成四面体双球与欧拉不等式（外心 ${oDesc}，内心 ${iDesc}，R=${m.radius != null ? m.radius : '?'}，r=${m.inradius != null ? m.inradius : '?'}，d=${m.centerDistance != null ? m.centerDistance : '?'}，R/r=${m.ratio != null ? m.ratio : '?'}，余量 ${m.margin != null ? m.margin : '?'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
       }
+      // 2026-11-26 D42：centroid3d 展示四面体重心、3:1 中线比例与体积四等分读数（数值以画板返回为准）。
+      for (const ct of results) {
+        if (!ct.ok || ct.op !== 'centroid3d') continue;
+        const m = ct.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const parts = [];
+        if (m.edgeCount) parts.push(`${m.edgeCount} 棱`);
+        if (m.medianCount) parts.push(`${m.medianCount} 中线`);
+        if (m.faceMedianCount) parts.push(`${m.faceMedianCount} 面内半中线`);
+        if (m.pointCount) parts.push(`${m.pointCount} 小球`);
+        if (m.labelCount) parts.push(`${m.labelCount} 标注`);
+        const gDesc = m.center && m.center.length ? `[${m.center.join(',')}]` : '?';
+        appendLog('ai', `已生成四面体重心与四条中线（重心 ${gDesc}，体积 V=${m.volume != null ? m.volume : '?'}，${m.ratioText || 'P₀G:GG₀=3:1'}）：${seg} 段${parts.length ? ' / ' + parts.join(' + ') : ''}。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

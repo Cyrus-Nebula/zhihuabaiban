@@ -3457,3 +3457,34 @@ export const BOARD3D_EULER_INTENT_RE = /(欧拉不等式|四面体.{0,10}(欧拉
 export function isEuler3DIntent(text) {
   return BOARD3D_EULER_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-26 D42 追加（仅在文件最末尾追加，上方 D1~D41 一切内容逐字未动）：四面体重心与四条中线。
+export const BOARD3D_CENTROID_PROMPT = `
++- 用途：给四个不共面点 points，自动求四面体重心 G 并画出四条中线（顶点 Pi → 对面重心 Gi），重心把每条中线分成 3:1（PiG:GGi=3:1），同时四等分体积（四个子四面体各 V/4）。measure3d 只会量 midpoint、circumsphere3d 求外心、insphere3d 求内心、euler3d 验证双球不等式，都不画重心与中线。
++- 命令格式：{"op":"centroid3d","id":"cent","points":[[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]],"asEdges":true,"asMedians":true,"asFaceMedians":false,"asPoints":false,"labelCentroid":true,"labelVertices":false,"labelFaceCentroids":false,"labelRatio":true,"vertexSize":0.1}
++  · points：四个不共面点 [[x,y,z]×4]（默认单位立方体交错顶点构成的正四面体，重心原点）。共面、重合或面退化时整条拒绝，绝不画假重心。
++  · asEdges / asMedians / asFaceMedians / asPoints / labelCentroid / labelVertices / labelFaceCentroids / labelRatio：输出开关，至少开一个。asEdges 画四面体六棱；asMedians 画四条中线；asFaceMedians 画每个面内「面顶点→面重心」的 12 条半中线（默认关）；asPoints 放重心/四顶点/四面重心共 9 个小球；labelVertices 依次标顶点 A-D；labelFaceCentroids 标四个面重心 G0-G3；labelRatio 标出 P₀G:GG₀=3:1。
++  · vertexSize / color / faceColor / labelColor / opacity：样式；数值只要在命令里出现就必须是合法有限数（支持数字字符串）。
++- 几何守恒：G=(P0+P1+P2+P3)/4；面 i 的重心 Gi=(除 Pi 外三点之和)/3；体积 V=|det(P1−P0,P2−P0,P3−P0)|/6；G 落在 Pi→Gi 上且 |Pi−G|/|G−Gi|=3；把 Pi 换成 G 的子四面体体积 Vi=V/4；四条中线与四个 Vi 均按 1% 容差守护，病态即整条拒绝。
++- 示例：
++  · 默认正四面体重心与四条中线：{"op":"centroid3d"}
++  · 三棱锥 ABCD 标重心与四顶点：{"op":"centroid3d","points":[[0,0,0],[2,0,0],[0,2,0],[0,0,2]],"labelVertices":true}
++  · 长方体一角四点、画出每个面内的半中线：{"op":"centroid3d","points":[[0,0,0],[3,0,0],[0,4,0],[0,0,5]],"asFaceMedians":true,"asPoints":true}
++  · 只标重心 G 与面重心 G0-G3、不画线框：{"op":"centroid3d","asEdges":false,"asMedians":false}
++  · 只保留面重心与 3:1 读数：{"op":"centroid3d","asEdges":false,"asMedians":false,"asFaceMedians":true,"labelCentroid":false}
++- 约束：points 非四个合法点 / 四点共面或重合 / 面退化 / vertexSize 越界 / 开关非布尔 / 八输出开关全关 / id 非法 —— 整条原子拒绝、零副作用。
++- 铁律：centroid3d 是 3D 命令；2D 的「三角形重心 / 三角形中线 / 线段中点」在本分支依旧不认识，只有明确提到「四面体 / 三棱锥 / 空间四点」+「重心 / 中线」才用本命令。`;
+
+export const BOARD3D_CENTROID_PROMPT_OPS = Object.freeze(['centroid3d']);
+
+/**
+ * D42 立体专属词意图识别扩展（纯追加，不改 D1~D41 的任何意图正则）：
+ * 必须带「四面体 / 三棱锥 / 空间四点」等立体词 + 「重心 / 中线」，
+ * 避免把 2D 的「三角形重心 / 中线」误切到 3D 分支。
+ */
+export const BOARD3D_CENTROID_INTENT_RE = /(四面体|三棱锥|空间四点|四面.{0,4}重心).{0,12}(重心|质心|中线)|(重心|质心|中线).{0,10}(四面体|三棱锥|空间四点)/;
+
+/** 判断自然语言是否含 D42 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isCentroid3DIntent(text) {
+  return BOARD3D_CENTROID_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}

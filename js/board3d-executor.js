@@ -47,6 +47,7 @@ import { resolveRelation3D } from './board3d-relation.js';
 import { resolveCircumsphere3D } from './board3d-circumsphere.js';
 import { resolveInsphere3D } from './board3d-insphere.js';
 import { resolveEuler3D } from './board3d-euler.js';
+import { resolveCentroid3D } from './board3d-centroid.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -475,6 +476,14 @@ export const BOARD3D_EULER_OPS = Object.freeze(['euler3d']);
 /** 含全部扩展命令的完整集（41 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE32_OPS = Object.freeze([
   ...BOARD3D_COMPLETE31_OPS, ...BOARD3D_EULER_OPS,
+]);
+
+// 2026-11-26 D42：centroid3d 四面体重心与四条中线（重心分中线 3:1、四等分体积）。
+// 同样单独成组、不并入历史契约常量，历史常量逐字不变。
+export const BOARD3D_CENTROID_OPS = Object.freeze(['centroid3d']);
+/** 含全部扩展命令的完整集（42 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE33_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE32_OPS, ...BOARD3D_CENTROID_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1740,6 +1749,34 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: euFailed.length === 0 && euCreated.length > 0,
             count: eur.items.length, created: euCreated, meta: eur.meta,
             ...(euFailed.length ? { failed: euFailed } : {}),
+          });
+          break;
+        }
+        case 'centroid3d': {
+          // 2026-11-26 D42：四面体重心与四条中线（G 分中线 3:1、四等分体积）。
+          // getState 仅供 id 避让、缺失/抛错降级为空场景整批不中断；id 冲突分项失败、
+          // api.add 返回 null/false 分项回报；2D 命令仍由 default 拒绝。
+          let ctState = {};
+          try { ctState = (a.getState ? a.getState() : {}) || {}; } catch (_) { ctState = {}; }
+          const ctr = resolveCentroid3D(cmd, ctState);
+          if (!ctr.ok) {
+            results.push({ op, ok: false, error: ctr.error });
+            break;
+          }
+          const ctCreated = [];
+          const ctFailed = [];
+          for (const item of ctr.items) {
+            if (known.has(item.id)) { ctFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { ctFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            ctCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: ctFailed.length === 0 && ctCreated.length > 0,
+            count: ctr.items.length, created: ctCreated, meta: ctr.meta,
+            ...(ctFailed.length ? { failed: ctFailed } : {}),
           });
           break;
         }
