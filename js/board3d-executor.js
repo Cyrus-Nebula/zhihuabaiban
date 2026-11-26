@@ -50,6 +50,7 @@ import { resolveEuler3D } from './board3d-euler.js';
 import { resolveCentroid3D } from './board3d-centroid.js';
 import { resolveSolidmetrics3D } from './board3d-solidmetrics.js';
 import { resolveSectionsphere3D } from './board3d-sectionsphere.js';
+import { resolveCircumcircle3D } from './board3d-circumcircle.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -503,6 +504,15 @@ export const BOARD3D_SECTIONSPHERE_OPS = Object.freeze(['sectionsphere3d']);
 /** 含全部扩展命令的完整集（44 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE35_OPS = Object.freeze([
   ...BOARD3D_COMPLETE34_OPS, ...BOARD3D_SECTIONSPHERE_OPS,
+]);
+
+// 2026-11-27 D45：circumcircle3d 空间不共线三点定圆（圆心/半径线性解 + 三边 + 圆 + 半径 + 法向）。
+// 同样单独成组、不并入历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / … / COMPLETE35 44 条），
+// 历史常量逐字不变。
+export const BOARD3D_CIRCUMCIRCLE_OPS = Object.freeze(['circumcircle3d']);
+/** 含全部扩展命令的完整集（45 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE36_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE35_OPS, ...BOARD3D_CIRCUMCIRCLE_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1853,6 +1863,35 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: ssFailed.length === 0 && ssCreated.length > 0,
             count: ssr.items.length, created: ssCreated, meta: ssr.meta,
             ...(ssFailed.length ? { failed: ssFailed } : {}),
+          });
+          break;
+        }
+        case 'circumcircle3d': {
+          // 2026-11-27 D45：空间不共线三点定圆（三边线框 + 圆闭合环 + 圆心到三顶点半径 +
+          // 可选法向示意 + O/A/B/C/R/n 标注，三点到圆心恒等距、采样点共面且距 O 为 R）。
+          // getState 仅供 id 避让、缺失/抛错降级为空场景整批不中断；id 冲突分项失败、
+          // api.add 返回 null/false 分项回报；2D 命令仍由 default 拒绝。
+          let ccState = {};
+          try { ccState = (a.getState ? a.getState() : {}) || {}; } catch (_) { ccState = {}; }
+          const ccr = resolveCircumcircle3D(cmd, ccState);
+          if (!ccr.ok) {
+            results.push({ op, ok: false, error: ccr.error });
+            break;
+          }
+          const ccCreated = [];
+          const ccFailed = [];
+          for (const item of ccr.items) {
+            if (known.has(item.id)) { ccFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { ccFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            ccCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: ccFailed.length === 0 && ccCreated.length > 0,
+            count: ccr.items.length, created: ccCreated, meta: ccr.meta,
+            ...(ccFailed.length ? { failed: ccFailed } : {}),
           });
           break;
         }

@@ -3769,3 +3769,36 @@ export const BOARD3D_SECTIONSPHERE_INTENT_RE = /(球|球面|球体|截球).{0,14
 export function isSectionsphere3DIntent(text) {
   return BOARD3D_SECTIONSPHERE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-27 D45 追加（仅在文件最末尾追加，上方 D1~D44 一切内容逐字未动）：空间不共线三点定圆。
+export const BOARD3D_CIRCUMCIRCLE_PROMPT = `
++- 用途：给三个不共线的空间点 points=[p0,p1,p2]，自动反求它们所在圆的圆心 O 与半径 R（无需先算圆心），一次画出三角形线框 + 圆（任意朝向）+ 圆心到三顶点的半径线段 + 圆心处法向示意，并标出圆心 O、顶点 A/B/C、半径 R（可选法向 n）。arc3d 要先给圆心与半径、circle 内置图元固定水平且要先给圆心半径、circumsphere3d/insphere3d/euler3d 只求球，本命令补齐「给定空间三点反求圆」的缺口。
++- 命令格式：{"op":"circumcircle3d","id":"cc","points":[[1,0,0],[-0.5,0.866,0],[-0.5,-0.866,0]],"segments":64,"normalLen":1,"asTriangle":true,"asCircle":true,"asRadii":true,"asNormal":false,"asPoints":false,"labelCenter":true,"labelVertices":true,"labelRadius":true,"labelNormal":false,"vertexSize":0.1,"color":"#2b7fd4"}
++  · points：三个不共线点 [p0,p1,p2]（缺省为 xy 平面单位圆内接正三角形）；圆心 O 在三点平面内、满足 |O−p0|=|O−p1|=|O−p2|，半径 R=|O−p0|，并用 R=abc/(4S) 二阶交叉校验（a/b/c 为三边长、S 为三角形面积）。
++  · segments：圆采样段数（默认 64，8~512 整数）；normalLen：圆心处法向示意线段长度（默认 1，0.01~10）。
++  · asTriangle / asCircle / asRadii / asNormal / asPoints / labelCenter / labelVertices / labelRadius / labelNormal：输出开关，其中前三项（线框类）至少开一个。asTriangle 画三边线框；asCircle 画圆闭合环；asRadii 画圆心到三顶点半径线段；asNormal 画圆心处垂直圆平面的法向示意；asPoints 在圆心/三顶点/圆采样点放小球；标注依次标 O、A/B/C、R=n 数值、法向 n。
++  · vertexSize / color / radiusColor / normalColor / labelColor / opacity：样式；数值只要在命令里出现就必须是合法有限数（支持数字字符串）。
++- 几何守恒：圆采样点 Q 满足 |Q−O|=R（恒距圆心为 R）、(Q−O)·n=0（恒在圆平面内，n=normalize((p1−p0)×(p2−p0)))；三个输入点到 O 恒等距；法向线段恒垂直圆平面。任一守恒失败整条拒绝，绝不画假圆。
++- 示例：
++  · 默认单位圆（内接正三角形三点）：{"op":"circumcircle3d"}
++  · xy 平面直角三角形外接圆（圆心=斜边中点 (1,1,0)、R=√2）：{"op":"circumcircle3d","points":[[0,0,0],[2,0,0],[0,2,0]]}
++  · 竖直/倾斜平面三点定圆（法向由三点自动定）：{"op":"circumcircle3d","points":[[1,0,0],[0,1,0],[0,0,1]]}
++  · 加密采样、开法向示意与小球：{"op":"circumcircle3d","segments":96,"asNormal":true,"labelNormal":true,"asPoints":true}
++  · 只保留圆与半径、不画三边与标注：{"op":"circumcircle3d","asTriangle":false,"labelCenter":false,"labelVertices":false}
++- 约束：points 非三点 / 任一点非三元组 / 三点共线或重合 / 病态近共线 / segments 越界非整数 / normalLen·vertexSize 越界 / 开关非布尔 / 三输出开关全关 / id 非法 / 两解式不符 —— 整条原子拒绝、零副作用。
++- 铁律：circumcircle3d 是 3D 命令；2D 的「三角形外接圆 / 不共线三点确定一个圆（平面）」在本分支依旧不认识，只有明确提到「空间 / 立体 / 三维 / 竖直平面 / 倾斜平面」+「三点定圆 / 外接圆 / 过三点的圆 / 空间圆」才用本命令。`;
+
+export const BOARD3D_CIRCUMCIRCLE_PROMPT_OPS = Object.freeze(['circumcircle3d']);
+
+/**
+ * D45 立体专属词意图识别扩展（纯追加，不改 D1~D44 的任何意图正则）：
+ * 必须带「空间 / 立体 / 三维 / 竖直/倾斜平面 / 空间三点」等立体信号
+ * + 「三点定圆 / 外接圆 / 过三点的圆 / 空间圆」，避免把 2D 的平面三角形外接圆
+ * （含「不共线三点确定一个平面圆」这类平面说法）误切到 3D 分支。
+ */
+export const BOARD3D_CIRCUMCIRCLE_INTENT_RE = /(空间|立体|三维|3d|空间三点|倾斜平面|竖直平面).{0,16}(三点定圆|外接圆|过三点.{0,4}圆|圆)|(三点定圆|空间圆|空间三点).{0,12}(圆心|半径|圆|外接)/i;
+
+/** 判断自然语言是否含 D45 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isCircumcircle3DIntent(text) {
+  return BOARD3D_CIRCUMCIRCLE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}

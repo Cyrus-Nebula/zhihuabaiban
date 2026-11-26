@@ -558,6 +558,13 @@ async function send() {
         const seg = m.segmentCount != null ? m.segmentCount : '?';
         appendLog('ai', `已生成平面截球截面圆（球心 [${(m.center || []).join(',')}]，R=${m.radius != null ? m.radius : '?'}，d=${m.distance != null ? m.distance : '?'}，r=${m.sectionRadius != null ? m.sectionRadius : '?'}，r²+d²=R²）：${seg} 段。`);
       }
+      // 2026-11-27 D45：circumcircle3d 展示空间三点定圆读数（数值以画板返回为准）。
+      for (const cc of results) {
+        if (!cc.ok || cc.op !== 'circumcircle3d') continue;
+        const m = cc.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        appendLog('ai', `已生成空间三点定圆（圆心 [${(m.center || []).join(',')}]，R=${m.radius != null ? m.radius : '?'}，三点到圆心等距、采样点共面）：${seg} 段。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);
