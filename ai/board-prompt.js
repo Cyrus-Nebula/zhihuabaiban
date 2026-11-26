@@ -550,6 +550,17 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线读数在真实
  *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：直角三角形斜边中线、圆内接四边形对角互补）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-26 第三十一轮）：只追加 2D 作图主干（例54 直角三角形斜边中线 few-shot），
+ *   3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；核心工作流 / 铁律 /
+ *   命令清单既有行 / 既有例1-53 逐字未动、无删除行。落实上一轮 TODO 交接项②的首项——直角三角形斜边中线：
+ *   例13 只覆盖一般三角形中位线，遇到直角三角形时 AI 常把【斜边中线】误作斜边上的高/垂线、把中点取在直角边、
+ *   把 AM=BC/2 写成 AM=BC 或 AB/2、心算 M 坐标写死 point。本文件在例53 后追加例54，给出
+ *   「读状态确认直角顶点与斜边 → 斜边 midpoint → segment 中线 → verify 直角/半斜边/等距 + oncircle 回读」范式；
+ *   docs 追加用例 121/122。全部复用现有 op（point/polygon/segment/midpoint/circle/verify），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线读数在真实
+ *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：圆内接四边形对角互补、直角三角形斜边高与射影定理）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2139,6 +2150,43 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ④ 命令顺序：先 point 建顶点 → polygon/segment 建边 → midpoint → segment MN → verify；引用不存在的边会整条拒绝；
 //   ⑤ 协议无原生 midline op / verify kind:midline：平行靠 parallel 残差，长度关系靠三个 distance + message 说明；
 //   ⑥ verify pass:false 多为取错中点（对角线/两底）或 expect 抄错，按例6/例10 只重发中点与中位线命令，不要 clear 整板。
+
+== 例54：直角三角形斜边中线（= 斜边一半，斜边中点到三顶点等距即外心；易错：当斜边高、取直角边中点、忘除以2） ==
+用户："画直角三角形 ABC（A(0,0) B(6,0) C(0,8)，∠A=90°），取斜边 BC 中点 M、连 AM，验证 AM=BC/2 且 M 到三顶点等距。"
+思路：先读当前画板快照确认 A/B/C 是否已存在：已存在就复用旧 id、只补中点与中线；不存在再按 point 建三点。
+      先判直角顶点：本例 ∠A=90°（AB 水平、AC 竖直），故【斜边是 BC】，斜边中点 M=mid(B,C)=(3,4)，
+      不是直角边 AB 的中点(3,0)，也不是 AC 的中点(0,4)。数值规划：BC=√(6²+8²)=10、AM=√(3²+4²)=5=BC/2，
+      MA=MB=MC=5，M 恰为外心、外接圆半径 5 过 A/B/C。
+      自检：verify angle [B,A,C]=90 + distance BC=10 / AM=5 / MB=5 / MC=5 + oncircle A/B/C 在 circ 上；
+      协议无 verify kind:median/hypotenuse，AM=BC/2 靠两个 distance 读数在 message 里说明。
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":6,"y":0}
+{"op":"point","id":"C","x":0,"y":8}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"segment","id":"sBC","from":"B","to":"C"}       // 斜边 BC：先建边，再取其中点
+{"op":"midpoint","id":"M","of":["B","C"]}             // M(3,4)：斜边中点，不是直角边中点、更不是垂足
+{"op":"segment","id":"med","from":"A","to":"M"}       // AM 才是斜边中线
+{"op":"circle","id":"circ","center":"M","radius":5}   // 可选：外接圆过 A/B/C，直观显示 M 是外心；用户只要中线时可省略 circ 与 oncircle
+{"op":"verify","kind":"angle","of":["B","A","C"],"expect":90,"tol":0.5}     // 顶点 A 在中间，确认直角
+{"op":"verify","kind":"distance","of":["B","C"],"expect":10,"tol":0.05}     // 斜边=10
+{"op":"verify","kind":"distance","of":["A","M"],"expect":5,"tol":0.05}      // 中线=5=BC/2
+{"op":"verify","kind":"distance","of":["B","M"],"expect":5,"tol":0.05}      // MB=BC/2
+{"op":"verify","kind":"distance","of":["C","M"],"expect":5,"tol":0.05}      // MC=BC/2
+{"op":"verify","kind":"oncircle","of":["A","circ"],"expect":0,"tol":0.05}   // 三点同圆 ⇒ M 为外心
+{"op":"verify","kind":"oncircle","of":["B","circ"],"expect":0,"tol":0.05}
+{"op":"verify","kind":"oncircle","of":["C","circ"],"expect":0,"tol":0.05}
+// message："∠A=90°，斜边 BC=10，中点 M(3,4)；斜边中线 AM=5=BC/2，且 MA=MB=MC=5，外接圆过 A/B/C，M 即外心。"
+// 变式 A（直角换到 B：A(0,0) B(0,6) C(8,6)）：此时斜边是 AC=10、中点 M(4,3)、中线 BM=5，
+//   改 midpoint of:[A,C] → segment B→M → verify angle [A,B,C]=90 + distance AC=10/BM=5/AM=5/CM=5；
+//   千万别沿用上一例的 BC/中点(3,4)——换直角顶点必须重新判定斜边。
+// 变式 B（快照已有直角三角形，只补斜边中线）：不重发 point/polygon，按快照确认直角顶点 → midpoint 斜边两端 →
+//   segment 中线 → 上面 8 条 verify；顶点被滑动条驱动时只引用 midpoint，不把 (3,4)/半径 5 硬写进 point/circle。
+// 要点：① 先判直角顶点再定斜边：直角在 A ⇒ 斜边 BC；直角在 B ⇒ 斜边 AC；别把直角边中点当斜边中点；
+//   ② 斜边中线 ≠ 斜边上的高：高是直角顶点到斜边的垂足（本例≈(3.84,2.88)），中线端点是斜边中点(3,4)，仅等腰直角时重合；
+//   ③ AM=BC/2 与 MA=MB=MC 联动自检；不要写成 AM=AB/2、AM=BC 或 MA=MB≠MC；
+//   ④ 命令顺序：point → polygon → segment 斜边 → midpoint → segment 中线 →（可选 circle）→ verify；引用未定义 id 会整条拒绝；
+//   ⑤ 协议无原生 median op / verify kind:median：半斜边关系靠 distance 读数 + message，外心身份靠 oncircle 三点；
+//   ⑥ verify pass:false 多为直角顶点判错/中点取在直角边/expect 沿用旧值，按例6/例10 只重发中点、中线、verify，不要 clear 整板。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。

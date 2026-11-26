@@ -985,3 +985,27 @@
 - 协议无原生 `midline` op，也无 `verify kind:midline`：中位线靠两腰 midpoint + segment 构造，性质靠 parallel/distance 回读说明。
 - 顶点被滑动条驱动时，中位线必须始终用 midpoint 引用两腰端点；不要照抄示例中的定值坐标点。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第三十一轮增量：直角三角形斜边中线 few-shot（2026-11-26）
+> 承接第三十轮 TODO②「继续补易错图形 few-shot」的首项。例13 只覆盖一般三角形中位线（两边中点连线），
+> 遇到直角三角形时 AI 常把【斜边中线】误作斜边上的高（垂足）、把中点取在直角边、把 AM=BC/2 写成 AM=BC 或 AB/2，
+> 或心算 M 坐标写死 point。本轮仅在 `ai/board-prompt.js` 例53 后纯追加例54，
+> 复用既有 op（point/polygon/segment/midpoint/circle/verify），`js/executor.js` 执行分支 /
+> 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 121 | Rt△ABC A(0,0) B(6,0) C(0,8)（∠A=90°），取斜边 BC 中点 M 连 AM，验证 AM=BC/2 且 M 到三顶点等距 | 读快照确认 A/B/C → `point` A/B/C → `polygon` tri → `segment` sBC → `midpoint` M of:[B,C]=(3,4) → `segment` med A,M → `circle` circ center:M radius:5 → `verify` angle [B,A,C]=90 + distance BC=10/AM=5/BM=5/CM=5 + oncircle A/B/C → message 说明 AM=BC/2=5、MA=MB=MC=5、M 为外心 | ✅ | 把中线画成斜边高（垂足≈(3.84,2.88)）；中点取 AB(3,0)/AC(0,4)；AM=BC 或 AB/2；M 写死 point；换直角顶点仍沿用 BC |
+| 122 | 变式：直角换到 B(0,6) 的 A(0,0) B(0,6) C(8,6) / 快照已有直角三角形只补中线 | 直角在 B ⇒ 斜边 AC=10、中点 M(4,3)、中线 BM=5；`midpoint` M of:[A,C] → `segment` B,M → verify angle [A,B,C]=90 + distance AC=10/BM=5/AM=5/CM=5；只补作时不重发 point/polygon，按快照确认直角顶点后直接 midpoint+segment+verify；滑动条驱动时不写死 (3,4)/半径 5 | ✅ | 沿用上例 BC 作斜边；把直角边 AB 中点当斜边中点；重发 point 造成重复顶点；expect 沿用 10/5 却不重算斜边 |
+
+## TODO 交接更新（2026-11-26 第三十一轮）
+1. [本轮已完成] 例54 直角三角形斜边中线 few-shot + docs 用例 121/122（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：圆内接四边形对角互补、直角三角形斜边高与射影定理）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第三十一轮追加）
+- 例54（用例 121/122）：M 是 midpoint 派生点，AM/BC、外接圆半径读数保留三位小数，verify distance/angle/oncircle 用 tol:0.05/0.5，非解析精确值。
+- 协议无原生 `median` op，也无 `verify kind:median/hypotenuse`：AM=BC/2 靠 distance 读数 + message 说明，外心身份靠三点 oncircle 回读。
+- 斜边中线仅在等腰直角三角形时才与斜边高重合；一般直角三角形两者落点不同，切勿把垂足当作斜边中点。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
