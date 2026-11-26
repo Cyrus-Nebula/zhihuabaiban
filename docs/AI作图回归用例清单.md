@@ -1055,3 +1055,28 @@
 - 协议无原生 `cyclicQuadrilateral` op，也无 `verify kind:supplementary`：共圆靠 oncircle 四回读，"和=180°"靠 angle 读数 + message 说明。
 - 圆内接四边形仅在四点共圆时对角互补；一般四边形/点被拖离圆时不适用，AI 不得硬套定理。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+
+## 第三十四轮增量：圆内接四边形托勒密定理 few-shot（2026-11-26）
+> 承接第三十三轮 TODO②「继续补易错图形 few-shot」的下一候选。例56 覆盖同组四点的对角互补，
+> 本例覆盖托勒密定理 AC·BD=AB·CD+BC·DA：AI 常把邻边相乘 AB·BC+CD·DA 当对边和、把对角线当边、
+> 四点不共圆还硬写等号、polygon 顶点顺序交叉自交。本轮仅在 `ai/board-prompt.js` 例56 后纯追加例57，
+> 复用既有 op（point/circle/polygon/segment/measure/verify），`js/executor.js` 执行分支 / 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 127 | 圆 O(0,0) 半径 5 上的四边形 ABCD：A(5,0) B(3,4) C(-4,3) D(0,-5)，验证托勒密 AC·BD=AB·CD+BC·AD | 读快照确认 O/A/B/C/D → `point` O → `circle` c1 radius:5 → `point` A/B/C/D → `polygon` quad 圆周顺序 [A,B,C,D] → `segment` dAC A-C / dBD B-D → `measure` distance 六段 → `verify` oncircle 四点 + distance AB=4.472/BC=7.071/CD=8.944/DA=7.071/AC=9.487/BD=9.487 → message 说明 AC·BD≈90=40+50 | ✅ | 对边配对写成 AB·BC+CD·DA；把边当对角线；四点不共圆仍写等号；polygon 顺序 A-B-D-C 自交；漏项；编造 verify kind:ptolemy |
+| 128 | 变式：快照已有圆与四点只补对角线 / 顶点被滑动条驱动时乘积恒等自检 | 先按快照 oncircle 确认共圆再 segment+measure/verify；只补作时不重发 point/circle/polygon；新点用 glider 约束到 c1；动态点六段数值变但乘积恒等，expect 按快照重算或用 inspect kind:distance 回读，不沿用 9.487/90；点离圆则 oncircle pass:false，message 改述托勒密不等式未必取等 | ✅ | 沿用旧 expect；把任意四点当共圆；重发 point 造成重复顶点；离圆仍硬说等号；把对角线 AC/BD 当对边 |
+
+## TODO 交接更新（2026-11-26 第三十四轮）
+1. [本轮已完成] 例57 圆内接四边形托勒密定理 few-shot + docs 用例 127/128（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高/圆内接对角/托勒密乘积读数在真实 JSXGraph 上落点目视确认。
+3. [待办] 继续补易错图形 few-shot（下一候选：直角三角形内切圆半径与面积关系 r=S/s、欧拉线）。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第三十四轮追加）
+- 例57（用例 127/128）：六段距离读数保留三位小数（4.472/7.071/8.944/9.487），verify distance 用 tol:0.05；乘积 90 为 message 说明值，非 verify 断言。
+- 协议无原生 `ptolemy` op，也无 `verify kind:ptolemy`：共圆靠 oncircle 四回读，"乘积相等"靠六段 distance 读数 + message 说明。
+- 托勒密定理仅在四点共圆（或共线退化）时取等号；一般四点只有不等式 AC·BD≤AB·CD+BC·DA，AI 不得硬写等式。
+- 本例与例56 用同一组四点：例56 验证角互补、例57 验证边乘积，两者不可互相顶替。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

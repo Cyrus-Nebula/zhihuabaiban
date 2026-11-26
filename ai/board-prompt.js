@@ -584,6 +584,19 @@
  * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高/圆内接对角读数在真实
  *   JSXGraph 落点目视确认；② 继续补易错图形 few-shot（下一候选：直角三角形内切圆半径与面积关系、圆内接四边形托勒密定理）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-26 第三十四轮）：只追加 2D 作图主干（例57 圆内接四边形托勒密定理 few-shot），
+ *   3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；核心工作流 / 铁律 /
+ *   命令清单既有行 / 既有例1-56 逐字未动、无删除行。落实上一轮 TODO 交接项②的下一候选——托勒密定理：
+ *   例56 已覆盖同一组圆上四点的对角互补，本例覆盖对边乘积关系 AC·BD=AB·CD+BC·DA；AI 常把
+ *   邻边相乘 AB·BC+CD·DA 当对边和、把对角线当边、四点不共圆还硬写等号、polygon 顺序交叉自交。
+ *   本文件在例56 后追加例57，给出「先 oncircle 确认共圆 → polygon 圆周顺序 → segment 两对角线 →
+ *   measure/verify 六段距离 → message 说明乘积相等」范式；docs 追加用例 127/128。全部复用现有 op
+ *   （point/circle/polygon/segment/measure/verify），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/
+ *   斜边高/圆内接对角/托勒密乘积读数在真实 JSXGraph 落点目视确认；② 继续补易错图形 few-shot
+ *   （下一候选：直角三角形内切圆半径与面积关系 r=S/s、欧拉线）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2289,6 +2302,56 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ⑤ 命令顺序：point O → circle c1 → point A/B/C/D → polygon → angle → verify；引用的 id 必须先定义；
 //   ⑥ 协议无 verify kind:supplementary，"和=180°"靠四个 angle 读数 + message；动态顶点 expect 要按快照重算；
 //   ⑦ verify pass:false 多为点不在圆上/顶点顺序交叉/expect 沿用旧值，按例6/例10 只重发错的点、polygon、verify，不要 clear 整板。
+
+== 例57：圆内接四边形托勒密定理（AC·BD=AB·CD+BC·DA；易错：邻边当对边、对角线当边、不共圆硬套等号、顶点顺序交叉） ==
+用户："画圆 O（圆心 (0,0)、半径 5）上的四边形 ABCD：A(5,0) B(3,4) C(-4,3) D(0,-5)，验证托勒密定理 AC·BD=AB·CD+BC·AD。"
+思路：先读当前画板快照确认 O/A/B/C/D 是否已存在：已存在就复用旧 id、只补对角线/测量/自检；不存在再按 point 建点。
+      数值规划：OA=OB=OC=OD=5，四点同圆；polygon 必须按【圆周顺序 A→B→C→D】连（与例56 同一组点，
+      顺序写成 A→B→D→C 会自交、对角线也认错）。托勒密的配对是：对边 AB↔CD、BC↔DA，对角线才是 AC、BD；
+      恒等式必须写成 AC·BD = AB·CD + BC·DA，最常见的错是写成 AB·BC + CD·DA（邻边相乘）或漏一项。
+      预读六段：AB=√20≈4.472、BC=√50≈7.071、CD=√80≈8.944、DA=√50≈7.071、AC=BD=√90≈9.487。
+      故 AC·BD=9.487×9.487≈90，AB·CD+BC·DA≈4.472×8.944+7.071×7.071≈40+50=90（乘积精确相等）。
+      自检：先 verify oncircle 四点确认真的共圆（四点不共圆则托勒密只是不等式、不能写等号），
+      再 measure/verify 六段距离回读；协议无 verify kind:ptolemy，"乘积相等"靠六段读数 + message 说明，
+      绝对不要发明新 kind 或新 op。
+{"op":"point","id":"O","x":0,"y":0}
+{"op":"circle","id":"c1","center":"O","radius":5}
+{"op":"point","id":"A","x":5,"y":0}
+{"op":"point","id":"B","x":3,"y":4}
+{"op":"point","id":"C","x":-4,"y":3}
+{"op":"point","id":"D","x":0,"y":-5}
+{"op":"polygon","id":"quad","points":["A","B","C","D"]}    // 圆周顺序；A-B-D-C 会交叉自交
+{"op":"segment","id":"dAC","from":"A","to":"C"}            // 对角线 AC
+{"op":"segment","id":"dBD","from":"B","to":"D"}            // 对角线 BD
+{"op":"measure","kind":"distance","of":["A","B"],"label":"AB=√20≈4.472"}
+{"op":"measure","kind":"distance","of":["B","C"],"label":"BC=√50≈7.071"}
+{"op":"measure","kind":"distance","of":["C","D"],"label":"CD=√80≈8.944"}
+{"op":"measure","kind":"distance","of":["D","A"],"label":"DA=√50≈7.071"}
+{"op":"measure","kind":"distance","of":["A","C"],"label":"对角线 AC=√90≈9.487"}
+{"op":"measure","kind":"distance","of":["B","D"],"label":"对角线 BD=√90≈9.487"}
+{"op":"verify","kind":"oncircle","of":["A","c1"],"expect":0,"tol":0.05,"label":"A 共圆"}
+{"op":"verify","kind":"oncircle","of":["B","c1"],"expect":0,"tol":0.05,"label":"B 共圆"}
+{"op":"verify","kind":"oncircle","of":["C","c1"],"expect":0,"tol":0.05,"label":"C 共圆"}
+{"op":"verify","kind":"oncircle","of":["D","c1"],"expect":0,"tol":0.05,"label":"D 共圆"}
+{"op":"verify","kind":"distance","of":["A","B"],"expect":4.472,"tol":0.05,"label":"AB=√20"}
+{"op":"verify","kind":"distance","of":["B","C"],"expect":7.071,"tol":0.05,"label":"BC=√50"}
+{"op":"verify","kind":"distance","of":["C","D"],"expect":8.944,"tol":0.05,"label":"CD=√80"}
+{"op":"verify","kind":"distance","of":["D","A"],"expect":7.071,"tol":0.05,"label":"DA=√50"}
+{"op":"verify","kind":"distance","of":["A","C"],"expect":9.487,"tol":0.05,"label":"AC=√90"}
+{"op":"verify","kind":"distance","of":["B","D"],"expect":9.487,"tol":0.05,"label":"BD=√90"}
+// message："四点均在圆 O 上，AC·BD≈9.487×9.487=90，AB·CD+BC·DA≈4.472×8.944+7.071×7.071=40+50=90，圆内接四边形托勒密定理成立。"
+// 变式 A（快照已有圆与四点，只补对角线/测量）：不重发 point/circle/polygon，先按快照数值 oncircle 确认共圆 →
+//   segment dAC/dBD → measure/verify；六段读数按快照重算，不沿用 4.472/7.071/8.944/9.487/90。
+// 变式 B（顶点被 glider/滑动条驱动）：点沿圆滑动时六段数值变但乘积恒等；expect 用 inspect kind:distance 回读或
+//   expectRange，不写死 90；某点被拖离圆则 oncircle pass:false，message 改述"四点不共圆，只有托勒密不等式
+//   AC·BD≤AB·CD+BC·DA 未必取等"，不要硬说等号。
+// 要点：① 对边配对 AB↔CD、BC↔DA，对角线才是 AC、BD；写成 AB·BC+CD·DA 是最典型的错；
+//   ② 先 oncircle 确认四点共圆，不共圆只能说不等式；
+//   ③ polygon 必须按圆周顺序，交叉顺序会自交且对角线认错；
+//   ④ 协议无 ptolemy op / verify kind:ptolemy，乘积关系靠 measure/verify 六段 + message；
+//   ⑤ 引用 id 必须先定义：point O → circle c1 → point A/B/C/D → polygon → segment → measure → verify；
+//   ⑥ 本例与例56 用同一组点：例56 验证角互补、例57 验证边乘积，勿互相顶替；
+//   ⑦ verify pass:false 多为点不共圆/对边配错/expect 沿用旧值，按例6/例10 只重发错的点、对角线、verify，不要 clear 整板。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
