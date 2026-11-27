@@ -597,6 +597,20 @@
  *   斜边高/圆内接对角/托勒密乘积读数在真实 JSXGraph 落点目视确认；② 继续补易错图形 few-shot
  *   （下一候选：直角三角形内切圆半径与面积关系 r=S/s、欧拉线）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-27 第三十六轮）：只追加 2D 作图主干（例59 一般三角形欧拉线
+ *   OG:GH=1:2 few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；
+ *   核心工作流 / 铁律 / 命令清单既有行 / 既有例1-58 逐字未动、无删除行。落实连续多轮 TODO 交接项候选
+ *   ——欧拉线：例38 只在直角三角形顺带做了 collinear（外心=斜边中点、垂心=直角顶点），
+ *   没有覆盖「一般斜三角形三心不重合、G 在 O-H 之间、OG:GH=1:2」这一高频考点，AI 常把比例写反、
+ *   把等边/等腰退化硬套、心算垂心抄错、或编造 kind:ratio。本文件在例58 后追加例59，给出
+ *   「两阶段 inspect center 回读 O/G/H → 落 point + line 欧拉线 → collinear + 三段 distance 回读 →
+ *   message 用两段距离说明比值」范式；docs 追加用例 131/132。全部复用现有 op
+ *   （point/polygon/inspect center/line/verify），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/
+ *   斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值读数在真实 JSXGraph 落点目视确认；
+ *   ② 继续补易错图形 few-shot（下一候选：三角形九点圆、旁心与旁切圆）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2388,6 +2402,42 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ⑤ 切点 = 垂足，BC 中点 (3,4) 不是切点，切点是 F(3.6,3.2)；
 //   ⑥ S/s 与 (a+b−c)/2 两式必须都等于回读的 r，不一致就重查读数，不要硬写等号；
 //   ⑦ verify pass:false 多为 s 用错/斜边认错/切点当中点/expect 沿用旧值，按例6/例10 只重发错的圆、垂线、verify，不要 clear 整板。
+
+== 例59：一般三角形欧拉线（外心 O、重心 G、垂心 H 共线且 OG:GH=1:2；易错：比例写反、心算垂心、等腰/等边退化硬套） ==
+用户："三角形 A(0,0) B(9,0) C(3,6)，画出欧拉线，验证 O、G、H 共线且 OG:GH=1:2。"
+思路：欧拉线是外心 O、重心 G、垂心 H 三点共线，且 G 分 OH 为 OG:GH=1:2（G 靠近 O）。三心坐标一律用
+  inspect kind:center 回读（本组点 G(4,2)、O(4.5,1.5)、H(3,3)），绝不心算——垂心 H=A+B+C−2O 最易抄错。
+第一轮：先建三点 + 三角形，末尾发一条 center 查询（只读、不画图），本轮不写任何依赖三心的命令：
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":9,"y":0}
+{"op":"point","id":"C","x":3,"y":6}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"inspect","kind":"center","of":["A","B","C"]}
+系统回【查询读数】：「center(A,B,C): 重心G(4,2); 内心I(3.611,2.232) r=2.232; 外心O(4.5,1.5) R=4.743; 垂心H(3,3); 面积=27」。
+第二轮：只用读数里的精确数值落点，line 画欧拉线（过 O、H 即可，G 自动落线上），再自检：
+{"op":"point","id":"O","x":4.5,"y":1.5}
+{"op":"point","id":"G","x":4,"y":2}
+{"op":"point","id":"H","x":3,"y":3}
+{"op":"line","id":"euler","through":["O","H"]}
+{"op":"verify","kind":"collinear","of":["O","G","H"],"expect":0,"tol":0.05,"label":"O,G,H 共线"}
+{"op":"verify","kind":"distance","of":["O","G"],"expect":0.707,"tol":0.05,"label":"OG≈0.707"}
+{"op":"verify","kind":"distance","of":["G","H"],"expect":1.414,"tol":0.05,"label":"GH≈1.414"}
+{"op":"verify","kind":"distance","of":["O","H"],"expect":2.121,"tol":0.05,"label":"OH≈2.121"}
+// message："O(4.5,1.5)、G(4,2)、H(3,3) 三点共线；|OG|≈0.707、|GH|≈1.414，GH=2·OG，故 OG:GH=1:2 且 G 靠近 O。"
+// 比值说明靠两段 distance 回读 + message（协议无 verify kind:ratio，别编 ratio/expectRatio，例57 托勒密同法）。
+// 变式 A（快照已有三角形，只补欧拉线）：不重发 point/polygon，先 inspect center 读该三点 O/G/H，再落点、line、verify；
+//   expect 按快照重算（本例 0.707/1.414/2.121 只适用这组点），不要沿用旧值。
+// 变式 B（等腰三角形，非退化）：两腰相等时欧拉线与对称轴重合，O/G/H 仍共线且 OG:GH=1:2，照常 inspect 回读落点；
+//   勿因"对称"就心算 O/G/H 在轴上任意位置——轴上坐标仍要回读。
+// 变式 C（等边三角形退化）：O=G=H 三点重合，欧拉线退化成一点、GH=0，OG:GH=1:2 无意义（0:0）；
+//   inspect center 看到 O/G/H 读数相同即 message 如实说明"等边三角形欧拉线退化为一点"，不画 line、不写比值断言。
+// 变式 D（顶点被滑动条驱动）：三心随顶点动但共线与 1:2 恒成立，expect 按 inspect 回读或 expectRange，不写死 0.707/1.414。
+// 要点：① 三心坐标全部来自 inspect center 回读，不心算（垂心 H=A+B+C−2O、外心中垂线交点最易抄错）；
+//   ② G 在 O 与 H 之间且靠近 O，OG:GH=1:2；写成 GH:GO=1:2 或把 O/H 顺序颠倒就是比例写反；
+//   ③ 共线用 verify kind:collinear（残差≈0），比值靠两段 distance 回读 + message，别编 kind:ratio；
+//   ④ 三点共线不成三角形时 center 读数提示"外心/垂心无意义"，此时不画欧拉线、message 如实说明；
+//   ⑤ 例38 是直角三角形特例（外心=斜边中点、垂心=直角顶点），本例三心都不重合，两者不可互相顶替；
+//   ⑥ verify pass:false 多为三心抄错/比例写反/等边硬套/expect 沿用旧值，按例6/例10 只重发错的点、线、verify，不要 clear 整板。
 
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
