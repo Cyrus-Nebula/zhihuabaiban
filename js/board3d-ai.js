@@ -580,6 +580,13 @@ async function send() {
         const seg = m.segmentCount != null ? m.segmentCount : '?';
         appendLog('ai', `已生成球扇形（R=${m.radius != null ? m.radius : '?'}，h=${m.height != null ? m.height : '?'}，d=${m.distance != null ? m.distance : '?'}，a=${m.baseRadius != null ? m.baseRadius : '?'}，S=${m.surface != null ? m.surface : '?'}，V=2πR²h/3=${m.volume != null ? m.volume : '?'}）：${seg} 段。`);
       }
+      // 2026-11-28 D48：sphericalwedge3d 展示球楔 / 球瓣读数（数值以画板返回为准）。
+      for (const sw of results) {
+        if (!sw.ok || sw.op !== 'sphericalwedge3d') continue;
+        const m = sw.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        appendLog('ai', `已生成球楔（R=${m.radius != null ? m.radius : '?'}，α=${m.angleDeg != null ? m.angleDeg : '?'}°，S曲=2αR²=${m.surfaceCurved != null ? m.surfaceCurved : '?'}，S=${m.surface != null ? m.surface : '?'}，V=2αR³/3=${m.volume != null ? m.volume : '?'}）：${seg} 段。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

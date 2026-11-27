@@ -53,6 +53,7 @@ import { resolveSectionsphere3D } from './board3d-sectionsphere.js';
 import { resolveCircumcircle3D } from './board3d-circumcircle.js';
 import { resolveSphericalcap3D } from './board3d-sphericalcap.js';
 import { resolveSpheresector3D } from './board3d-spheresector.js';
+import { resolveSphericalwedge3D } from './board3d-sphericalwedge.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -537,6 +538,17 @@ export const BOARD3D_SPHERESECTOR_OPS = Object.freeze(['spheresector3d']);
 /** 含全部扩展命令的完整集（47 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE38_OPS = Object.freeze([
   ...BOARD3D_COMPLETE37_OPS, ...BOARD3D_SPHERESECTOR_OPS,
+]);
+
+// 2026-11-28 D48：sphericalwedge3d 球楔 / 球瓣（两过球心大圆平面夹角切出的那一瓣，
+// 公共棱直径 + 两个半大圆侧面 + 球面曲楔面 + R/α/V/S 标注，
+// V=2αR³/3、S曲=2αR²、S侧=πR²、S=S曲+πR²、V=R·S曲/3）。
+// 同样单独成组、不并入历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / … /
+// COMPLETE37 46 / COMPLETE38 47 条），历史常量逐字不变。
+export const BOARD3D_SPHERICALWEDGE_OPS = Object.freeze(['sphericalwedge3d']);
+/** 含全部扩展命令的完整集（48 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE39_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE38_OPS, ...BOARD3D_SPHERICALWEDGE_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1975,6 +1987,36 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: ssFailed.length === 0 && ssCreated.length > 0,
             count: ssr.items.length, created: ssCreated, meta: ssr.meta,
             ...(ssFailed.length ? { failed: ssFailed } : {}),
+          });
+          break;
+        }
+        case 'sphericalwedge3d': {
+          // 2026-11-28 D48：球楔 / 球瓣（两过球心大圆平面夹角切出的那一瓣，
+          // 公共棱直径 + 两个半大圆侧面 + 球面曲楔面 + R/α/V/S 标注，
+          // V=2αR³/3、S曲=2αR²、S侧=πR²、S=S曲+πR²、V=R·S曲/3）。
+          // getState 仅供 id 避让、缺失/抛错降级为空场景整批不中断；id 冲突分项失败、
+          // api.add 返回 null/false 分项回报；2D 命令仍由 default 拒绝。
+          let swState = {};
+          try { swState = (a.getState ? a.getState() : {}) || {}; } catch (_) { swState = {}; }
+          const swr = resolveSphericalwedge3D(cmd, swState);
+          if (!swr.ok) {
+            results.push({ op, ok: false, error: swr.error });
+            break;
+          }
+          const swCreated = [];
+          const swFailed = [];
+          for (const item of swr.items) {
+            if (known.has(item.id)) { swFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { swFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            swCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: swFailed.length === 0 && swCreated.length > 0,
+            count: swr.items.length, created: swCreated, meta: swr.meta,
+            ...(swFailed.length ? { failed: swFailed } : {}),
           });
           break;
         }

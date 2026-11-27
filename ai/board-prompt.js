@@ -4113,3 +4113,33 @@ export const BOARD3D_SPHERESECTOR_INTENT_RE = /(球扇形|球锥|球冠.{0,6}(�
 export function isSpheresector3DIntent(text) {
   return BOARD3D_SPHERESECTOR_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-28 D48 追加（仅在文件最末尾追加，上方 D1~D47 一切内容逐字未动）：球楔 / 球瓣。
+export const BOARD3D_SPHERICALWEDGE_PROMPT = `
++- 命令 sphericalwedge3d（球楔 / 球瓣 · D48）：给一个球（球心 center + 半径 radius）与一条公共棱 axis、一个二面角 angle（度，0<angle<360），取出「由两个都过球心且都含 axis 的半大圆平面夹出的球楔」，一次画出球三大圆 + 公共棱 + 两个半大圆侧面（弧 + 辐条）+ 球面曲楔面（赤道弧 + 纬线弧），并标出 R/α/V/S。服务「球楔体积与表面积、球面二面角、球瓣占全球比例」核心用例。spheresector3d 是单截平面 + 球心锥顶，sphericalcap3d 是单/双平行截平面，dihedral3d 只标角不出实体，都不是球楔。
++- 命令格式：{"op":"sphericalwedge3d","id":"sw","center":[0,0,0],"radius":2,"axis":[0,0,1],"angle":90,"segments":48,"meridians":6,"spokes":6,"asSphere":true,"asFaces":true,"asSurface":true,"asEdge":true,"asPoints":false,"labelRadius":true,"labelAngle":true,"labelVolume":true,"labelArea":true,"labelCurvedArea":true,"vertexSize":0.1,"color":"#2b7fd4"}
++  · α=angle·π/180（弧度）；体积 V=2αR³/3（占整球 4πR³/3 的 α/2π）；球面曲楔面面积 S曲=2αR²；两个半大圆侧面面积 S侧=πR²；总表面积 S=S曲+πR²；恒等式 V=R·S曲/3。
++  · 正交标架 n=unit(axis) 为公共棱方向，u=unit(n×helper)、v=n×u；侧面1 法向 f1=v、径向 w0=u；侧面2 法向 f2=−sinα·u+cosα·v、径向 w1=cosα·u+sinα·v；f1·f2=cosα。
++  · 球楔点 P(ρ,β,φ)=O+ρ(cosβ·n+sinβ(cosφ·u+sinφ·v))，0≤ρ≤R、0≤β≤π、0≤φ≤α；侧面弧点恒在球面且恒在对应半平面，赤道弧与纬线弧点恒在球面。
++  · 开关：asSphere(球三大圆骨架)/asFaces(两个半大圆侧面)/asSurface(球面曲楔面)/asEdge(公共棱直径)/asPoints(小球)，四输出开关至少开一个；labelRadius/labelAngle/labelVolume/labelArea/labelCurvedArea 为读数开关；segments/meridians/spokes 控制采样密度。
++  · 示例：
++  · 默认直角球楔（R=2、α=90°、V=8π/3、S曲=4π、S=8π）：{"op":"sphericalwedge3d"}
++  · 半球楔（α=180°、V=16π/3）：{"op":"sphericalwedge3d","angle":180}
++  · 四分之一球楔沿 x 轴取向并放小球：{"op":"sphericalwedge3d","axis":[1,0,0],"angle":90,"asPoints":true}
++  · 只留球楔轮廓、不画球骨架与标注：{"op":"sphericalwedge3d","asSphere":false,"labelRadius":false,"labelAngle":false,"labelVolume":false,"labelArea":false,"labelCurvedArea":false}
++- 约束：center 非三元组 / radius 越界 / axis 零向量 / angle≤0 或 ≥360 / segments·meridians·spokes 越界非整数 / vertexSize 越界 / 开关非布尔 / 四输出开关全关 / id 非法 / 守恒失败 —— 整条原子拒绝、零副作用。
++- 铁律：sphericalwedge3d 是 3D 命令；2D 的「扇形面积 / 二面角平面角 / 圆缺」在本分支依旧不认识，只有明确提到「球楔 / 球瓣 / 球面二面角 / 球的体积表面积」且带立体词才用本命令。`;
+
+export const BOARD3D_SPHERICALWEDGE_PROMPT_OPS = Object.freeze(['sphericalwedge3d']);
+
+/**
+ * D48 立体专属词意图识别扩展（纯追加，不改 D1~D47 的任何意图正则）：
+ * 必须带「球 / 球面 / 球体」等立体词 + 「球楔 / 球瓣 / 球面二面角 / 球的体积表面积」，
+ * 避免把 2D 的「扇形面积 / 圆缺 / 二面角平面角」误切到 3D 分支。
+ */
+export const BOARD3D_SPHERICALWEDGE_INTENT_RE = /(球楔|球瓣|球面二面角|球面.{0,6}二面角|球被.{0,8}(夹角|切出|切成)|球的(体积|表面积)|半球.{0,4}(体积|表面积)|球面.{0,6}(体积|表面积))/i;
+
+/** 判断自然语言是否含 D48 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isSphericalwedge3DIntent(text) {
+  return BOARD3D_SPHERICALWEDGE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}
