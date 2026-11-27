@@ -587,6 +587,13 @@ async function send() {
         const seg = m.segmentCount != null ? m.segmentCount : '?';
         appendLog('ai', `已生成球楔（R=${m.radius != null ? m.radius : '?'}，α=${m.angleDeg != null ? m.angleDeg : '?'}°，S曲=2αR²=${m.surfaceCurved != null ? m.surfaceCurved : '?'}，S=${m.surface != null ? m.surface : '?'}，V=2αR³/3=${m.volume != null ? m.volume : '?'}）：${seg} 段。`);
       }
+      // 2026-11-28 D49：spheresphere3d 展示两球相交公共圆读数（数值以画板返回为准）。
+      for (const sph of results) {
+        if (!sph.ok || sph.op !== 'spheresphere3d') continue;
+        const m = sph.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        appendLog('ai', `已生成两球相交公共圆（r1=${m.radius1 != null ? m.radius1 : '?'}，r2=${m.radius2 != null ? m.radius2 : '?'}，d=${m.distance != null ? m.distance : '?'}，x=${m.planeOffset != null ? m.planeOffset : '?'}，a=√(r1²−x²)=${m.circleRadius != null ? m.circleRadius : '?'}）：${seg} 段。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

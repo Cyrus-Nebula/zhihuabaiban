@@ -54,6 +54,7 @@ import { resolveCircumcircle3D } from './board3d-circumcircle.js';
 import { resolveSphericalcap3D } from './board3d-sphericalcap.js';
 import { resolveSpheresector3D } from './board3d-spheresector.js';
 import { resolveSphericalwedge3D } from './board3d-sphericalwedge.js';
+import { resolveSphereSphere3D } from './board3d-spheresphere.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -549,6 +550,16 @@ export const BOARD3D_SPHERICALWEDGE_OPS = Object.freeze(['sphericalwedge3d']);
 /** 含全部扩展命令的完整集（48 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE39_OPS = Object.freeze([
   ...BOARD3D_COMPLETE38_OPS, ...BOARD3D_SPHERICALWEDGE_OPS,
+]);
+
+// 2026-11-28 D49：spheresphere3d 两球相交公共圆（两球心距 d + 交平面有向距离 x
+// + 交圆半径 a + r1/r2/d/x/a 标注，a²=r1²−x²=r2²−(d−x)²、交圆点恒在两球面且恒在交平面）。
+// 同样单独成组、不并入历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / … /
+// COMPLETE38 47 / COMPLETE39 48 条），历史常量逐字不变。
+export const BOARD3D_SPHERESPHERE_OPS = Object.freeze(['spheresphere3d']);
+/** 含全部扩展命令的完整集（49 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE40_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE39_OPS, ...BOARD3D_SPHERESPHERE_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -2017,6 +2028,36 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: swFailed.length === 0 && swCreated.length > 0,
             count: swr.items.length, created: swCreated, meta: swr.meta,
             ...(swFailed.length ? { failed: swFailed } : {}),
+          });
+          break;
+        }
+        case 'spheresphere3d': {
+          // 2026-11-28 D49：两球相交公共圆（两球心连线 + 交圆 + 交平面圆盘 +
+          // 两球心到交圆上同一点的半径 + 直角符号 + r1/r2/d/x/a 标注，
+          // a²=r1²−x²=r2²−(d−x)²、交圆点恒在两球面且恒在交平面）。
+          // getState 仅供 id 避让、缺失/抛错降级为空场景整批不中断；id 冲突分项失败、
+          // api.add 返回 null/false 分项回报；2D 命令仍由 default 拒绝。
+          let ssState = {};
+          try { ssState = (a.getState ? a.getState() : {}) || {}; } catch (_) { ssState = {}; }
+          const ssr = resolveSphereSphere3D(cmd, ssState);
+          if (!ssr.ok) {
+            results.push({ op, ok: false, error: ssr.error });
+            break;
+          }
+          const ssCreated = [];
+          const ssFailed = [];
+          for (const item of ssr.items) {
+            if (known.has(item.id)) { ssFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { ssFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            ssCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: ssFailed.length === 0 && ssCreated.length > 0,
+            count: ssr.items.length, created: ssCreated, meta: ssr.meta,
+            ...(ssFailed.length ? { failed: ssFailed } : {}),
           });
           break;
         }

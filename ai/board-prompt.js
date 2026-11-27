@@ -4143,3 +4143,32 @@ export const BOARD3D_SPHERICALWEDGE_INTENT_RE = /(球楔|球瓣|球面二面角|
 export function isSphericalwedge3DIntent(text) {
   return BOARD3D_SPHERICALWEDGE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-28 D49 追加（仅在文件最末尾追加，上方 D1~D48 一切内容逐字未动）：两球相交公共圆。
+export const BOARD3D_SPHERESPHERE_PROMPT = `
++- 命令 spheresphere3d（两球相交公共圆 · D49）：给两个球（球心 center1/center2 + 半径 radius1/radius2），在两球严格相交时，一次画出两球各三大圆骨架 + 交圆 + 交平面圆盘辐条 + 球心连线（两端可延长）+ 两球心到交圆上同一点的半径 + 交平面处直角符号，并标出 r1/r2/d/x/a 与 a²=r1²−x²=r2²−(d−x)²。直接服务「两球相交求公共圆半径 / 交圆所在平面 / 球心到交平面距离」高考核心用例。sectionsphere3d 是一个球加一个平面截圆、sphericalcap3d/spheresector3d/sphericalwedge3d 是单球截取块、circumsphere3d/insphere3d/euler3d 是由点反求球，都不是两球相交。
++- 命令格式：{"op":"spheresphere3d","id":"ssi","center1":[0,0,0],"radius1":2,"center2":[2,0,0],"radius2":2,"segments":48,"spokes":8,"rightAngleSize":0.2,"extend":0.2,"asSphere1":true,"asSphere2":true,"asCircle":true,"asDisc":true,"asAxis":true,"asRadii":true,"asRightAngle":true,"asPoints":false,"labelRadii":true,"labelDistance":true,"labelCircleRadius":true,"labelPlaneOffset":true,"labelRelation":true,"vertexSize":0.1,"color":"#2b7fd4"}
++  · 两球心距 d=|O2−O1|，必须严格满足 |r1−r2|<d<r1+r2（相切 / 相离 / 内含 / 同心一律原子拒绝）；交平面到 O1 的有向距离 x=(d²+r1²−r2²)/(2d)（可为负，表示交平面落在 O1 背侧）；交圆半径 a=√(r1²−x²)，且恒有 a²=r2²−(d−x)²；交圆圆心 O′=O1+x·u（u=unit(O2−O1)），交圆平面恒定垂直 O1O2。
++  · 正交标架 u=unit(O2−O1)、w=unit(u×helper)、v=u×w；交圆采样点 P(θ)=O′+a(cosθ·w+sinθ·v)，恒满足 |P−O1|=r1、|P−O2|=r2、(P−O′)·u=0。
++  · 开关：asSphere1/asSphere2(两球三大圆骨架)/asCircle(交圆)/asDisc(交平面圆盘辐条)/asAxis(球心连线)/asRadii(球心到交圆点半径)/asRightAngle(交平面直角符号)/asPoints(小球)，前六项至少开一个；labelRadii/labelDistance/labelCircleRadius/labelPlaneOffset/labelRelation 为读数开关；segments/spokes/rightAngleSize/extend/vertexSize 控制采样与标注密度。
++  · 示例：
++  · 默认等球相交（O1=(0,0,0)、O2=(2,0,0)、r1=r2=2、d=2、x=1、a=√3）：{"op":"spheresphere3d"}
++  · 一球心在原点、另一球沿 x 轴相距 3，半径分别 2 与 3：{"op":"spheresphere3d","center2":[3,0,0],"radius2":3}
++  · 平移与斜轴取向、加密采样、放小球：{"op":"spheresphere3d","center1":[1,1,1],"center2":[3,4,5],"radius1":3,"radius2":3,"segments":96,"asPoints":true}
++  · 只留两球交圆轮廓、不画球骨架与标注：{"op":"spheresphere3d","asSphere1":false,"asSphere2":false,"labelRadii":false,"labelDistance":false,"labelCircleRadius":false,"labelPlaneOffset":false,"labelRelation":false}
++- 约束：center1/center2 非三元组 / radius1/radius2 越界 / 两球心重合 / 内含内切外切相离 / segments·spokes 越界非整数 / rightAngleSize·extend·vertexSize 越界 / 开关非布尔 / 六输出开关全关 / id 非法 / 交圆点不在两球面或不在交平面（守恒失败）—— 整条原子拒绝、零副作用。
++- 铁律：spheresphere3d 是 3D 命令；2D 的「两圆相交公共弦 / 圆与圆相交」在本分支依旧不认识，只有明确提到「两球相交 / 球的交圆 / 球面相交 / 两个球相交」且带立体词才用本命令。`;
+
+export const BOARD3D_SPHERESPHERE_PROMPT_OPS = Object.freeze(['spheresphere3d']);
+
+/**
+ * D49 立体专属词意图识别扩展（纯追加，不改 D1~D48 的任何意图正则）：
+ * 必须带「球 / 球面 / 两球 / 球体」等立体词 + 「相交 / 交圆 / 公共圆 / 交线」，
+ * 避免把 2D 的「两圆相交 / 公共弦 / 圆与圆相交」误切到 3D 分支。
+ */
+export const BOARD3D_SPHERESPHERE_INTENT_RE = /(两球.{0,8}(相交|交圆|公共圆|交线)|两个球.{0,8}(相交|交圆|公共圆|交线)|球面.{0,8}(相交|交圆|公共圆)|球.{0,4}(相交|交圆|公共圆)|球的(交圆|公共圆)|球面.{0,6}(体积|表面积).{0,6}相交)/i;
+
+/** 判断自然语言是否含 D49 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isSpheresphere3DIntent(text) {
+  return BOARD3D_SPHERESPHERE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}
