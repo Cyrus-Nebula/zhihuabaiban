@@ -565,6 +565,14 @@ async function send() {
         const seg = m.segmentCount != null ? m.segmentCount : '?';
         appendLog('ai', `已生成空间三点定圆（圆心 [${(m.center || []).join(',')}]，R=${m.radius != null ? m.radius : '?'}，三点到圆心等距、采样点共面）：${seg} 段。`);
       }
+      // 2026-11-27 D46：sphericalcap3d 展示球冠 / 球缺 / 球台读数（数值以画板返回为准）。
+      for (const sc of results) {
+        if (!sc.ok || sc.op !== 'sphericalcap3d') continue;
+        const m = sc.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        const kind = m.mode === 'zone' ? '球台' : '球冠';
+        appendLog('ai', `已生成${kind}（R=${m.radius != null ? m.radius : '?'}，h=${m.height != null ? m.height : '?'}，a=${m.baseRadius != null ? m.baseRadius : '?'}，S=2πRh=${m.surface != null ? m.surface : '?'}，V=${m.volume != null ? m.volume : '?'}）：${seg} 段。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

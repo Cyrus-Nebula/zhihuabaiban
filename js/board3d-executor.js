@@ -51,6 +51,7 @@ import { resolveCentroid3D } from './board3d-centroid.js';
 import { resolveSolidmetrics3D } from './board3d-solidmetrics.js';
 import { resolveSectionsphere3D } from './board3d-sectionsphere.js';
 import { resolveCircumcircle3D } from './board3d-circumcircle.js';
+import { resolveSphericalcap3D } from './board3d-sphericalcap.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -513,6 +514,17 @@ export const BOARD3D_CIRCUMCIRCLE_OPS = Object.freeze(['circumcircle3d']);
 /** 含全部扩展命令的完整集（45 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE36_OPS = Object.freeze([
   ...BOARD3D_COMPLETE35_OPS, ...BOARD3D_CIRCUMCIRCLE_OPS,
+]);
+
+// 2026-11-27 D46：sphericalcap3d 球冠 / 球缺 / 球台（单平面 cap 或双平面 zone，
+// 底圆 + 圆盘辐条 + 经线曲母线 + 轴线 + R/d/h/a/V/S 标注，a²=h(2R−h)、S=2πRh、
+// V=πh(3a1²+3a2²+h²)/6，cap 的 a2=0 与 V=πh²(3R−h)/3 二阶交叉校验）。
+// 同样单独成组、不并入历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / … /
+// COMPLETE35 44 / COMPLETE36 45 条），历史常量逐字不变。
+export const BOARD3D_SPHERICALCAP_OPS = Object.freeze(['sphericalcap3d']);
+/** 含全部扩展命令的完整集（46 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE37_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE36_OPS, ...BOARD3D_SPHERICALCAP_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -1892,6 +1904,35 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: ccFailed.length === 0 && ccCreated.length > 0,
             count: ccr.items.length, created: ccCreated, meta: ccr.meta,
             ...(ccFailed.length ? { failed: ccFailed } : {}),
+          });
+          break;
+        }
+        case 'sphericalcap3d': {
+          // 2026-11-27 D46：球冠 / 球缺 / 球台（单平面 cap 或双平面 zone，底圆 + 圆盘辐条 +
+          // 经线曲母线 + 轴线 + R/d/h/a/V/S 标注，a²=h(2R−h)、S=2πRh、V 两式交叉校验）。
+          // getState 仅供 id 避让、缺失/抛错降级为空场景整批不中断；id 冲突分项失败、
+          // api.add 返回 null/false 分项回报；2D 命令仍由 default 拒绝。
+          let scState = {};
+          try { scState = (a.getState ? a.getState() : {}) || {}; } catch (_) { scState = {}; }
+          const scr = resolveSphericalcap3D(cmd, scState);
+          if (!scr.ok) {
+            results.push({ op, ok: false, error: scr.error });
+            break;
+          }
+          const scCreated = [];
+          const scFailed = [];
+          for (const item of scr.items) {
+            if (known.has(item.id)) { scFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { scFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            scCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: scFailed.length === 0 && scCreated.length > 0,
+            count: scr.items.length, created: scCreated, meta: scr.meta,
+            ...(scFailed.length ? { failed: scFailed } : {}),
           });
           break;
         }
