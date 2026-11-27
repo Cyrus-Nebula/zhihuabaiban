@@ -627,6 +627,21 @@
  *   ② 继续补易错图形 few-shot（下一候选：旁心与旁切圆——协议 inspect center 只回读内心 I，旁心须用
  *   外角平分线交点法构造、别编 kind:excenter；以及费马点/重心坐标比值）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ * 本轮（AI作图对标大角几何·增量·2026-11-27 第三十八轮）：只追加 2D 作图主干（例61 旁心与旁切圆
+ *   few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；
+ *   核心工作流 / 铁律 / 命令清单既有行 / 既有例1-60 逐字未动、无删除行。落实上一轮 TODO 交接项
+ *   「下一候选：旁心与旁切圆」：例38/49/58 只覆盖内心 I 与内切圆 r、例60 覆盖九点圆，都没覆盖
+ *   「旁心在三角形外、r_a=S/(s−a)、切点落在边的延长线上」这一高频考点。协议 inspect center 只回读
+ *   内心 I/r、外心 O/R、垂心 H、面积，没有旁心字段，AI 常编 kind:excenter、把内心当旁心、把 r_a 写成 r、
+ *   把切点取成边中点、把旁切圆画进三角形。本文件在例60 后追加例61，给出「两阶段 inspect center 回读
+ *   面积 S 作对照 → 等距 glider+midpoint+line 造 ∠A 内角平分线 → perpendicular 造 ∠B 外角平分线 →
+ *   intersect 求旁心 Ia → r_a 数值化 → line+perpendicular+intersect 求三切点 → distance/oncircle/
+ *   perpendicular/online/angle 自检」范式；docs 追加用例 135/136。全部复用现有 op（point/polygon/
+ *   inspect center/segment/glider/midpoint/line/perpendicular/intersect/circle/verify），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/
+ *   中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆读数在真实 JSXGraph 落点目视确认；
+ *   ② 继续补易错图形 few-shot（下一候选：费马点、重心坐标比值）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2512,6 +2527,76 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ⑤ 例38 画外接圆/内切圆、例59 画欧拉线，本例画第三个圆，三者不可互相顶替；
 //   ⑥ verify pass:false 多为半径忘除以2 / 圆心取 G / 高足当中点 / expect 沿用旧值，按例6/例10 只重发错的
 //   点、圆、verify，不要 clear 整板。
+
+== 例61：三角形的旁心与旁切圆（A-旁心=∠A 内角平分线∩∠B 外角平分线，r_a=S/(s−a)；易错：编 kind:excenter、把旁心当内心、r_a 写成 r、切点取边中点、旁切圆画进三角形） ==
+用户："直角三角形 A(0,0) B(3,0) C(0,4)，作出 A 所对的旁心 I_A 与 A-旁切圆，验证它与 AB、AC 的延长线及 BC 边都相切。"
+思路：协议 inspect kind:center 只回读内心 I/r、外心 O/R、垂心 H、面积，**没有旁心字段**；
+      不能编 {"op":"inspect","kind":"excenter"}，也不能把内心 I(1,1) 当旁心。
+      A-旁心是 ∠A 内角平分线与 ∠B（或 ∠C）外角平分线的交点；同一顶点的内/外角平分线互相垂直，
+      所以先按例52「等距 glider + midpoint + line」造 ∠B 内角平分线，再过 B 作它的垂线得外角平分线，
+      与 ∠A 内角平分线求交即得 I_A(6,6)（不心算后写死 point）。
+      r_a=S/(s−a)=6/(6−5)=6（a=BC=5、s=6、S=6），是内切圆 r=S/s=1 的 6 倍；
+      旁切圆在三角形外，与 AB、AC 的延长线及 BC 边相切，切点是 I_A 到三条【直线】的垂足。
+第一轮：先建三点 + 三角形，末尾发一条 center 查询（只读、不画图），只用读数拿 S=6 与内心 r=1 作对照：
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":3,"y":0}
+{"op":"point","id":"C","x":0,"y":4}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"inspect","kind":"center","of":["A","B","C"]}
+系统回【查询读数】：「center(A,B,C): 重心G(1,1.333); 内心I(1,1) r=1; 外心O(1.5,2) R=2.5; 垂心H(0,0); 面积=6」。
+第二轮：用读数确认 S=6、r=1，再构造旁心与旁切圆（不沿用 I/r）：
+{"op":"segment","id":"sAB","from":"A","to":"B"}
+{"op":"segment","id":"sAC","from":"A","to":"C"}
+{"op":"segment","id":"sBC","from":"B","to":"C"}
+// ∠A 内角平分线：AB、AC 上取距 A 等距的点（沿例52）
+{"op":"glider","id":"P","on":"sAB","x":1,"y":0}          // AP=1
+{"op":"glider","id":"Q","on":"sAC","x":0,"y":1}          // AQ=1
+{"op":"midpoint","id":"M","of":["P","Q"]}                // M(0.5,0.5)
+{"op":"line","id":"lAI","through":["A","M"]}             // ∠A 内角平分线 y=x
+// ∠B 内角平分线：BA、BC 上取距 B 等距的点
+{"op":"glider","id":"P2","on":"sAB","x":2,"y":0}         // BP2=1，P2(2,0)
+{"op":"glider","id":"Q2","on":"sBC","x":2.4,"y":0.8}     // BQ2=1：BC 单位向量 (−0.6,0.8)
+{"op":"midpoint","id":"M2","of":["P2","Q2"]}             // M2(2.2,0.4)
+{"op":"line","id":"lBI","through":["B","M2"]}            // B 内角平分线，方向 (−2,1)
+{"op":"perpendicular","id":"lBe","of":"lBI","through":"B"}  // B 外角平分线 ⊥ lBI
+{"op":"intersect","id":"Ia","of":["lAI","lBe"],"select":"first"}  // A-旁心 Ia(6,6)，不是内心 I(1,1)
+{"op":"circle","id":"exc","center":"Ia","radius":6}      // r_a=S/(s−a)=6，写数值；不是 r=1、不写表达式
+// 三切点 = I_A 到三条【直线】的垂足（两条落在延长线上，一条落在 BC 边上）
+{"op":"line","id":"lAB","through":["A","B"]}
+{"op":"line","id":"lAC","through":["A","C"]}
+{"op":"line","id":"lBC","through":["B","C"]}
+{"op":"perpendicular","id":"n1","of":"lAB","through":"Ia"}
+{"op":"intersect","id":"Tc","of":["lAB","n1"],"select":"first"}   // (6,0)：AB 延长线上（b 边外）
+{"op":"perpendicular","id":"n2","of":"lAC","through":"Ia"}
+{"op":"intersect","id":"Tb","of":["lAC","n2"],"select":"first"}   // (0,6)：AC 延长线上（c 边外）
+{"op":"perpendicular","id":"n3","of":"lBC","through":"Ia"}
+{"op":"intersect","id":"Ta","of":["lBC","n3"],"select":"first"}   // (1.2,2.4)：在 BC 线段内，≠BC 中点(1.5,2)
+// 自检：三切点回读 r_a=6 + oncircle + 半径⊥边 + 切点在直线上 + I_A 在 ∠A 平分线上
+{"op":"verify","kind":"distance","of":["Ia","Tc"],"expect":6,"tol":0.05,"label":"IaTc=r_a=6"}
+{"op":"verify","kind":"distance","of":["Ia","Tb"],"expect":6,"tol":0.05,"label":"IaTb=r_a=6"}
+{"op":"verify","kind":"distance","of":["Ia","Ta"],"expect":6,"tol":0.05,"label":"IaTa=r_a=6"}
+{"op":"verify","kind":"oncircle","of":["Ta","exc"],"expect":0,"tol":0.05,"label":"切点 Ta 在旁切圆上"}
+{"op":"verify","kind":"perpendicular","of":["Ia","Ta","B","C"],"expect":0,"tol":0.5,"label":"IaTa⊥BC"}
+{"op":"verify","kind":"online","of":["Ta","lBC"],"expect":0,"tol":0.05,"label":"Ta 在 BC 上"}
+{"op":"verify","kind":"angle","of":["B","A","Ia"],"expect":45,"tol":0.05,"label":"∠BAIa=45°"}
+{"op":"verify","kind":"angle","of":["Ia","A","C"],"expect":45,"tol":0.05,"label":"∠IaAC=45°"}
+// message："A-旁心 Ia(6,6) 是 ∠A 内角平分线与 ∠B 外角平分线交点；A-旁切圆半径 r_a=S/(s−a)=6/(6−5)=6（内切圆 r=1），
+//   与 AB 延长线切于 (6,0)、AC 延长线切于 (0,6)、BC 边切于 (1.2,2.4)，三切点都在圆上且 Ia 到它们的垂距均为 6。"
+// 变式 A（B-旁心 / C-旁心）：换成「∠B 内角平分线 ∩ ∠A 外角平分线」（或 C 对应），半径 r_b=S/(s−b)=6/(6−4)=3、
+//   r_c=S/(s−c)=6/(6−3)=2；旁心分别落在 I_B(−3,3)、I_C(2,−2)，切点须按对应三边（含延长线）重算，别沿用 (6,6)/6。
+// 变式 B（一般斜三角形）：不能套 (r,r) 或心算旁心坐标；仍按本例「等距 glider+midpoint+line 造两角平分线、
+//   perpendicular 造外角平分线、intersect 求交」，S 用 inspect center 回读的【面积】、a/b/c 用两点距离算后数值化 r_a。
+// 变式 C（快照已有三角形 / 顶点被滑动条驱动）：不重发 point/polygon，先 inspect center 按快照回读面积再构造；
+//   expect 用回读值或 expectRange，不写死 6/45/1.2；等腰/等边时旁心落在对称轴上，message 如实说明，别硬套互异。
+// 要点：① 协议没有旁心查询：inspect kind:center 只回 I/O/H/S，别编 kind:excenter、别把内心当旁心；
+//   ② 旁心靠构造：∠A 内角平分线 ∩ ∠B 外角平分线（外角平分线=过顶点垂直于该顶点内角平分线的线），
+//      别心算 Ia(6,6) 后直接写 point，也别漏建 segment 就 glider；
+//   ③ r_a=S/(s−a)≠r=S/s（本例 6≠1），radius 写数值 6，不写表达式、不套内切圆读数；
+//   ④ 切点是到【直线】的垂足：两条在边的延长线上（(6,0)/(0,6)），一条在 BC 内（(1.2,2.4)≠中点(1.5,2)），
+//      必须用 line（不是 segment）+ perpendicular + intersect 求，别取边中点；
+//   ⑤ 旁切圆在三角形外，与例38/49/58 的内切圆、例60 的九点圆互不等同；
+//   ⑥ verify pass:false 多为外角平分线没垂直、r_a 用成 r、切点取中点或 expect 沿用旧值，按例6/例10 只重发错的
+//      点/线/圆/verify，不要 clear 整板。
 
 
 # 画板规范

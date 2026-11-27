@@ -1160,3 +1160,28 @@
   不得硬套九个互异点或非退化 expect。
 - 本例与例38（外接/内切圆）、例59（欧拉线）用同一组点但考点不同，三者不可互相顶替。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第三十八轮增量：旁心与旁切圆（I_A=∠A 内角平分线∩∠B 外角平分线，r_a=S/(s−a)）few-shot（2026-11-27）
+> 承接第三十七轮 TODO②「下一候选：旁心与旁切圆」。例38/49/58 覆盖内心 I 与内切圆 r、例60 覆盖九点圆，
+> 均未覆盖旁心这一高频考点：协议 inspect center 只有 I/O/H/S 四个字段、没有旁心，AI 常编 `kind:excenter`、
+> 把内心当旁心、把 `r_a` 写成 `r`、把切点取成边中点、把旁切圆画进三角形。
+> 本轮仅在 `ai/board-prompt.js` 例60 后纯追加例61，复用既有 op（point/polygon/inspect center/segment/
+> glider/midpoint/line/perpendicular/intersect/circle/verify），`js/executor.js` 执行分支 / 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 135 | 直角三角形 A(0,0) B(3,0) C(0,4)，作 A-旁心与 A-旁切圆并验证与 AB、AC 延长线及 BC 边相切 | 第一轮 point A/B/C → polygon tri → inspect kind:center of:[A,B,C] 只读回读 I(1,1) r=1、面积=6 作对照；第二轮 segment sAB/sAC/sBC → 等距 glider P/Q + midpoint M + line lAI 造 ∠A 内平分线 → 等距 glider P2/Q2 + midpoint M2 + line lBI 造 ∠B 内平分线 → perpendicular lBe of:lBI through:B 得 ∠B 外平分线 → intersect Ia of:[lAI,lBe]=(6,6) → circle exc center:Ia radius:6（r_a=S/(s−a)=6/(6−5)）→ line lAB/lAC/lBC + perpendicular + intersect 求三切点 Tc(6,0)/Tb(0,6)/Ta(1.2,2.4) → verify distance Ia-Tc/Tb/Ta=6 + oncircle Ta + perpendicular IaTa⊥BC + online Ta 在 lBC + angle ∠BAIa=∠IaAC=45° → message 说明旁切圆在三角形外 | ✅ | 编 kind:excenter；把内心 I(1,1) 当旁心；radius 写 r=1 或表达式 "6/(6−5)"；切点取 BC 中点(1.5,2)；把旁切圆画进三角形；漏建 segment 就 glider |
+| 136 | 变式：B/C 旁心、一般斜三角形、快照已有三角形或顶点被滑动条驱动 | B-旁心 I_B(−3,3) r_b=S/(s−b)=3、C-旁心 I_C(2,−2) r_c=S/(s−c)=2，改用「对应顶点内角平分线∩另一顶点外角平分线」重构造，不沿用 (6,6)/6；一般斜三角形不套 (r,r)、S 用 inspect 面积、a/b/c 用两点距离算后数值化 r_a；快照只补旁切圆时先 inspect 按快照回读面积再构造，不重发 point/polygon；expect 用回读值或 expectRange 不写死 6/45/1.2；等腰/等边旁心落在对称轴上，如实说明 | ✅ | 沿用旧坐标/expect；把 (r,r) 特例当通法；r_a 沿用内切圆 r；心算旁心写死 point；退化硬套三旁心互异 |
+
+## TODO 交接更新（2026-11-27 第三十八轮）
+1. [本轮已完成] 例61 旁心与旁切圆 few-shot + docs 用例 135/136（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] 下一候选：费马点、重心坐标比值（继续纯提示词 few-shot）。
+3. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆读数在真实 JSXGraph 上落点目视确认。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第三十八轮追加）
+- 例61（用例 135/136）：协议无原生 `excenter` / `excircle` / `verify kind:excenter` op；旁心靠「等距 glider + midpoint + line 造内角平分线 → perpendicular 造外角平分线 → intersect 求交」构造，半径靠 `S/(s−a)` 数值化。
+- `inspect kind:center` 只回读重心/内心 I+r/外心 O+R/垂心 H/面积，没有旁心字段；AI 不得编 `kind:excenter`，也不得把内心当旁心。
+- 旁切圆切点是到三条【直线】的垂足，两条落在边的延长线上、一条落在边上；本组点为 (6,0)/(0,6)/(1.2,2.4)，BC 中点 (1.5,2) 是错的。
+- A-旁心 I_A(6,6) 与内心 I(1,1) 都在 ∠A 内角平分线 y=x 上，但 r_a=6≠r=1；旁切圆与内切圆、九点圆不可互相顶替。
+- 本组点与例38/58 相似（直角边 3/4/5 对 6/8/10）但考点不同；本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
