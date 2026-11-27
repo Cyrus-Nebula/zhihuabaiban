@@ -1080,3 +1080,30 @@
 - 托勒密定理仅在四点共圆（或共线退化）时取等号；一般四点只有不等式 AC·BD≤AB·CD+BC·DA，AI 不得硬写等式。
 - 本例与例56 用同一组四点：例56 验证角互补、例57 验证边乘积，两者不可互相顶替。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+
+## 第三十五轮增量：直角三角形内切圆半径 r=S/s=(a+b−c)/2 few-shot（2026-11-27）
+> 承接第三十四轮 TODO③「下一候选：直角三角形内切圆半径与面积关系 r=S/s、欧拉线」的前一项。
+> 例38 覆盖四心坐标、例49 覆盖一般三角形内切圆与切点，本例专攻直角三角形特例的两式交叉验证
+> （r=S/s 与 r=(a+b−c)/2），纠正「s 当周长」「斜边当直角边」「内心到顶点当 r」「外接圆 R 当 r」
+> 四类高频错。本轮仅在 `ai/board-prompt.js` 例57 后纯追加例58，
+> 复用既有 op（point/polygon/inspect center/circle/line/perpendicular/intersect/segment/verify），
+> `js/executor.js` 执行分支 / 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 129 | 直角三角形 A(0,0) B(6,0) C(0,8) 画内切圆，验证 r=S/s=(6+8−10)/2=2 | 第一轮 point A/B/C → polygon tri → inspect kind:center of:[A,B,C] 只读回读 I(2,2) r=2 面积=24；第二轮 point I(2,2) → circle inc radius:2 → line lBC through:[B,C] → perpendicular m of:lBC through:I → intersect F of:[lBC,m] → segment IF → verify distance I-F=2 / oncircle F,inc / perpendicular IF⊥BC / distance B-C=10 → message 说明 S=24 s=12 r=2 | ✅ | s 写成周长 24 得 r=1；把斜边 10 当直角边算 r=4；r 写成 \|IA\|=2.828 或外接圆 R=5；切点写成 BC 中点 (3,4)；心算内心不 inspect |
+| 130 | 变式：快照已有直角三角形只补内切圆 / 直角不在原点 / 顶点被滑动条驱动 | 不重发 point/polygon，先 inspect center 按快照回读 I/r 再落图元；expect 按快照重算不沿用 2/10；直角不在原点时内心≠(r,r) 必须回读；已知直角边 a,b 先算 √(a²+b²) 成数值再写 radius；动态点用回读 r 或 expectRange，不写死 2 | ✅ | 沿用旧 expect；把 (r,r) 当通法；radius 写表达式；非直角三角形硬套 (a+b−c)/2；重发 point 造成重复顶点 |
+
+## TODO 交接更新（2026-11-27 第三十五轮）
+1. [本轮已完成] 例58 直角三角形内切圆半径 few-shot + docs 用例 129/130（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] 下一候选：三角形欧拉线（外心 O、重心 G、垂心 H 共线且 OG:GH=1:2，易错：比例写反、等腰/等边退化硬套、心算垂心）。
+3. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r 读数在真实 JSXGraph 上落点目视确认。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第三十五轮追加）
+- 例58（用例 129/130）：协议无原生 `S/s` / `r` 符号 op，面积与 r 来自 `inspect kind:center` 回读；S/s 与 (a+b−c)/2 的两式相等是 message 说明 + `verify distance` 交叉回读，不是 verify 断言。
+- r=(a+b−c)/2 只对直角三角形成立（c 为斜边）；一般三角形必须用 r=S/s 并 inspect 内心。
+- 内心 (r,r) 是「直角顶点在原点 + 两直角边沿坐标轴」的特例，直角不在原点时必须 inspect 回读，不得套用。
+- 本例复用例38 同组点 A(0,0) B(6,0) C(0,8)：例38 验证四心坐标，例58 验证内切圆半径两式，两者不可互相顶替。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

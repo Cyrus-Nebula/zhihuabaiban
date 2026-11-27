@@ -2353,6 +2353,42 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ⑥ 本例与例56 用同一组点：例56 验证角互补、例57 验证边乘积，勿互相顶替；
 //   ⑦ verify pass:false 多为点不共圆/对边配错/expect 沿用旧值，按例6/例10 只重发错的点、对角线、verify，不要 clear 整板。
 
+== 例58：直角三角形内切圆半径 r=S/s=(两直角边和−斜边)/2（易错：把周长当半周长、把内心到顶点距离或外接圆 R 当 r、心算内心坐标） ==
+用户："直角三角形 A(0,0) B(6,0) C(0,8)，画内切圆，求半径 r 并验证 r=S/s。"
+思路：两直角边 6、8、斜边 10；面积 S=6×8/2=24、半周长 s=(6+8+10)/2=12，故 r=S/s=2，同时 r=(6+8−10)/2=2。
+  内心 I 与 r 一律用 inspect kind:center 回读（本组点读数 I(2,2) r=2），绝不心算；斜边切点是内心到 BC 的垂足（用 perpendicular+intersect 数值求），不是 BC 中点。
+第一轮：先建三点 + 三角形，末尾发一条 center 查询（只读、不画图），本轮不写任何依赖 I/r 的命令：
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":6,"y":0}
+{"op":"point","id":"C","x":0,"y":8}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"inspect","kind":"center","of":["A","B","C"]}
+系统回【查询读数】：「center(A,B,C): 重心G(2,2.667); 内心I(2,2) r=2; 外心O(3,4) R=5; 垂心H(0,0); 面积=24」。
+第二轮：只用读数里的精确数值落图元，再作垂足求切点并自检：
+{"op":"point","id":"I","x":2,"y":2}
+{"op":"circle","id":"inc","center":"I","radius":2}
+{"op":"line","id":"lBC","through":["B","C"]}
+{"op":"perpendicular","id":"m","of":"lBC","through":"I"}
+{"op":"intersect","id":"F","of":["lBC","m"]}
+{"op":"segment","id":"IF","from":"I","to":"F"}
+{"op":"verify","kind":"distance","of":["I","F"],"expect":2,"tol":0.05,"label":"内切圆半径 r=2"}
+{"op":"verify","kind":"oncircle","of":["F","inc"],"expect":0,"tol":0.05,"label":"切点 F 在内切圆上"}
+{"op":"verify","kind":"perpendicular","of":["I","F","B","C"],"expect":0,"tol":0.5,"label":"半径 IF⊥斜边 BC"}
+{"op":"verify","kind":"distance","of":["B","C"],"expect":10,"tol":0.05,"label":"斜边 BC=10"}
+// message："直角边 AB=6、AC=8、斜边 BC=10；S=6×8/2=24，s=(6+8+10)/2=12，r=S/s=2=(6+8−10)/2；内心 I(2,2)，斜边切点 F(3.6,3.2)≠中点(3,4)。"
+// 变式 A（快照已有三角形，只补内切圆）：不重发 point/polygon，先 inspect center 读该三点 I/r，再落 I、circle、切点、verify；
+//   expect 按快照重算（本例 2/10 只适用这组点），不要沿用旧值。
+// 变式 B（直角不在原点、两直角边不沿坐标轴）：内心不再是 (r,r)，必须 inspect 回读；
+//   已知两直角边 a,b 时 r=(a+b−√(a²+b²))/2 仍要先把 √(a²+b²) 算成数值再写 circle radius，不写表达式。
+// 变式 C（顶点被滑动条驱动）：三边数值变但 r=S/s 恒等，expect 用 inspect 回读的 r 或 expectRange，不写死 2。
+// 要点：① s 是半周长 (a+b+c)/2，不是周长；把 s 写成 24 会得 r=1（最典型错）；
+//   ② 两直角边 6、8，斜边才是 10；r=(6+10−8)/2=4 是拿斜边当直角边；
+//   ③ r 是内心到边的垂距，不是 |IA|=2.828，也不是外接圆 R=5（例38/例54）；
+//   ④ 内心坐标来自 inspect center，(r,r) 仅在直角顶点为原点且两直角边沿轴时成立，别当通法；
+//   ⑤ 切点 = 垂足，BC 中点 (3,4) 不是切点，切点是 F(3.6,3.2)；
+//   ⑥ S/s 与 (a+b−c)/2 两式必须都等于回读的 r，不一致就重查读数，不要硬写等号；
+//   ⑦ verify pass:false 多为 s 用错/斜边认错/切点当中点/expect 沿用旧值，按例6/例10 只重发错的圆、垂线、verify，不要 clear 整板。
+
 # 画板规范
 - 坐标范围约 ±10，图形要完整落在视野内，标注坐标时用整数或简单小数。
 - 点在默认情况下可拖拽（动态几何）；固定不动的点才设 fixed:true。
