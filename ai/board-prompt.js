@@ -4083,3 +4083,33 @@ export const BOARD3D_SPHERICALCAP_INTENT_RE = /(球冠|球缺|球台|半球|球�
 export function isSphericalcap3DIntent(text) {
   return BOARD3D_SPHERICALCAP_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-27 D47 追加（仅在文件最末尾追加，上方 D1~D46 一切内容逐字未动）：球扇形 / 球锥。
+export const BOARD3D_SPHERESECTOR_PROMPT = `
++- 命令 spheresector3d（球扇形 / 球锥 · D47）：给一个球（球心 center + 半径 radius）与沿轴 axis 的一段球冠高 height（0<height<2·radius），取出「以球心 O 为锥顶、球冠底圆为底、球冠曲面为顶」的球扇形，一次画出球三大圆 + 底圆面片 + 球心到锥底的直母线 + 球冠曲母线 + 轴线，并标出 R/d/h/a/S/V。直接服务「球扇形的体积与表面积、球冠高与球心到截面距离关系」高考核心用例。sphericalcap3d 只画被截下那一块并算 V_cap=πh²(3R−h)/3、不含球心锥面；cone3d 是任意锥顶的直圆锥、非球心锥顶的球扇形。
++- 命令格式：{"op":"spheresector3d","id":"ss","center":[0,0,0],"radius":2,"axis":[0,0,1],"height":1,"segments":48,"meridians":8,"arcSegments":12,"spokes":8,"asSphere":true,"asDisc":true,"asCircle":true,"asCone":true,"asCap":true,"asAxis":true,"asPoints":false,"labelRadius":true,"labelDistance":true,"labelHeight":true,"labelBaseRadius":true,"labelVolume":true,"labelArea":true,"vertexSize":0.1,"color":"#2b7fd4"}
++  · height=球冠高 h（不是截平面有向距离），d=radius−h 为球心到截平面的有向距离；h=R 取半球扇形、h>R 取大球扇形、h<R 取小球扇形。
++  · 几何恒等式（可用来核对读数）：底半径 a²=h(2R−h)；体积 V=2πR²h/3=V_cap+V_cone（V_cap=πh²(3R−h)/3，V_cone=πa²d/3，h>R 时 d<0）；又 V=R·S_cap/3；表面积 S=S_cap+S_cone=2πRh+πaR（S_cap 球冠曲面、S_cone 球心圆锥侧面母线长 R）。球心直母线恒长 R、底圆点恒在球面、球冠曲母线弧点恒在球面。
++  · 开关：asSphere(球三大圆骨架)/asDisc(底圆辐条)/asCircle(底圆)/asCone(球心直母线)/asCap(球冠曲母线)/asAxis(轴线)/asPoints(小球)，六项画图开关至少开一个；labelRadius/labelDistance/labelHeight/labelBaseRadius/labelVolume/labelArea 为读数开关。
++  · 示例：
++  · 默认半径 2 的小球扇形（h=1、d=1、a=√3、V=8π/3）：{"op":"spheresector3d"}
++  · 半球扇形（h=R=2、d=0、a=2）：{"op":"spheresector3d","radius":2,"height":2}
++  · 大球扇形（h=3、d=−1）：{"op":"spheresector3d","radius":2,"height":3}
++  · 沿 x 轴取向、加密采样、放小球：{"op":"spheresector3d","axis":[1,0,0],"height":1.5,"segments":96,"asPoints":true}
++  · 只留球扇形轮廓、不画球骨架与标注：{"op":"spheresector3d","asSphere":false,"asDisc":false,"labelRadius":false,"labelDistance":false,"labelHeight":false,"labelBaseRadius":false,"labelVolume":false,"labelArea":false}
++- 约束：center 非三元组 / radius 越界 / axis 零向量 / height≤0 或 ≥2·radius / segments·meridians·arcSegments·spokes 越界非整数 / vertexSize 越界 / 开关非布尔 / 六输出开关全关 / id 非法 / 守恒失败 —— 整条原子拒绝、零副作用。
++- 铁律：spheresector3d 是 3D 命令；2D 的「扇形面积 / 弓形 / 圆缺」在本分支依旧不认识，只有明确提到「球扇形 / 球锥 / 球冠体积 / 球的体积表面积」且带立体词才用本命令。`;
+
+export const BOARD3D_SPHERESECTOR_PROMPT_OPS = Object.freeze(['spheresector3d']);
+
+/**
+ * D47 立体专属词意图识别扩展（纯追加，不改 D1~D46 的任何意图正则）：
+ * 必须带「球 / 球面 / 球体 / 半球」等立体词 + 「球扇形 / 球锥 / 球冠体积 / 球的体积表面积」，
+ * 避免把 2D 的「扇形面积 / 弓形 / 圆缺」误切到 3D 分支。
+ */
+export const BOARD3D_SPHERESECTOR_INTENT_RE = /(球扇形|球锥|球冠.{0,6}(体积|表面积)|球扇|球的(体积|表面积)|半球.{0,4}(体积|表面积)|球面.{0,6}(体积|表面积))/i;
+
+/** 判断自然语言是否含 D47 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isSpheresector3DIntent(text) {
+  return BOARD3D_SPHERESECTOR_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}
