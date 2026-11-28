@@ -1239,3 +1239,31 @@
 - 等边三角形必须向外作（背离第三顶点）：`regularPolygon edge` 用 `side` 定侧，`toward` 指向第三顶点会把等边画进内侧得到第二等角中心 X14，不是费马点 X13。
 - 退化情形：若三角形某内角 ≥120°，费马点退化到该钝角顶点本身、不在内部，三 120° 断言必然失败；AI 须识别并 message 说明，别硬套构造。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+
+## 第四十一轮增量：斯图尔特定理 Stewart b²m+c²n=a(d²+mn) few-shot（2026-11-28）
+> 承接第四十轮 TODO②「下一候选：三角形五心综合辨析 / 斯图尔特定理 / 梅涅劳斯与塞瓦定理」的斯图尔特定理项。
+> 例54/55 覆盖斜边中线/斜边高、例62 覆盖重心 2:1，均未覆盖「一般三角形一边分点 D 的 cevian 长与三段边长
+> 的平方关系」。协议无 `stewart` / `cevian` kind，AI 常编 `verify kind:stewart`、把 m/n 配反（写成
+> c²m+b²n）、右边漏 mn 项或把整边 a 写成 c、把 D 当中点、心算 cevian。本轮仅在 `ai/board-prompt.js`
+> 例63 后纯追加例64，复用既有 op（point/polygon/segment/measure/verify kind:distance+evaluate+collinear），
+> `js/executor.js` 执行分支 / 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 141 | 三角形 A(0,6) B(0,0) C(9,0)，D 在 BC 上且 BD:DC=1:2，连 AD 并验证 AC²·BD+AB²·DC=BC·(AD²+BD·DC) | 读快照确认 A/B/C/D → `point` A(0,6)/B(0,0)/C(9,0)/D(3,0) 分点坐标数值化 → `polygon` tri → `segment` cev A-D → `verify` collinear B,D,C=0 → `measure` distance 六段 AB/AC/AD/BD/DC/BC → `verify` distance AC=10.817/AD=6.708/BD=3/DC=6 → `verify evaluate` "117*3+36*6"=567 与 "9*(45+3*6)"=567 → message 说明 b²m+c²n=a(d²+mn) 两边均 567 | ✅ | 编 `verify kind:stewart`；配对写成 AB²·BD+AC²·DC；右边漏 mn 写成 BC·AD²；整边 a 写成 AB；D 当中点(4.5,0)；radius/坐标写表达式；先开方再平方产生浮点误差 |
+| 142 | 变式：快照已有三角形只补分点 / D 是中点退化阿波罗尼斯 / D 在延长线外分 / 顶点或分点被滑动条驱动 | 不重发 A/B/C 的 point 与 polygon，按快照重算 D 坐标与 expect 不沿用 3/6/9/567；中点用 `midpoint of:[B,C]` 取 D，evaluate "36+117" 与 "2*(45+3*3)" 均=153，不编 kind:median；外分时 `verify collinear` 残差仍≈0 但 evaluate 用带负号段长（D(−3,0) 写 "117*(-3)+36*12"），别套内分公式；动态点先 inspect/measure 回读当前值再数值化 expect 或用 expectRange | ✅ | 沿用旧 expect；中点退化另编 op；外分套内分正段长；把 D 写回 B/C 的 id；collinear 不过仍硬套定理；退化时硬写 567 |
+
+## TODO 交接更新（2026-11-28 第四十一轮）
+1. [本轮已完成] 例64 斯图尔特定理 few-shot + docs 用例 141/142（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] 下一候选：梅涅劳斯与塞瓦定理（共线/共点比例乘积=1，靠 `verify kind:evaluate` 核三个比值乘积，别编 kind:menelaus/kind:ceva）、三角形五心综合辨析。
+3. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆/重心比值/费马点 120°/斯图尔特平方读数在真实 JSXGraph 上落点目视确认。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第四十一轮追加）
+- 例64（用例 141/142）：协议无原生 `stewart` / `cevian` op，也无 `verify kind:stewart`；等式两边靠两条 `verify kind:evaluate` 断言常量算式均等于 567，不是机器判定定理。
+- 记号先定死：a=BC=9（整边）、m=BD=3、n=DC=6、c=AB=6、b=AC=√117、d=AD=√45；配对为 b²m+c²n（AC²·BD+AB²·DC），**不是** c²m+b²n。
+- 平方值必须用坐标差算成精确整数（117/36/45），不能先开方再平方：10.817²≈117.007 会让 evaluate 的 expect 对不上。
+- `verify kind:evaluate` 的 `expr` 是常量算式（内部按 x 求值），`expect` 必须是数字；本例两条 evaluate 都不带 x。
+- D 必须是真实内分点：`verify kind:collinear` 残差≈0 是定理适用的前提；外分（D 在延长线上）时 BD/DC 按有向线段取负，evaluate 表达式相应带负号。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

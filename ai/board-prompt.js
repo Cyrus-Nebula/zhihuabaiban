@@ -674,6 +674,22 @@
  *   ② 继续补易错图形 few-shot（下一候选：三角形五心综合辨析 / 斯图尔特定理 / 梅涅劳斯与塞瓦定理，
  *      均按「读状态→规划→分步构造→verify 回读」范式，别编不存在的 kind）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-28 第四十一轮）：只追加 2D 作图主干（例64 斯图尔特定理
+ *   Stewart b²m+c²n=a(d²+mn) few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/
+ *   js/board3d*；核心工作流 / 铁律 / 命令清单既有行 / 既有例1-63 逐字未动、无删除行。落实上一轮
+ *   TODO 交接项②候选「斯图尔特定理」：例54/55 覆盖斜边中线/斜边高、例62 覆盖重心 2:1，但都没覆盖
+ *   「一般三角形一边分点 D 的 cevian 长与三段边长的平方关系」。协议无 stewart kind，AI 常编
+ *   kind:stewart、把 m/n 配反（写成 c²m+b²n）、右边漏 mn 项或把 a 写成 c、把 D 当中点、心算 cevian。
+ *   本文件在例63 后追加例64，给出「读快照→分点坐标数值化→midpoint 校验内分→cevian 段→
+ *   measure/verify 四段距离 + evaluate 核两边相等」范式；docs 追加用例 141/142。全部复用现有 op
+ *   （point/polygon/segment/measure/verify kind:distance+evaluate），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/
+ *   中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆/重心比值/费马点
+ *   120°/斯图尔特平方读数在真实 JSXGraph 落点目视确认；
+ *   ② 继续补易错图形 few-shot（下一候选：梅涅劳斯与塞瓦定理——共线/共点比例乘积=1，靠 verify
+ *      evaluate 核三比值乘积，别编 kind:menelaus/kind:ceva；三角形五心综合辨析）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2729,6 +2745,52 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ④ 圆心/R 由 inspect center 回读后数值化，radius 不写 "4/√3"、"S/3" 这类表达式；
 //   ⑤ 两圆交 A 与 F，务必 select 取非 A 者，别把公共顶点 A 当 F；verify angle 顶点 F 放中间；
 //   ⑥ verify pass:false 多为选回 A / 等边画进内侧 / 钝角硬套，按例6/例10 只重发错的圆/intersect/verify，不 clear 整板。
+
+== 例64：斯图尔特定理（一边分点 D 的 cevian：AC²·BD+AB²·DC=BC·(AD²+BD·DC)；易错：m/n 配反、右边漏 mn、把 D 当中点、心算 cevian） ==
+用户："三角形 A(0,6) B(0,0) C(9,0)，点 D 在 BC 上且 BD:DC=1:2，连 AD，验证斯图尔特定理 AC²·BD+AB²·DC=BC·(AD²+BD·DC)。"
+思路：先读当前画板快照确认 A/B/C/D 是否已存在：已存在就复用旧 id、只补 cevian/测量/自检；不存在再按 point 建点。
+      协议 inspect/measure/verify 都**没有** kind:stewart，别编 {"op":"verify","kind":"stewart"} 或 kind:cevian。
+      记号先定死：a=BC=9（整边）、m=BD=3（靠 B 的分段）、n=DC=6（靠 C 的分段）、c=AB=6、
+      b=AC=√117、d=AD=√45。定理 b²m+c²n=a(d²+mn) 展开即 AC²·BD+AB²·DC=BC·(AD²+BD·DC)——
+      注意 m 乘的是【对侧边 AC 的平方】、n 乘的是【AB 的平方】，是交叉配对；写成 AB²·BD+AC²·DC 就错。
+      D 坐标必须数值化：B(0,0)、C(9,0)、BD:DC=1:2 → D=(0+9×1/3,0)=(3,0)，别写 "B+(C-B)/3" 表达式。
+      平方值用坐标差直接算成精确整数：AC²=(9−0)²+(0−6)²=117、AB²=6²=36、AD²=(3−0)²+(0−6)²=45，
+      不要先开方再平方（10.817² 带浮点误差）。预读：AC≈10.817、AD≈6.708、BD=3、DC=6、BC=9；
+      左边=117×3+36×6=351+216=567，右边=9×(45+3×6)=9×63=567，两边精确相等。
+{"op":"point","id":"A","x":0,"y":6}
+{"op":"point","id":"B","x":0,"y":0}
+{"op":"point","id":"C","x":9,"y":0}
+{"op":"point","id":"D","x":3,"y":0}                    // BD:DC=1:2 的内分点，坐标数值化
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"segment","id":"cev","from":"A","to":"D"}       // cevian AD，先创建才能被引用
+{"op":"verify","kind":"collinear","of":["B","D","C"],"expect":0,"tol":0.05,"label":"D 真在 BC 上"}
+{"op":"measure","kind":"distance","of":["A","B"],"label":"AB=6"}
+{"op":"measure","kind":"distance","of":["A","C"],"label":"AC=√117≈10.817"}
+{"op":"measure","kind":"distance","of":["A","D"],"label":"AD=√45≈6.708"}
+{"op":"measure","kind":"distance","of":["B","D"],"label":"BD=3"}
+{"op":"measure","kind":"distance","of":["D","C"],"label":"DC=6"}
+{"op":"measure","kind":"distance","of":["B","C"],"label":"BC=9"}
+{"op":"verify","kind":"distance","of":["A","C"],"expect":10.817,"tol":0.05,"label":"AC≈10.817"}
+{"op":"verify","kind":"distance","of":["A","D"],"expect":6.708,"tol":0.05,"label":"AD≈6.708"}
+{"op":"verify","kind":"distance","of":["B","D"],"expect":3,"tol":0.05,"label":"BD=3"}
+{"op":"verify","kind":"distance","of":["D","C"],"expect":6,"tol":0.05,"label":"DC=6"}
+{"op":"verify","kind":"evaluate","expr":"117*3+36*6","expect":567,"label":"AC²·BD+AB²·DC=567"}
+{"op":"verify","kind":"evaluate","expr":"9*(45+3*6)","expect":567,"label":"BC·(AD²+BD·DC)=567"}
+// message："D(3,0) 内分 BC 为 BD:DC=1:2；AC²·BD+AB²·DC=117×3+36×6=567，BC·(AD²+BD·DC)=9×(45+18)=567，斯图尔特定理成立。"
+// 变式 A（快照已有三角形，只补分点/cevian）：不重发 A/B/C 的 point 与 polygon，按快照坐标重算 D 的分点坐标与所有 expect，
+//   别沿用 3/6/9/567；若快照里 D 已存在但比例不符，按新比例只重发 D 的 point + cevian + measure/verify。
+// 变式 B（D 是中点，m=n=a/2）：斯图尔特退化为阿波罗尼斯定理 AB²+AC²=2(AD²+BD²)；本例公式仍成立，
+//   但用 midpoint of:[B,C] 取 D 即可，evaluate 写 "36+117" 与 "2*(45+3*3)" 都=153，别另编 kind:median。
+// 变式 C（D 在延长线上，外分）：斯图尔特对有向线段仍成立，但 BD/DC 中有一段取负；先按快照确认 D 在直线 BC 上
+//   （verify collinear 残差仍≈0），evaluate 用带负号的段长（如 "117*(-3)+36*12" 对 D(−3,0)），别套内分点公式。
+// 变式 D（顶点或分点被滑动条驱动）：三段边长与 cevian 都变但恒等式恒成立；先 inspect/measure 回读当前值再数值化
+//   expect，或用 expectRange，不要写死 6/10.817/6.708/567。
+// 要点：① 协议无 stewart/cevian kind，inspect/measure/verify 都不认，别编；
+//   ② 配对是 AC²·BD+AB²·DC（m 配对侧边 AC、n 配 AB），写成 AB²·BD+AC²·DC 是最典型错；
+//   ③ 右边 a(d²+mn) 的 mn 项不能漏、a 是整边 BC 不是 AB；写成 BC·AD² 就错；
+//   ④ D 坐标与平方值都必须数值化：先算分点坐标，再用坐标差算 b²/c²/d² 精确整数，不写表达式、不先开方再平方；
+//   ⑤ 先 verify collinear 确认 D 真在 BC 上，否则定理不适用；measure/verify 用相同 id 别把 D 写成 B 或 C；
+//   ⑥ verify pass:false 多为 m/n 配反/漏 mn/D 不在 BC/expect 沿用旧值，按例6/例10 只重发错的 D、cevian、verify，不 clear 整板。
 
 
 # 画板规范
