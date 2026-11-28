@@ -690,6 +690,23 @@
  *   ② 继续补易错图形 few-shot（下一候选：梅涅劳斯与塞瓦定理——共线/共点比例乘积=1，靠 verify
  *      evaluate 核三比值乘积，别编 kind:menelaus/kind:ceva；三角形五心综合辨析）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ *
+ * 本轮（AI作图对标大角几何·增量·2026-11-28 第四十二轮）：只追加 2D 作图主干（例65 梅涅劳斯与
+ *   塞瓦定理 few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；
+ *   核心工作流 / 铁律 / 命令清单既有行 / 既有例1-64 逐字未动、无删除行。落实上一轮 TODO 交接项②
+ *   「梅涅劳斯与塞瓦定理」：例54/55/62/64 覆盖斜边中线/高、重心 2:1、斯图尔特，但都没覆盖
+ *   「三线共点 / 三点共线 ⇔ (BD/DC)(CE/EA)(AF/FB)=1」这一高频考点。协议无 ceva/menelaus kind，
+ *   AI 常编 kind:ceva、把塞瓦共点误写成 collinear 共线、比值分子分母配对反、把外分点塞回边内。
+ *   本文件在例64 后追加例65，给出「读快照→分点坐标数值化→三条 cevian→intersect 求 P + online 验
+ *   第三条共点→collinear 验梅涅劳斯共线→evaluate 核比值乘积=1」范式（长度比=1、有向比=−1 两口径隔离）；
+ *   docs 追加用例 143/144。全部复用现有 op（point/polygon/segment/line/intersect/measure/
+ *   verify kind:distance+online+collinear+evaluate），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/
+ *   中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆/重心比值/费马点
+ *   120°/斯图尔特平方/梅涅劳斯·塞瓦比值读数在真实 JSXGraph 落点目视确认；
+ *   ② 继续补易错图形 few-shot（下一候选：三角形五心综合辨析 / 定比分点的向量表示 / 面积比与线段比
+ *      转化，均按「读状态→规划→分步构造→verify 回读」范式，别编不存在的 kind）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2791,6 +2808,62 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ④ D 坐标与平方值都必须数值化：先算分点坐标，再用坐标差算 b²/c²/d² 精确整数，不写表达式、不先开方再平方；
 //   ⑤ 先 verify collinear 确认 D 真在 BC 上，否则定理不适用；measure/verify 用相同 id 别把 D 写成 B 或 C；
 //   ⑥ verify pass:false 多为 m/n 配反/漏 mn/D 不在 BC/expect 沿用旧值，按例6/例10 只重发错的 D、cevian、verify，不 clear 整板。
+
+
+== 例65：梅涅劳斯与塞瓦定理（三线共点/三点共线 ⇔ (BD/DC)(CE/EA)(AF/FB)=1；易错：编 kind:ceva/menelaus、把共点写成共线、比值分子分母配对反、外分点塞回边内） ==
+用户："三角形 A(0,6) B(0,0) C(9,0)。① 取 D 在 BC 上 BD:DC=1:2、E 在 CA 上 CE:EA=1:2、F 在 AB 上 AF:FB=4:1，连 AD、BE、CF，验证三线共点（塞瓦）；② 把直线 DE 延长交 AB 的延长线于 F′，验证 D、E、F′ 共线（梅涅劳斯）。"
+思路：协议 inspect/measure/verify 都**没有** kind:ceva / kind:menelaus，别编 {"op":"verify","kind":"ceva"}。
+      两定理共用同一组比值 (BD/DC)(CE/EA)(AF/FB)=1（长度形式），配对按「顶点所在边的两段」：
+      BD/DC 取 BC 上 D 分出的两段、CE/EA 取 CA 上 E 分出的两段、AF/FB 取 AB 上 F 分出的两段，别把邻边混进来。
+      协议也只有「多点共线」collinear、**没有**「三线共点」直接 kind：塞瓦共点靠「两条 cevian 求交点 P → verify online 验 P 在第三条 cevian 所在直线上」；
+      梅涅劳斯共线直接 verify collinear of:[D,E,F′]。两个比值乘积都靠 verify kind:evaluate 写数值算式回读（不是机器判定定理，是核算式=1）。
+      分点坐标一律数值化：D(3,0)（BD:DC=1:2）、E(6,2)（CE:EA=1:2 → E=C+(A−C)/3）、F(0,1.2)（AF:FB=4:1 → F=A+(B−A)·4/5），
+      别写 "B+(C−B)/3" 这类表达式。CE/EA 的比值用坐标差精确值 CE=√13、EA=√52=2√13 → 1/2，evaluate 写 "1/2" 不写浮点近似。
+① 塞瓦：建点/三角形/三分点/三条 cevian，末尾求交点 + 共线核 + 比值 evaluate：
+{"op":"point","id":"A","x":0,"y":6}
+{"op":"point","id":"B","x":0,"y":0}
+{"op":"point","id":"C","x":9,"y":0}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"point","id":"D","x":3,"y":0}                 // BD:DC=1:2 内分点
+{"op":"point","id":"E","x":6,"y":2}                 // CE:EA=1:2；E=(9,0)+(1/3)((0,6)−(9,0))=(6,2)
+{"op":"point","id":"F","x":0,"y":1.2}               // AF:FB=4:1；F=(0,6)+(4/5)((0,0)−(0,6))=(0,1.2)
+{"op":"segment","id":"cAD","from":"A","to":"D"}
+{"op":"segment","id":"cBE","from":"B","to":"E"}
+{"op":"segment","id":"cCF","from":"C","to":"F"}
+{"op":"measure","kind":"distance","of":["B","D"],"label":"BD=3"}
+{"op":"measure","kind":"distance","of":["D","C"],"label":"DC=6"}
+{"op":"measure","kind":"distance","of":["C","E"],"label":"CE=√13≈3.606"}
+{"op":"measure","kind":"distance","of":["E","A"],"label":"EA=√52≈7.211"}
+{"op":"measure","kind":"distance","of":["A","F"],"label":"AF=4.8"}
+{"op":"measure","kind":"distance","of":["F","B"],"label":"FB=1.2"}
+// 共点：延长 AD、BE 求交点 P≈(2.571,0.857)，再验 P 落在 CF 所在直线上（P 不必在线段 CF 内）
+{"op":"line","id":"lAD","through":["A","D"]}
+{"op":"line","id":"lBE","through":["B","E"]}
+{"op":"intersect","id":"P","of":["lAD","lBE"]}
+{"op":"verify","kind":"online","of":["P","C","F"],"expect":0,"tol":0.05,"label":"P 在 CF 直线上 → AD/BE/CF 共点"}
+{"op":"verify","kind":"evaluate","expr":"(3/6)*(1/2)*(4.8/1.2)","expect":1,"tol":0.05,"label":"(BD/DC)(CE/EA)(AF/FB)=1"}
+// message："AD、BE、CF 交于 P≈(2.571,0.857)；(BD/DC)(CE/EA)(AF/FB)=(3/6)(1/2)(4.8/1.2)=1，塞瓦定理成立，三线共点。"
+② 梅涅劳斯：沿用 A/B/C/D/E，另取外分点 F′，验证三点共线与比值：
+{"op":"point","id":"F2","x":0,"y":-2}              // 直线 DE 延长交 AB 延长线（B 下方）于 F′(0,−2)，是 AB 的外分点
+{"op":"verify","kind":"collinear","of":["D","E","F2"],"expect":0,"tol":0.05,"label":"D/E/F′ 共线"}
+{"op":"verify","kind":"evaluate","expr":"(3/6)*(1/2)*(8/2)","expect":1,"tol":0.05,"label":"(BD/DC)(CE/EA)(AF′/F′B)=1（长度比，F′ 外分）"}
+// message："F′(0,−2) 在 AB 延长线上，D(3,0)、E(6,2)、F′ 共线；(3/6)(1/2)(8/2)=1，梅涅劳斯定理成立。"
+// 有向比口径：上面 evaluate 用的是【长度比】=1；若改用有向线段，D、E 内分取正、F′ 外分 AF′/F′B 取负，有向乘积=−1，
+//   别把长度比的 expect 写成 −1 或把有向比的 expect 写成 1；两种口径只选一种，别混写。
+// 变式 A（快照已有三角形/分点）：不重发 A/B/C 的 point 与 polygon，按快照坐标重算 D/E/F 分点坐标与比值 expect，
+//   别沿用 3/6/1.2；若分点已存在但比例不符，按新比例只重发该分点 point + 关联的 cevian/截线 + measure/verify。
+// 变式 B（三线是中线 → 退化重心）：D/E/F 全取 midpoint（of:[B,C]/[C,A]/[A,B]），三比值都是 1、乘积=1，共点即重心 G；
+//   inspect center 回读 G 落点，别心算中点坐标、别另编 kind:median。
+// 变式 C（角平分线 cevian）：比值由角平分线定理定（如 AD 平分 ∠A → BD/DC=AB/AC），先 measure 回读 AB/AC 再数值化写进 evaluate，
+//   别直接套 1/2；共点/比值核法同上。
+// 变式 D（顶点被滑动条驱动）：分点随顶点移动，先 inspect/measure 回读当前段长再数值化 evaluate 的 expect，或用 expectRange，
+//   别写死 3/6/4.8/1.2/1。
+// 要点：① 协议无 ceva/menelaus kind，inspect/measure/verify 都不认，别编；
+//   ② 塞瓦「共点」不是 collinear：collinear 只验多点共线，共点靠 intersect 求 P + online 验 P 在第三条 cevian 直线上；
+//   ③ 梅涅劳斯「共线」才是 collinear of:[D,E,F′]，别拿它去验塞瓦的三线共点；
+//   ④ 比值按 (BD/DC)(CE/EA)(AF/FB) 三对配对，分子分母写反（DC/BD 等）或把邻边比值混进来是头号错误；
+//   ⑤ 外分点必须落在边的延长线上（本例 F′(0,−2) 在 B 下方），把它塞回 AB 段内就变成塞瓦共点了，别混；长度比=1、有向比=−1 只选一种口径；
+//   ⑥ 分点坐标/比值/expect 全写数值不写表达式；verify pass:false 多为分点坐标错、比值配对反、共点写成共线，按例6/例10 只重发错的点/verify，不 clear 整板。
 
 
 # 画板规范

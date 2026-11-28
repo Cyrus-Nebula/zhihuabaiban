@@ -1267,3 +1267,32 @@
 - `verify kind:evaluate` 的 `expr` 是常量算式（内部按 x 求值），`expect` 必须是数字；本例两条 evaluate 都不带 x。
 - D 必须是真实内分点：`verify kind:collinear` 残差≈0 是定理适用的前提；外分（D 在延长线上）时 BD/DC 按有向线段取负，evaluate 表达式相应带负号。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+
+## 第四十二轮增量：梅涅劳斯与塞瓦定理 few-shot（2026-11-28）
+> 承接第四十一轮 TODO②「下一候选：梅涅劳斯与塞瓦定理 / 三角形五心综合辨析」的梅涅劳斯与塞瓦定理项。
+> 例54/55/62/64 覆盖斜边中线/高、重心 2:1、斯图尔特平方，均未覆盖「三线共点 / 三点共线 ⇔
+> (BD/DC)(CE/EA)(AF/FB)=1」这一高频考点。协议无 `ceva` / `menelaus` kind，也无「三线共点」直接断言，
+> AI 常编 `verify kind:ceva`、把塞瓦共点误写成 `collinear`、比值分子分母配对反、把外分点塞回边内。
+> 本轮仅在 `ai/board-prompt.js` 例64 后纯追加例65，复用既有 op（point/polygon/segment/line/intersect/
+> measure/verify kind:distance+online+collinear+evaluate），`js/executor.js` 执行分支 / 3D 分支 / 前端 /
+> appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 143 | 三角形 A(0,6) B(0,0) C(9,0)，D 在 BC 上 BD:DC=1:2、E 在 CA 上 CE:EA=1:2、F 在 AB 上 AF:FB=4:1，连 AD/BE/CF 验证塞瓦定理三线共点 | 读快照 → `point` A(0,6)/B(0,0)/C(9,0) → `polygon` tri → 三分点 `point` D(3,0)/E(6,2)/F(0,1.2) 坐标数值化（E=C+(A−C)/3、F=A+(B−A)·4/5）→ `segment` cAD/cBE/cCF → `measure` distance 六段 BD=3/DC=6/CE≈3.606/EA≈7.211/AF=4.8/FB=1.2 → `line` lAD/lBE → `intersect` P of:[lAD,lBE] → `verify` online P on:[C,F]=0（三线共点）→ `verify evaluate` "(3/6)*(1/2)*(4.8/1.2)"=1 → message 说明共点 P≈(2.571,0.857) 且比值乘积=1 | ✅ | 编 `verify kind:ceva`；把「三线共点」写成 `collinear of:[D,E,F]`；比值写成 (DC/BD)(EA/CE)(FB/AF) 分子分母配反；分点坐标写表达式 "B+(C−B)/3"；E/F 坐标心算错（E 取成 AC 上靠近 A 的点、F 取 (0,4.8)）；共点直接 `point` 心算而不 intersect+online；CE/EA 用浮点近似当精确值 |
+| 144 | 同三角形，直线 DE 延长交 AB 的延长线于 F′，验证 D/E/F′ 共线（梅涅劳斯），并区分长度比=1 与有向比=−1 | 沿用 A/B/C/D/E，`point` F2(0,−2)（AB 延长线上、B 下方的外分点，坐标数值化）→ `verify` collinear of:[D,E,F2]=0 → `verify evaluate` "(3/6)*(1/2)*(8/2)"=1 核长度比 → message 说明 F′ 外分、长度比=1；有向口径下 F′ 的 AF′/F′B 取负、乘积=−1，两种口径只选一种不混写 | ✅ | 把外分点 F′ 塞回 AB 段内（如取 (0,1.8)）退化成塞瓦共点；长度比口径 expect 写 −1 或有向口径写 1；把梅涅劳斯共线误验成三线共点；比值分子分母配反；F′ 坐标心算错（DE 延长线实际交 x=0 于 y=−2）；混用长度比与有向比 |
+
+## TODO 交接更新（2026-11-28 第四十二轮）
+1. [本轮已完成] 例65 梅涅劳斯与塞瓦定理 few-shot + docs 用例 143/144（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] 下一候选：三角形五心综合辨析 / 定比分点的向量表示 / 面积比与线段比转化（继续纯提示词 few-shot，按「读状态→规划→分步构造→verify 回读」范式，别编不存在的 kind）。
+3. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆/重心比值/费马点 120°/斯图尔特平方/梅涅劳斯·塞瓦比值读数在真实 JSXGraph 落点目视确认。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第四十二轮追加）
+- 例65（用例 143/144）：协议无原生 `ceva` / `menelaus` op，也无 `verify kind:ceva`；协议只有「多点共线」`collinear`，**没有**「三线共点」直接断言。
+- 塞瓦三线共点靠「两条 cevian `intersect` 求 P → `verify kind:online` 验 P 在第三条 cevian 所在直线」实现；P 不必落在第三条 cevian 线段内，用直线三点式 `of:[P,C,F]`。
+- 梅涅劳斯三点共线直接 `verify kind:collinear of:[D,E,F′]`；外分点 F′(0,−2) 在 AB 延长线上（B 下方），把它塞回 AB 段内会退化成塞瓦共点。
+- 比值 (BD/DC)(CE/EA)(AF/FB) 按顶点所在边的两段配对：长度口径乘积=1，有向口径（一外分取负）乘积=−1，两种口径只选一种；`evaluate expect` 须与所选口径一致。
+- 分点坐标一律数值化：D(3,0)、E(6,2)、F(0,1.2)、F′(0,−2)；CE/EA 用坐标差精确值 √13/(2√13)=1/2，`evaluate` 写 "1/2" 不写浮点近似。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
