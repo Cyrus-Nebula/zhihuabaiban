@@ -1211,3 +1211,31 @@
 - `inspect kind:center` 是 inspect 专用派生量，`verify` 不认 `kind:center`；`kind:center` 回读的重心坐标必须落成 `point` 数字后再被 `verify` 引用。
 - `verify kind:evaluate` 的 `expr` 可为常量算式（内部按 x 求值），但 `expect` 必须是数字；等面积算式 9*2/2、6*3/2 依赖本组点沿坐标轴，一般斜三角形请改用 `inspect center` 回读子三角形面积。
 - 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第四十轮增量：三角形费马点/托里拆利点（外作等边三角形外接圆交点，别编 kind:fermat）few-shot（2026-11-28）
+> 承接第三十九轮 TODO②「下一候选：费马点」。例38/59/60/61/62 覆盖四心、欧拉线、九点圆、旁心与
+> 重心坐标比值，均未覆盖「三内角 <120° 时费马点 ∠AFB=∠BFC=∠CFA=120°、到三顶点距离和最小」这一
+> 高频考点；协议 inspect center 只有 I/O/H/G/面积、没有费马点字段，AI 常编 `kind:fermat`、把外心/重心
+> 当费马点、两圆交点选回公共顶点 A、把等边三角形画进内侧（第二等角中心）、或对 ≥120° 钝角三角形
+> 硬套内部费马点。本轮仅在 `ai/board-prompt.js` 例62 后纯追加例63，复用既有 op（point/polygon/
+> regularPolygon edge/inspect center/circle/intersect/line/verify），`js/executor.js` 执行分支 /
+> 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 139 | 三角形 A(0,0) B(4,0) C(1,3)，作费马点 F（到三顶点距离和最小）并验证 ∠AFB=∠BFC=∠CFA=120° | 第一轮 point A/B/C → polygon tri → regularPolygon eqAB edge:[A,B] sides:3 side:"right" vertexIds:[A0,D,B0]（D 是外顶点、在 AB 下方；side:right 顶点序=[起点,外顶点,终点]，别把 D 排末位否则撞 B 退化）→ regularPolygon eqAC edge:[A,C] sides:3 side:"left" vertexIds:[A1,C0,E]（E 是外顶点、在 AC 外侧背离 B；side:left 顶点序=[起点,终点,外顶点]）→ inspect derive 两条 center of:[A,B,D]/[A,C,E] 回读外接圆心 O1(2,−1.155) R=2.309、O2(−0.366,1.789) R=1.826；第二轮 point O1/O2 → circle cAB center:O1 radius:2.309 + cAC center:O2 radius:1.826（回读数值化、不写 "4/√3"）→ intersect F of:[cAB,cAC] select:"top"（两圆交 A(0,0) 与 F≈(1.30,1.05)，取非 A 者）→ verify angle ∠AFB/∠BFC/∠CFA 各 expect:120 tol:0.5（F 放中间）→ message 说明费马点 | ✅ | 编 kind:fermat；把外心 O/重心 G 当费马点；intersect 选回公共顶点 A；radius 写 "4/√3" 表达式；side 定反把等边画进内侧；vertexIds 外顶点排错位致三点共线退化；verify angle 顶点写成 A 或 B |
+| 140 | 变式：外顶点连对角等价法 / 快照已有三角形或顶点被滑动条驱动 / 某内角 ≥120° 退化 | 等价法：不画外接圆，line lDC through:[D,C] + lEB through:[E,B] → intersect F of:[lDC,lEB]（线线交点唯一、不用 select）得同一点 F≈(1.30,1.05) + 三条 verify 120°；快照已有三角形则不重发 point/polygon，只读快照顶点外作等边，圆心/R 按 inspect 回读值落数值别沿用 2/−1.155/2.309，F 随顶点变时 select 改 "near":[内部点] 取非 A 交点；某内角 ≥120° 时费马点退化到该钝角顶点本身、不在内部，直接 point F 到该顶点或 message 说明，不套外接圆/120° 构造、不硬写 expect:120 | ✅ | 沿用旧坐标/expect；把公共顶点 A 当 F；向外等边用 toward 指向第三顶点画进内侧（得第二等角中心）；钝角三角形硬套内部 F 致 verify 失败；编不存在的 kind |
+
+## TODO 交接更新（2026-11-28 第四十轮）
+1. [本轮已完成] 例63 费马点/托里拆利点 few-shot + docs 用例 139/140（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] 下一候选：三角形五心综合辨析 / 斯图尔特定理 / 梅涅劳斯与塞瓦定理（继续纯提示词 few-shot，按「读状态→规划→分步构造→verify 回读」范式，别编不存在的 kind）。
+3. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆/重心比值/费马点 120° 读数在真实 JSXGraph 上落点目视确认。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第四十轮追加）
+- 例63（用例 139/140）：协议无原生 `fermat` / `verify kind:fermat` op；费马点靠「外作等边三角形 → 外接圆交点（或外顶点连对角）」构造，三 120° 角靠三条 `verify kind:angle` 判定。
+- `inspect kind:center` 只回读重心/内心 I+r/外心 O+R/垂心 H/面积，没有费马点字段，等边三角形四心重合；AI 不得编 `kind:fermat`，也不得把外心 O 或重心 G 当费马点。
+- 两外接圆交于公共顶点 A(0,0) 与费马点 F≈(1.30,1.05)，本组点 F 更高故 `select:"top"` 取 F；一般三角形若 A 不是最高点须改用 `select:"near"` 或按回读坐标判断，别默认选回 A。
+- 等边三角形必须向外作（背离第三顶点）：`regularPolygon edge` 用 `side` 定侧，`toward` 指向第三顶点会把等边画进内侧得到第二等角中心 X14，不是费马点 X13。
+- 退化情形：若三角形某内角 ≥120°，费马点退化到该钝角顶点本身、不在内部，三 120° 断言必然失败；AI 须识别并 message 说明，别硬套构造。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

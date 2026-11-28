@@ -657,6 +657,23 @@
  *   JSXGraph 落点目视确认；
  *   ② 继续补易错图形 few-shot（下一候选：费马点——用等边三角形外接圆交点构造，别编 kind:fermat）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ * 本轮（AI作图对标大角几何·增量·2026-11-28 第四十轮）：只追加 2D 作图主干（例63 费马点/
+ *   托里拆利点 few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；
+ *   核心工作流 / 铁律 / 命令清单既有行 / 既有例1-62 逐字未动、无删除行。落实上一轮 TODO 交接项
+ *   「下一候选：费马点」：例38/59/60/61/62 覆盖四心、欧拉线、九点圆、旁心、重心坐标，但都没覆盖
+ *   「三内角 <120° 时费马点 ∠AFB=∠BFC=∠CFA=120°、到三顶点距离和最小」这一高频考点。协议无
+ *   fermat kind，AI 常编 kind:fermat、把外心/重心当费马点、两圆交点选回公共顶点 A、把等边三角形
+ *   画进内侧、或对 ≥120° 钝角三角形硬套内部费马点。本文件在例62 后追加例63，给出「两阶段：
+ *   regularPolygon edge 外作两等边三角形 → inspect center 回读外接圆心/半径 → circle 两外接圆 →
+ *   intersect 取非 A 交点 F → 三个 verify angle=120°」范式（并附外顶点连对角的等价连线法）；
+ *   docs 追加用例 139/140。全部复用现有 op（point/polygon/regularPolygon/inspect center/circle/
+ *   intersect/line/verify），js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/
+ *   中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆/重心比值/费马点
+ *   120° 读数在真实 JSXGraph 落点目视确认；
+ *   ② 继续补易错图形 few-shot（下一候选：三角形五心综合辨析 / 斯图尔特定理 / 梅涅劳斯与塞瓦定理，
+ *      均按「读状态→规划→分步构造→verify 回读」范式，别编不存在的 kind）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2666,6 +2683,52 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ④ 坐标与 expect 一律写数值，不写 "(0+9+0)/3"、"S/3" 这类表达式；expect 写死前先读快照/回读数；
 //   ⑤ verify pass:false 多为把 G 取成中点、distances 取反、expect 沿用旧坐标，按例6/例10 只重发错的点/verify，
 //      不 clear 整板、不重复画已建好的三条中线。
+
+
+== 例63：三角形费马点/托里拆利点（三内角均<120°时 ∠AFB=∠BFC=∠CFA=120°；用两条边上的等边三角形外接圆交于 A 与 F；易错：编 kind:fermat、把外心/重心当 F、选回公共顶点 A、把等边三角形画进内侧、钝角≥120°硬套内部点） ==
+用户："三角形 A(0,0) B(4,0) C(1,3)，作它的费马点 F（到三顶点距离和最小），验证 ∠AFB=∠BFC=∠CFA=120°。"
+思路：协议 inspect kind:center 只有四心/面积，**没有**费马点字段；verify / measure 也没有 kind:fermat，
+      别编 {"op":"inspect","kind":"fermat"}，也别把外心 O、重心 G 当费马点。
+      费马点靠构造：在三边上向外作等边三角形，任取两边上的等边三角形，其外接圆除公共顶点 A 外的
+      另一个交点就是 F（第一等角中心 X13）。等边三角形用 regularPolygon edge:[A,B]/[A,C] + side 定外侧，
+      "外侧"=背离第三顶点的那一侧：A→B 向右、C 在上方→外试用 side:"right"（下方）；A→C 时 B 在右侧→外用 side:"left"。
+      外接圆圆心/半径不心算，用 inspect kind:center 回读（等边三角形四心重合、R=边长/√3）。
+第一轮：建三点+三角形+两个外作等边三角形，末尾派生查询两个外接圆的圆心与半径（只读、不画读数）：
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":4,"y":0}
+{"op":"point","id":"C","x":1,"y":3}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"regularPolygon","id":"eqAB","edge":["A","B"],"sides":3,"side":"right","vertexIds":["A0","D","B0"]}   // D 是外作等边三角形的顶点，在 AB 下方
+// 注意顶点顺序随 side 变：side:"right" 时三顶点=[起点,外顶点,终点]→D 排第 2 位；side:"left" 时=[起点,终点,外顶点]→E 排末位。
+// 拿不准就把 vertexIds 按坐标对号：先 inspect 回读，别默认外顶点总是最后一位（否则 D 会撞上 B、三点共线退化）。
+{"op":"regularPolygon","id":"eqAC","edge":["A","C"],"sides":3,"side":"left","vertexIds":["A1","C0","E"]}    // E 是外顶点，在 AC 外侧、背离 B
+{"op":"inspect","derive":[{"kind":"center","of":["A","B","D"],"label":"eqAB外接圆"},{"kind":"center","of":["A","C","E"],"label":"eqAC外接圆"}]}
+系统回【查询读数】：「eqAB外接圆: 重心/内心/外心/垂心 均=(2,−1.155), R=2.309, 面积=6.928；eqAC外接圆: 四心均=(−0.366,1.789), R=1.826, 面积=4.330」。
+第二轮：用回读数值落圆心 point + circle 画两个外接圆，取除 A 外的交点为 F，末尾用三个 120° 角自检：
+{"op":"point","id":"O1","x":2,"y":-1.155}
+{"op":"circle","id":"cAB","center":"O1","radius":2.309}      // 半径写回读数值，不写 "4/√3"
+{"op":"point","id":"O2","x":-0.366,"y":1.789}
+{"op":"circle","id":"cAC","center":"O2","radius":1.826}
+{"op":"intersect","id":"F","of":["cAB","cAC"],"select":"top"}  // 两圆交于 A(0,0) 与 F≈(1.30,1.05)；本例 F 更高，select:"top" 取 F、别取回 A
+{"op":"verify","kind":"angle","of":["A","F","B"],"expect":120,"tol":0.5,"label":"∠AFB=120°"}
+{"op":"verify","kind":"angle","of":["B","F","C"],"expect":120,"tol":0.5,"label":"∠BFC=120°"}
+{"op":"verify","kind":"angle","of":["C","F","A"],"expect":120,"tol":0.5,"label":"∠CFA=120°"}
+// message："F≈(1.30,1.05) 是三角形 A(0,0)B(4,0)C(1,3) 的费马点，∠AFB=∠BFC=∠CFA≈120°，到三顶点距离和最小。"
+// 作法等价（变式 A，更省事）：不画外接圆也能得同一点——连「AB 上等边三角形的外顶点 D」到对角 C、
+//   连「AC 上等边三角形的外顶点 E」到对角 B，两条直线 DC 与 EB 的交点即 F（线线交点唯一、不用 select）：
+//   {"op":"line","id":"lDC","through":["D","C"]} {"op":"line","id":"lEB","through":["E","B"]}
+//   {"op":"intersect","id":"F","of":["lDC","lEB"]} → F≈(1.30,1.05)，再附上面三条 verify 120° 自检。
+// 变式 B（快照已有三角形 / 顶点被滑动条驱动）：不重发 point/polygon，只读快照顶点，先 regularPolygon 外作等边三角形；
+//   圆心/R 用 inspect center 按回读值落数值，别沿用 2/−1.155/2.309；F 位置随顶点变，select 取「非 A 的那个交点」
+//   （A 一般就是两边公共顶点；若 A 不是最高点，改用 select:"near":[三角形内部一点] 或按回读坐标判断）。
+// 变式 C（某内角 ≥120°）：费马点退化到该钝角顶点本身，不在内部——此时别套本例外接圆/120° 构造，
+//   直接 point F 到该顶点或 message 说明；verify 三 120° 必然失败，别硬写 expect:120。
+// 要点：① 协议无 fermat kind：inspect/measure/verify 都不认，别编 kind:fermat；
+//   ② 费马点靠构造：外作等边三角形→外接圆交点（或外顶点连对角）；外心 O/重心 G 不是费马点；
+//   ③ 等边三角形必须向外（背离第三顶点）：用 regularPolygon edge + side/toward 定侧，toward 指向第三顶点会画进内侧（那是第二等角中心）；
+//   ④ 圆心/R 由 inspect center 回读后数值化，radius 不写 "4/√3"、"S/3" 这类表达式；
+//   ⑤ 两圆交 A 与 F，务必 select 取非 A 者，别把公共顶点 A 当 F；verify angle 顶点 F 放中间；
+//   ⑥ verify pass:false 多为选回 A / 等边画进内侧 / 钝角硬套，按例6/例10 只重发错的圆/intersect/verify，不 clear 整板。
 
 
 # 画板规范
