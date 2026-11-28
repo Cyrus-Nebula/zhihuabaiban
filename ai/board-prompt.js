@@ -4172,3 +4172,33 @@ export const BOARD3D_SPHERESPHERE_INTENT_RE = /(两球.{0,8}(相交|交圆|公�
 export function isSpheresphere3DIntent(text) {
   return BOARD3D_SPHERESPHERE_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
 }
+
+// 2026-11-28 D50 追加（仅在文件最末尾追加，上方 D1~D49 一切内容逐字未动）：平面截圆柱截面椭圆。
+export const BOARD3D_SECTIONCYLINDER_PROMPT = `
++- 命令 sectioncylinder3d（平面截圆柱截面椭圆 · D50）：给一个圆柱（中心 center + 轴 axis + 半径 radius + 高 height）与截面相对柱轴的夹角 angle（度，5≤angle≤90），一次画出圆柱上下底圆 + 侧母线 + 斜截面椭圆环 + 椭圆辐条 + 柱轴与截面法向 + 椭圆长/短轴半径 + 直角符号，并标出 r/θ/a/b/S 与 a=radius/sinθ、S=πab=πr²/sinθ。直接服务「平面截圆柱得椭圆 / 斜截圆柱截面面积 / 截面长轴短轴」高考核心用例。sectionsphere3d 截的是球且截面永远是圆、cylinder3d/conefrustum3d 只画圆柱圆台本身、plane3d 只画矩形面片，都画不出「平面截圆柱的椭圆截面」。
++- 命令格式：{"op":"sectioncylinder3d","id":"sci","center":[0,0,0],"axis":[0,0,1],"radius":1.5,"height":6,"angle":45,"offset":0,"segments":48,"ellipseSegments":64,"spokes":8,"meridians":12,"rightAngleSize":0.2,"vertexSize":0.1,"asCylinder":true,"asSection":true,"asAxes":true,"asRadii":true,"asPoints":false,"labelRadius":true,"labelAngle":true,"labelSemiMajor":true,"labelSemiMinor":true,"labelArea":true,"labelRelation":true,"color":"#2b7fd4"}
++  · θ=angle 是截面与柱轴的夹角（不是与底面的夹角）：θ=90° 时截面垂直柱轴、退化为圆 a=b=radius、S=πr²；θ 越小椭圆越扁长、a=radius/sinθ 越大。
++  · 正交标架 n=unit(axis)、h0=unit(helper−(helper·n)n)；截面法向 m=sinθ·n+cosθ·h0，截面内长轴方向 e1=cosθ·n−sinθ·h0、短轴方向 e2=unit(m×e1)。截面中心 O′=center+offset·n，椭圆点 P(t)=O′+a·cos t·e1+b·sin t·e2。
++  · 长半轴 a=radius/sinθ、短半轴 b=radius，轴向半展 a·cosθ=radius·cotθ；截面须完整落在有限圆柱内：|offset|+a·cosθ≤height/2，否则整条拒绝。椭圆点恒满足「到柱轴距离=radius」「在截面内 (P−O′)·m=0」，面积 S=πab=πr²/sinθ。
++  · 开关：asCylinder(上下底圆+母线)/asSection(椭圆环+辐条)/asAxes(柱轴+截面法向)/asRadii(长短轴半径+直角符号)/asPoints(小球)，前四项至少开一个；labelRadius/labelAngle/labelSemiMajor/labelSemiMinor/labelArea/labelRelation 为读数开关；segments/ellipseSegments/spokes/meridians/rightAngleSize/vertexSize 控制采样与标注密度；helper 可在轴近平行 z 时换基。
++  · 示例：
++  · 默认斜截圆柱（r=1.5、h=6、θ=45° → a=1.5√2、b=1.5、S=9√2π/4≈3.182π）：{"op":"sectioncylinder3d"}
++  · 垂直截得圆（θ=90°）：{"op":"sectioncylinder3d","angle":90}
++  · 截面沿柱轴上移 1、斜轴取向、加密采样：{"op":"sectioncylinder3d","center":[1,2,0],"axis":[1,1,1],"radius":2,"height":10,"angle":30,"offset":1,"segments":96,"ellipseSegments":96,"asPoints":true}
++  · 只留椭圆截面轮廓、不画圆柱与标注：{"op":"sectioncylinder3d","asCylinder":false,"asAxes":false,"asRadii":false,"labelRadius":false,"labelAngle":false,"labelSemiMajor":false,"labelSemiMinor":false,"labelArea":false,"labelRelation":false}
++- 约束：center/axis 非三元组 / 轴零向量 / radius·height·angle·offset 越界 / 截面超出圆柱高度 / segments·ellipseSegments·spokes·meridians 越界非整数 / rightAngleSize·vertexSize 越界 / 开关非布尔 / 四输出开关全关 / id 非法 / 椭圆点不在柱面或不在截面（守恒失败）—— 整条原子拒绝、零副作用。
++- 铁律：sectioncylinder3d 是 3D 命令；2D 的「椭圆面积公式 / 椭圆标准方程 / 圆锥曲线」在本分支依旧不认识，只有明确提到「圆柱 + 截 / 截面 / 斜截 / 截得椭圆」或「截面椭圆」且带立体词才用本命令。`;
+
+export const BOARD3D_SECTIONCYLINDER_PROMPT_OPS = Object.freeze(['sectioncylinder3d']);
+
+/**
+ * D50 立体专属词意图识别扩展（纯追加，不改 D1~D49 的任何意图正则）：
+ * 必须带「圆柱 / 柱面」+「截 / 截面 / 斜截 / 椭圆截面」，
+ * 避免把 2D 的「椭圆面积 / 椭圆方程 / 圆锥曲线」误切到 3D 分支。
+ */
+export const BOARD3D_SECTIONCYLINDER_INTENT_RE = /(圆柱.{0,12}(截|截面|斜截|切|椭圆)|(截|斜截|截得).{0,8}圆柱|截面.{0,6}椭圆|柱面.{0,6}(截|椭圆|截面))/i;
+
+/** 判断自然语言是否含 D50 新增的立体专属意图（截断到前 500 字，防超长输入） */
+export function isSectioncylinder3DIntent(text) {
+  return BOARD3D_SECTIONCYLINDER_INTENT_RE.test(String(text == null ? '' : text).slice(0, 500));
+}

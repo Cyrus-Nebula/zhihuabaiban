@@ -594,6 +594,13 @@ async function send() {
         const seg = m.segmentCount != null ? m.segmentCount : '?';
         appendLog('ai', `已生成两球相交公共圆（r1=${m.radius1 != null ? m.radius1 : '?'}，r2=${m.radius2 != null ? m.radius2 : '?'}，d=${m.distance != null ? m.distance : '?'}，x=${m.planeOffset != null ? m.planeOffset : '?'}，a=√(r1²−x²)=${m.circleRadius != null ? m.circleRadius : '?'}）：${seg} 段。`);
       }
+      // 2026-11-28 D50：sectioncylinder3d 展示平面截圆柱截面椭圆读数（数值以画板返回为准）。
+      for (const sci of results) {
+        if (!sci.ok || sci.op !== 'sectioncylinder3d') continue;
+        const m = sci.meta || {};
+        const seg = m.segmentCount != null ? m.segmentCount : '?';
+        appendLog('ai', `已生成平面截圆柱截面椭圆（r=${m.radius != null ? m.radius : '?'}，θ=${m.angleDeg != null ? m.angleDeg : '?'}°，a=r/sinθ=${m.semiMajor != null ? m.semiMajor : '?'}，b=r=${m.semiMinor != null ? m.semiMinor : '?'}，S=πab=${m.area != null ? m.area : '?'}）：${seg} 段。`);
+      }
     }
     if (data.message) {
       appendLog('ai', data.message);

@@ -55,6 +55,7 @@ import { resolveSphericalcap3D } from './board3d-sphericalcap.js';
 import { resolveSpheresector3D } from './board3d-spheresector.js';
 import { resolveSphericalwedge3D } from './board3d-sphericalwedge.js';
 import { resolveSphereSphere3D } from './board3d-spheresphere.js';
+import { resolveSectionCylinder3D } from './board3d-sectioncylinder.js';
 
 // 2026-11-15 D8 增量：transform3d 增加「ids 批量写法」（不是新 op）。
 // 下方全部 BOARD3D_*_OPS 历史契约常量与既有 8 条命令分支逐字未动。
@@ -560,6 +561,16 @@ export const BOARD3D_SPHERESPHERE_OPS = Object.freeze(['spheresphere3d']);
 /** 含全部扩展命令的完整集（49 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
 export const BOARD3D_COMPLETE40_OPS = Object.freeze([
   ...BOARD3D_COMPLETE39_OPS, ...BOARD3D_SPHERESPHERE_OPS,
+]);
+
+// 2026-11-28 D50：sectioncylinder3d 平面截圆柱截面椭圆（截面与柱轴夹角 θ +
+// 长半轴 a=radius/sinθ + 短半轴 b=radius + S=πab，椭圆点恒在柱面且在截面内）。
+// 同样单独成组、不并入历史契约常量（BOARD3D_OPS 7 / ALL 8 / FULL 9 / … /
+// COMPLETE39 48 / COMPLETE40 49 条），历史常量逐字不变。
+export const BOARD3D_SECTIONCYLINDER_OPS = Object.freeze(['sectioncylinder3d']);
+/** 含全部扩展命令的完整集（50 条），仅供文档 / 本轮回归核对，不参与历史契约断言 */
+export const BOARD3D_COMPLETE41_OPS = Object.freeze([
+  ...BOARD3D_COMPLETE40_OPS, ...BOARD3D_SECTIONCYLINDER_OPS,
 ]);
 
 export const BOARD3D_BGS = Object.freeze(['white', 'beige', 'dark']);
@@ -2058,6 +2069,36 @@ export function applyBoard3DCommands(commands, api, options = {}) {
             op, ok: ssFailed.length === 0 && ssCreated.length > 0,
             count: ssr.items.length, created: ssCreated, meta: ssr.meta,
             ...(ssFailed.length ? { failed: ssFailed } : {}),
+          });
+          break;
+        }
+        case 'sectioncylinder3d': {
+          // 2026-11-28 D50：平面截圆柱截面椭圆（圆柱上下底 + 侧母线 + 截面椭圆环 +
+          // 辐条 + 柱轴/法向 + 长短轴半径 + 直角符号 + r/θ/a/b/S 标注，
+          // a=radius/sinθ、S=πab=πr²/sinθ，椭圆点恒在柱面且恒在截面内）。
+          // getState 仅供 id 避让、缺失/抛错降级为空场景整批不中断；id 冲突分项失败、
+          // api.add 返回 null/false 分项回报；2D 命令仍由 default 拒绝。
+          let sciState = {};
+          try { sciState = (a.getState ? a.getState() : {}) || {}; } catch (_) { sciState = {}; }
+          const scir = resolveSectionCylinder3D(cmd, sciState);
+          if (!scir.ok) {
+            results.push({ op, ok: false, error: scir.error });
+            break;
+          }
+          const sciCreated = [];
+          const sciFailed = [];
+          for (const item of scir.items) {
+            if (known.has(item.id)) { sciFailed.push({ id: item.id, error: 'id 已存在' }); continue; }
+            const addOk = call('add', item);
+            if (addOk === null || addOk === false) { sciFailed.push({ id: item.id, error: '画板新建失败' }); continue; }
+            known.add(item.id);
+            types.set(item.id, item.type);
+            sciCreated.push({ id: item.id, type: item.type });
+          }
+          results.push({
+            op, ok: sciFailed.length === 0 && sciCreated.length > 0,
+            count: scir.items.length, created: sciCreated, meta: scir.meta,
+            ...(sciFailed.length ? { failed: sciFailed } : {}),
           });
           break;
         }
