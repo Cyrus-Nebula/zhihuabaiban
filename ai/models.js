@@ -13,12 +13,15 @@
  *
  * vision: true 表示可接收图片输入（前端据此显示上传按钮）。
  */
+// 智谱开放平台官方普惠档位模型（2026-11-28 核对 docs.bigmodel.cn）：
+// 文本 glm-4.7-flash / glm-4.5-flash / glm-4-flash-250414；视觉 glm-4.6v-flash /
+// glm-4.1v-thinking-flash / glm-4v-flash。
+// glm-4.5-flash 官方已路由到 4.7-Flash，仍可调用故保留；glm-4-flash（无后缀）已失效，已移除。
 export const FREE_MODELS = [
-  { id: 'glm-4.7-flash', name: 'GLM-4.7-Flash（推荐）', vision: false },
+  { id: 'glm-4.7-flash', name: 'GLM-4.7-Flash', vision: false },
   { id: 'glm-4.5-flash', name: 'GLM-4.5-Flash', vision: false },
   { id: 'glm-4-flash-250414', name: 'GLM-4-Flash-250414', vision: false },
-  { id: 'glm-4-flash', name: 'GLM-4-Flash（旧版兼容）', vision: false },
-  { id: 'glm-4.6v-flash', name: 'GLM-4.6V-Flash（视觉·看图复原）', vision: true },
+  { id: 'glm-4.6v-flash', name: 'GLM-4.6V-Flash（视觉）', vision: true },
   { id: 'glm-4.1v-thinking-flash', name: 'GLM-4.1V-Thinking-Flash（视觉）', vision: true },
   // GLM-4V-Flash 上下文只有 16K，2D 系统提示词会撑爆；后端按此预算裁剪输入
   { id: 'glm-4v-flash', name: 'GLM-4V-Flash（视觉）', vision: true, maxInputTokens: 16384 },
