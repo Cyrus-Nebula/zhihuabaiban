@@ -1185,3 +1185,29 @@
 - 旁切圆切点是到三条【直线】的垂足，两条落在边的延长线上、一条落在边上；本组点为 (6,0)/(0,6)/(1.2,2.4)，BC 中点 (1.5,2) 是错的。
 - A-旁心 I_A(6,6) 与内心 I(1,1) 都在 ∠A 内角平分线 y=x 上，但 r_a=6≠r=1；旁切圆与内切圆、九点圆不可互相顶替。
 - 本组点与例38/58 相似（直角边 3/4/5 对 6/8/10）但考点不同；本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。
+
+## 第三十九轮增量：三角形重心坐标比值（G=(A+B+C)/3，中线顶点段:中点段=2:1，三中线共点，重心坐标 (1:1:1) 等面积）few-shot（2026-11-28）
+> 承接第三十八轮 TODO②「下一候选：费马点、重心坐标比值」的后一项。例38/59/60 覆盖四心、
+> 欧拉线与九点圆，例61 覆盖旁心，均未覆盖「重心分中线 2:1 + 三中线共点 + 重心坐标 (1:1:1)
+> 对应三小三角形等面积」这一高频考点；AI 常把中线中点当重心、编 `kind:ratio` / `kind:barycentric`、
+> 把重心当内心/外心、或把 `expect` 写成表达式。本轮仅在 `ai/board-prompt.js` 例61 后纯追加例62，
+> 复用既有 op（point/polygon/midpoint/line/segment/inspect center/verify），
+> `js/executor.js` 执行分支 / 3D 分支 / 前端 / appId 零改动。
+
+| # | 自然语言描述 | 期望命令序列（要点） | 状态 | 易错点 |
+|---|------|-----------|------|------|
+| 137 | 三角形 A(0,0) B(9,0) C(0,6)，画三条中线标出重心 G，验证 G 分中线 2:1 且重心坐标 (1:1:1) 等面积 | 第一轮 point A/B/C → polygon tri → midpoint Ma(B,C)=(4.5,3)/Mb(A,C)=(0,3)/Mc(A,B)=(4.5,0) → line medA/medB/medC → inspect kind:center of:[A,B,C] 只读回读 G(3,2)/O(4.5,3) R=5.408/H(0,0)/I(2.092,2.092) r=2.092/面积=27；第二轮 point G(3,2) → segment sA/sB/sC → verify collinear A-G-Ma、B-G-Mb、C-G-Mc 残差 0 → verify distance C-G=5 / G-Mc=2.5 / C-Mc=7.5 → verify evaluate "(0+9+0)/3"=3、"(0+0+6)/3"=2、"9*2/2"=9、"6*3/2"=9 → message 说明 CG:GMc=2:1、三块面积各 9 | ✅ | 把 Ma/Mb/Mc 当中线终点后直接当 G；编 kind:ratio / kind:barycentric / verify kind:center；重心当内心 I(2.092,2.092) 或外心 O(4.5,3)；expect 写 "S/3" / "(0+9+0)/3" 表达式；沿用旧三角形 3/4/5 的坐标 |
+| 138 | 变式：快照已有三角形 / 顶点被滑动条驱动 / 一般斜三角形 / 等腰或等边 | 不重发 point/polygon，先 inspect center 按快照回读 G 与面积，再数值化 point G，expect 用回读值或 expectRange 不写死 3/2/5/9；一般斜三角形仍用 midpoint 取对边中点、不心算中点坐标，面积改由 inspect center 回读三个子三角形而非套 9*2/2；等边时 G=I=O=H 四心重合、等腰时 G 在对称轴上，仍按中线交点解释重心，不改叫内心/外心 | ✅ | 沿用旧 expect；把边中点当重心；比例写反 1:2；退化时把重合四心改名；把 inspect 专用 kind:center 写进 verify |
+
+## TODO 交接更新（2026-11-28 第三十九轮）
+1. [本轮已完成] 例62 重心坐标比值 few-shot + docs 用例 137/138（纯提示词、纯追加、0 删除行、executor 零改动）。
+2. [待办] 下一候选：费马点（用等边三角形外接圆交点构造，别编 kind:fermat）。
+3. [待办] intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆/重心比值读数在真实 JSXGraph 上落点目视确认。
+4. [待办] 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+
+## 已知限制（第三十九轮追加）
+- 例62（用例 137/138）：协议无原生 `centroidRatio` / `barycentric` / `verify kind:area` op；2:1 靠两段 `verify kind:distance` 回读并 message 说明，等面积靠 `verify kind:evaluate` 写算式回读，共点靠 `verify kind:collinear`，不是机器判定比值/面积。
+- 本组点 A(0,0) B(9,0) C(0,6) 是直角三角形（H=A），但重心 G(3,2) 与内心 I(2.092,2.092)、外心 O(4.5,3) 均不重合；直角顶点处的内切圆 r=2.092 与重心无关，别混用。
+- `inspect kind:center` 是 inspect 专用派生量，`verify` 不认 `kind:center`；`kind:center` 回读的重心坐标必须落成 `point` 数字后再被 `verify` 引用。
+- `verify kind:evaluate` 的 `expr` 可为常量算式（内部按 x 求值），但 `expect` 必须是数字；等面积算式 9*2/2、6*3/2 依赖本组点沿坐标轴，一般斜三角形请改用 `inspect center` 回读子三角形面积。
+- 本轮为纯提示词增量，沙箱无头环境只做文件结构与 2D 白名单一致性检查，不做真实 JSXGraph 渲染目视确认。

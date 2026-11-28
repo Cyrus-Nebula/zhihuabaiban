@@ -642,6 +642,21 @@
  *   中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆读数在真实 JSXGraph 落点目视确认；
  *   ② 继续补易错图形 few-shot（下一候选：费马点、重心坐标比值）；
  *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
+ * 本轮（AI作图对标大角几何·增量·2026-11-28 第三十九轮）：只追加 2D 作图主干（例62 重心坐标比值
+ *   few-shot），3D 命令分支整段零改动、不动 appId/editor.html/js/board.js/js/board3d*；
+ *   核心工作流 / 铁律 / 命令清单既有行 / 既有例1-61 逐字未动、无删除行。落实上一轮 TODO 交接项
+ *   「下一候选：重心坐标比值」：例38/59/60 覆盖四心、欧拉线、九点圆，但都没覆盖「重心分中线 2:1、
+ *   三条中线共点、重心坐标 (1:1:1) 对应三小三角形等面积」这一高频考点。AI 常把中线中点当重心、
+ *   编 kind:ratio / kind:barycentric、把重心当内心/外心、把 expect 写成表达式。本文件在例61 后追加例62，
+ *   给出「两阶段 inspect center 回读 G/S → midpoint 取三边中点 → line+segment 拼三条中线 →
+ *   point G 数值化 → verify collinear/distance/evaluate 核 2:1 与等面积」范式；
+ *   docs 追加用例 137/138。全部复用现有 op（point/polygon/midpoint/line/segment/inspect/verify），
+ *   js/executor.js 零改动。
+ * TODO(下一步): ① intersections/zeros/roots/相切/三角函数/垂距/公共弦/切点/内接顶点/分线段比/等角/
+ *   中位线/斜边中线/斜边高/圆内接对角/托勒密/内切圆 r/欧拉线比值/九点圆/旁切圆/重心比值读数在真实
+ *   JSXGraph 落点目视确认；
+ *   ② 继续补易错图形 few-shot（下一候选：费马点——用等边三角形外接圆交点构造，别编 kind:fermat）；
+ *   ③ 自检徽标 DOM / 收敛读数回画需改 js/board.js，非本任务职责。
  */
 
 export const BOARD_SYSTEM_PROMPT = `你是「智绘几何」的内置 AI 作图助手——一个自用的动态几何画板（引擎 JSXGraph）。用户用中文描述几何需求，你把需求转换成画板命令并执行，然后用中文简要说明。
@@ -2597,6 +2612,60 @@ segment 补一条弦让边界清晰。采样点越多弧越圆滑（一般取 5~
 //   ⑤ 旁切圆在三角形外，与例38/49/58 的内切圆、例60 的九点圆互不等同；
 //   ⑥ verify pass:false 多为外角平分线没垂直、r_a 用成 r、切点取中点或 expect 沿用旧值，按例6/例10 只重发错的
 //      点/线/圆/verify，不要 clear 整板。
+
+
+== 例62：三角形重心坐标比值（G=(A+B+C)/3，中线顶点段:中点段=2:1，三中线共点，重心坐标 (1:1:1) ⇔ 三小三角形等面积；易错：把中线中点当重心、编 kind:ratio/kind:barycentric、重心当内心/外心、expect 写表达式） ==
+用户："三角形 A(0,0) B(9,0) C(0,6)，画三条中线并标出重心 G，验证 G 把每条中线分成 2:1，且重心坐标 (1:1:1) 对应的三块小三角形等面积。"
+思路：协议 inspect kind:center 已回读重心 G(3,2) 与面积 S=27，但**没有**重心坐标字段，verify 也**没有** ratio/barycentric/area kind；
+      不要编 {"op":"verify","kind":"ratio"} 或 {"op":"inspect","kind":"barycentric"}。比值拆成两段 distance 回读（CG=5、GMc=2.5），
+      等面积用 verify kind:evaluate 写算式回读（9*2/2=9、6*3/2=9），共点用 verify kind:collinear。
+      重心是顶点到对边中点连线的 2/3 处，**不是**中线中点：Ma/Mb/Mc 是边中点，G 是 (A+B+C)/3=(3,2)；
+      等腰/等边时重心可能与内心/外心重合，必须按定义（中线交点）说明，不能改叫内心或外心。
+第一轮：先建点、三角形与三个边中点、三条中线，末尾发一条 center 查询（只读、不画图）：
+{"op":"point","id":"A","x":0,"y":0}
+{"op":"point","id":"B","x":9,"y":0}
+{"op":"point","id":"C","x":0,"y":6}
+{"op":"polygon","id":"tri","points":["A","B","C"]}
+{"op":"midpoint","id":"Ma","of":["B","C"]}        // BC 中点 (4.5,3)，A 边中线终点
+{"op":"midpoint","id":"Mb","of":["A","C"]}        // AC 中点 (0,3)，B 边中线终点
+{"op":"midpoint","id":"Mc","of":["A","B"]}        // AB 中点 (4.5,0)，C 边中线终点
+{"op":"line","id":"medA","through":["A","Ma"]}
+{"op":"line","id":"medB","through":["B","Mb"]}
+{"op":"line","id":"medC","through":["C","Mc"]}
+{"op":"inspect","kind":"center","of":["A","B","C"]}
+系统回【查询读数】：「center(A,B,C): 重心G(3,2); 内心I(2.092,2.092) r=2.092; 外心O(4.5,3) R=5.408; 垂心H(0,0); 面积=27」。
+第二轮：用读数把 G 落点，补线段与自检（不沿用 Ma/Mb/Mc 的坐标当 G）：
+{"op":"point","id":"G","x":3,"y":2}               // (0+9+0)/3=3、(0+0+6)/3=2，写数值不写表达式
+{"op":"segment","id":"sA","from":"A","to":"Ma"}
+{"op":"segment","id":"sB","from":"B","to":"Mb"}
+{"op":"segment","id":"sC","from":"C","to":"Mc"}
+// 共点：三组「顶点 + 重心 + 对边中点」各自共线
+{"op":"verify","kind":"collinear","of":["A","G","Ma"],"expect":0,"tol":0.05,"label":"A-G-Ma 共线"}
+{"op":"verify","kind":"collinear","of":["B","G","Mb"],"expect":0,"tol":0.05,"label":"B-G-Mb 共线"}
+{"op":"verify","kind":"collinear","of":["C","G","Mc"],"expect":0,"tol":0.05,"label":"C-G-Mc 共线"}
+// 2:1：取 C 中线最简（|CG|=5、|GMc|=2.5、|CMc|=7.5），两条 distance 回读 + 全长交叉核对
+{"op":"verify","kind":"distance","of":["C","G"],"expect":5,"tol":0.05,"label":"CG=5"}
+{"op":"verify","kind":"distance","of":["G","Mc"],"expect":2.5,"tol":0.05,"label":"GMc=2.5"}
+{"op":"verify","kind":"distance","of":["C","Mc"],"expect":7.5,"tol":0.05,"label":"CMc=7.5"}
+// 重心坐标 (1:1:1)：G=((0+9+0)/3,(0+0+6)/3)，三小三角形面积各 S/3=9
+{"op":"verify","kind":"evaluate","expr":"(0+9+0)/3","x":0,"expect":3,"tol":0.05,"label":"Gx=(0+9+0)/3=3"}
+{"op":"verify","kind":"evaluate","expr":"(0+0+6)/3","x":0,"expect":2,"tol":0.05,"label":"Gy=(0+0+6)/3=2"}
+{"op":"verify","kind":"evaluate","expr":"9*2/2","x":0,"expect":9,"tol":0.05,"label":"S(GAB)=底AB×G高/2=9"}
+{"op":"verify","kind":"evaluate","expr":"6*3/2","x":0,"expect":9,"tol":0.05,"label":"S(GAC)=底AC×G高/2=9"}
+// message："重心 G(3,2) 是三条中线交点；C 中线上 CG=5、GMc=2.5，即 CG:GMc=2:1，
+//   重心坐标 (1:1:1) 使 GAB/GAC/GBC 面积均为 9（总面积 27 的三分之一）。"
+// 变式 A（快照已有三角形 / 顶点被滑动条驱动）：不重发 point/polygon，先 inspect center 按快照回读 G 与面积，
+//   再用回读值数值化 point G、expect 用回读值或 expectRange，别沿用 3/2/5/9。
+// 变式 B（一般斜三角形）：中线终点仍用 midpoint 取，不心算中点坐标；比例仍是顶点到 G 的距离 : G 到对边中点距离 = 2:1；
+//   面积不沿 x/y 轴时用 inspect center 回读三个子三角形的面积，别套 9*2/2 这种直角坐标算式。
+// 变式 C（等边/等腰）：等边时 G=I=O=H 四心重合，等腰时 G 在对称轴上；仍叫重心、仍按中线交点解释，
+//   别把重合当成可改叫内心/外心，也别硬套本组坐标或 5/2.5 的期望值。
+// 要点：① 重心 ≠ 边中点，G 在中线距顶点 2/3 处，Ma/Mb/Mc 只是对边中点；
+//   ② 协议无 ratio/barycentric/area kind：比值拆成两段 distance，等面积用 evaluate 算式回读，共点用 collinear；
+//   ③ inspect kind:center 回读 G/S，verify 不认 kind:center（inspect 专用），别混用；
+//   ④ 坐标与 expect 一律写数值，不写 "(0+9+0)/3"、"S/3" 这类表达式；expect 写死前先读快照/回读数；
+//   ⑤ verify pass:false 多为把 G 取成中点、distances 取反、expect 沿用旧坐标，按例6/例10 只重发错的点/verify，
+//      不 clear 整板、不重复画已建好的三条中线。
 
 
 # 画板规范
